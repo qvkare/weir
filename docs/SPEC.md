@@ -1,6 +1,6 @@
 # Weir specification
 
-Version 0.2. This file is the source of truth. The NEAR contract (`contracts/weir`) and
+Version 0.3. This file is the source of truth. The NEAR contract (`contracts/weir`) and
 the TypeScript engine (`engine/`) are written from it independently and must agree
 on every number. Where code and this file differ, the code is wrong.
 
@@ -70,7 +70,9 @@ method.
 
 `new` panics unless: every duration except `cutoff_secs` is above zero; `tick > 0`; `0 < band_bps < 10000`;
 `forfeit_bps <= 10000`; `max_commits` is 1 to 128; `max_order_size >= 1`;
-`cutoff_secs < lead_secs`; `min_prints >= 1`; reporters and quorum are as above.
+`cutoff_secs < lead_secs`; `min_prints >= 1`; `t0` and `period_secs` are multiples of
+`print_interval_secs`, so a delivery window is a whole number of print buckets;
+reporters and quorum are as above.
 
 ## 4. Time
 
@@ -107,9 +109,10 @@ series is in auction at any time.
   pays for the account's storage.
 - Deposit: send USDC with `ft_transfer_call` to the contract. `ft_on_transfer`
   credits the account named in `msg` if `msg` is not empty, otherwise the sender. If
-  the token is not `usdc`, the call panics. If the account to credit is not
-  registered, the whole amount is returned (the method returns `amount`).
-- `withdraw(amount)`. Requires exactly 1 yoctoNEAR attached, so a function-call key
+  the token is not `usdc`, the call panics. If `msg` is not a valid account id, or the
+  account to credit is not registered, the whole amount is returned (the method
+  returns `amount`).
+- `withdraw(amount)`, `amount >= 1`. Requires exactly 1 yoctoNEAR attached, so a function-call key
   cannot call it. Debits the caller's free balance and sends USDC with `ft_transfer`.
   If the transfer fails, the callback credits the amount back.
 - `set_guard(guard?)`. Requires exactly 1 yoctoNEAR. Sets or clears the caller's
@@ -260,7 +263,7 @@ the new sets are fully backed.
 - `merge(series, sets)`: before settlement, `sets >= 1`. Burns `sets` LONG and `sets` SHORT of the
   caller and credits `sets * band`. Subtracts `sets` from `open_sets`.
 - `transfer_position(series, to, long, short)`: moves units to another registered
-  account, before or after settlement. `long + short >= 1`. Requires exactly 1
+  account, before or after settlement. `to` may not be the caller. `long + short >= 1`. Requires exactly 1
   yoctoNEAR.
 
 A holder leaves a position by buying the other side in an auction and merging.
@@ -376,7 +379,10 @@ Dollar amounts in JSON are decimal strings. Prices, sizes and times are numbers.
 
 Details:
 
-- `get_status`: `phase_ends_at` is null when `phase` is `Closed`.
+- `get_status`: `phase_ends_at` is null when `phase` is `Closed`. At most 32 series are
+  listed.
+- `get_series`: `pending_rounds` is the list of round numbers, ascending, that hold
+  commits and have not been cleared. A series can be settled only when it is empty.
 - `get_result`: `long_size`, `short_size` and `orders` count the revealed orders that
   are not void. `commits` counts every commit the round held when it was cleared.
   `price` is null when nothing traded.
