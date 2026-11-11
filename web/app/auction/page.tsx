@@ -115,8 +115,8 @@ export default async function AuctionPage({ searchParams }: { searchParams: Sear
         <div className="figures">
           <Figure label="Series" value={String(live.series)} source={`Delivery ${fmtUtc(live.delivery_start)} to ${fmtUtc(live.delivery_end)}`} />
           <Figure label="Round" value={String(live.round)} source={`${commit ? "Commit" : "Reveal"} phase, ends ${fmtUtc(live.phase_ends_at)}`} />
-          <Figure label="Commits" value={String(totals.commits)} source={`${totals.revealed} revealed, ${totals.void} void, ${totals.sealed} sealed`} />
-          <Figure label="Total locked" value={fmtUsdOrNone(totals.locked)} source="An upper bound on what the orders can cost" />
+          <Figure live label="Commits" value={String(totals.commits)} source={`${totals.revealed} revealed, ${totals.void} void, ${totals.sealed} sealed`} />
+          <Figure live label="Total locked" value={fmtUsdOrNone(totals.locked)} source="An upper bound on what the orders can cost" />
         </div>
         {!roundR.ok ? <RpcError read={roundR} href={href} model={core.src.kind === "model"} /> : null}
       </section>

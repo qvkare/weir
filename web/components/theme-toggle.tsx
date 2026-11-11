@@ -16,9 +16,20 @@ export function ThemeToggle() {
   }, []);
   const choose = () => {
     const t = NEXT[theme];
+    const root = document.documentElement;
+    const apply = () => {
+      // Colour transitions are switched off for the swap, so nothing fades through a wrong colour.
+      root.classList.add("theme-swap");
+      if (t === "system") root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", t);
+      void root.offsetHeight;
+      requestAnimationFrame(() => root.classList.remove("theme-swap"));
+    };
     setTheme(t);
-    if (t === "system") document.documentElement.removeAttribute("data-theme");
-    else document.documentElement.setAttribute("data-theme", t);
+    // One cross-fade of the whole page where the browser can do it; an instant swap otherwise.
+    const vt = (document as Document & { startViewTransition?: (cb: () => void) => unknown }).startViewTransition;
+    if (vt && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) vt.call(document, apply);
+    else apply();
     try {
       if (t === "system") localStorage.removeItem("weir-theme");
       else localStorage.setItem("weir-theme", t);

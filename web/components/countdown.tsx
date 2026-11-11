@@ -16,8 +16,11 @@ export function Countdown({ endsAt, serverNow, className }: { endsAt: number; se
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [endsAt, serverNow]);
+  const secs = Math.max(0, Math.floor(left));
   return (
-    <time className={className ?? "countdown"} dateTime={`PT${Math.max(0, Math.floor(left))}S`}>
+    <time className={className ?? "countdown"} dateTime={`PT${secs}S`}>
+      {/* The clock is live: one beat per second, restarted by the key. */}
+      {secs > 0 ? <span className="tick-dot" key={secs} aria-hidden="true" /> : null}
       {fmtCountdown(left)}
     </time>
   );

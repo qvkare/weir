@@ -55,7 +55,7 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
             ))}
             {g.reporters.map((r) => (
               <g key={r.reporter}>
-                <path d={r.path} fill="none" stroke="var(--ink-3)" strokeWidth={1} />
+                <path className="curve" pathLength={1} d={r.path} fill="none" stroke="var(--ink-3)" strokeWidth={1} />
                 {g.endLabels && r.labelY !== null ? (
                   <text x={g.plot.x1 + 6} y={r.labelY + 4} style={{ fontSize: 11 }}>
                     {r.reporter.split(".")[0]}
@@ -63,8 +63,8 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
                 ) : null}
               </g>
             ))}
-            <path d={g.index} fill="none" stroke="var(--ink)" strokeWidth={2} />
-            {g.last ? <circle cx={g.last.x} cy={g.last.y} r={3.5} fill="var(--ink)" /> : null}
+            <path className="curve" pathLength={1} d={g.index} fill="none" stroke="var(--ink)" strokeWidth={2} />
+            {g.last ? <circle className="fade-in" cx={g.last.x} cy={g.last.y} r={3.5} fill="var(--ink)" /> : null}
             {g.index === "" ? (
               <text x={(g.plot.x0 + g.plot.x1) / 2} y={(g.plot.y0 + g.plot.y1) / 2} textAnchor="middle" className="ink">
                 No final prints in this window

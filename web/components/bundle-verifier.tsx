@@ -20,9 +20,11 @@ type Group = { title: string; rows: Row[]; status: "pending" | "done" };
 export function BundleVerifier({ prints, bundlesBase, recorded, tick, model }: Props) {
   const [groups, setGroups] = useState<Group[]>([]);
   const [running, setRunning] = useState(false);
+  const [runId, setRunId] = useState(0);
 
   const run = useCallback(async () => {
     setRunning(true);
+    setRunId((n) => n + 1);
     const out: Group[] = [];
     const push = (g: Group) => {
       out.push(g);
@@ -63,6 +65,8 @@ export function BundleVerifier({ prints, bundlesBase, recorded, tick, model }: P
   }, [run]);
 
   const all = groups.flatMap((g) => g.rows);
+  // Each check resolves after the one before it, so the list reads top to bottom (CSS, data-i).
+  const offsets = groups.map((_, i) => groups.slice(0, i).reduce((n, g) => n + g.rows.length, 0));
   const bad = all.filter((r) => !r.ok).length;
   return (
     <div className="stack">
@@ -75,7 +79,7 @@ export function BundleVerifier({ prints, bundlesBase, recorded, tick, model }: P
       {model ? <p className="small flag">In model mode the reports carry model hashes with no files behind them, so only the medians are checked against the prints. The recorded sample below is a real bundle.</p> : null}
       {!bundlesBase && !model ? <p className="small flag">No bundle host is configured (bundles_base in deployments.json), so report hashes cannot be fetched yet. Unverified.</p> : null}
       {groups.map((g, i) => (
-        <div className="table-wrap" key={i}>
+        <div className="table-wrap" key={`${runId}-${i}`}>
           <table>
             <caption>{g.title}</caption>
             <thead>
@@ -87,10 +91,23 @@ export function BundleVerifier({ prints, bundlesBase, recorded, tick, model }: P
             </thead>
             <tbody>
               {g.rows.map((r, j) => (
-                <tr key={j} className="check-row">
+                <tr key={j} className="check-row" style={{ ["--i" as string]: Math.min(offsets[i]! + j, 24) }}>
                   <td>{rowName(r)}</td>
                   <td className="mono small" style={{ overflowWrap: "anywhere" }}>{rowDetail(r, tick)}</td>
-                  <td>{r.ok ? <span className="ok"><CheckIcon /> matches</span> : <span className="bad"><CrossIcon /> {r.kind === "fetch" ? "unverified" : "does not match"}</span>}</td>
+                  <td>
+                    <span className="check-result">
+                      <span className="check-pending muted" aria-hidden="true">checking</span>
+                      {r.ok ? (
+                        <span className="ok check-done">
+                          <CheckIcon /> matches
+                        </span>
+                      ) : (
+                        <span className="bad check-done">
+                          <CrossIcon /> {r.kind === "fetch" ? "unverified" : "does not match"}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>

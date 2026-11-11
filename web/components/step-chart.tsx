@@ -19,7 +19,6 @@ export interface StepChartProps {
   animate?: boolean;
 }
 
-const LEN = { ["--len" as string]: 1 };
 const path = (segs: Seg[]) => segs.map((s) => `M${s.x1.toFixed(1)},${s.y1.toFixed(1)}L${s.x2.toFixed(1)},${s.y2.toFixed(1)}`).join("");
 
 export function StepChart(props: StepChartProps) {
@@ -100,10 +99,10 @@ function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { wid
       )}
 
       <g fill="none" strokeLinecap="square">
-        <path className="curve" pathLength={1} d={thin(g.demand)} stroke="var(--long)" strokeWidth={1} strokeOpacity={0.5} style={LEN} />
-        <path className="curve" pathLength={1} d={thin(g.supply)} stroke="var(--short)" strokeWidth={1} strokeOpacity={0.5} style={LEN} />
-        <path className="curve" pathLength={1} d={thick(g.demand)} stroke="var(--long)" strokeWidth={3} style={LEN} />
-        <path className="curve" pathLength={1} d={thick(g.supply)} stroke="var(--short)" strokeWidth={3} style={LEN} />
+        <path className="curve" pathLength={1} d={thin(g.demand)} stroke="var(--long)" strokeWidth={1} strokeOpacity={0.5} />
+        <path className="curve" pathLength={1} d={thin(g.supply)} stroke="var(--short)" strokeWidth={1} strokeOpacity={0.5} />
+        <path className="curve" pathLength={1} d={thick(g.demand)} stroke="var(--long)" strokeWidth={3} />
+        <path className="curve" pathLength={1} d={thick(g.supply)} stroke="var(--short)" strokeWidth={3} />
       </g>
       {g.steps
         .filter((s) => s.partAt !== null)
@@ -113,9 +112,9 @@ function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { wid
 
       {g.clearing ? (
         <>
-          <line x1={g.plot.x0} x2={g.plot.x1} y1={g.clearing.y} y2={g.clearing.y} stroke="var(--ink)" strokeWidth={2} />
-          <line x1={g.clearing.x} x2={g.clearing.x} y1={g.plot.y0} y2={g.plot.y1} stroke="var(--ink)" strokeWidth={1} strokeDasharray="4 3" />
-          <text className="ink" x={g.plot.x1 - 4} y={labelAbove ? g.clearing.y - 7 : g.clearing.y + 17} textAnchor="end">
+          <line className="fade-in" x1={g.plot.x0} x2={g.plot.x1} y1={g.clearing.y} y2={g.clearing.y} stroke="var(--ink)" strokeWidth={2} />
+          <line className="fade-in" x1={g.clearing.x} x2={g.clearing.x} y1={g.plot.y0} y2={g.plot.y1} stroke="var(--ink)" strokeWidth={1} strokeDasharray="4 3" />
+          <text className="ink fade-in" x={g.plot.x1 - 4} y={labelAbove ? g.clearing.y - 7 : g.clearing.y + 17} textAnchor="end">
             {label}
           </text>
           <text className="ink" x={Math.min(g.clearing.x + 5, g.plot.x1 - 4)} y={g.plot.y1 - 6} textAnchor={g.clearing.x > g.plot.x1 - 90 ? "end" : "start"}>

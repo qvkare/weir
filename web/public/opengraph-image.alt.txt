@@ -1,1 +1,1 @@
-Weir: one price for next week's GPU-hour. A step chart of an example sealed round: demand falls, supply rises, and one clearing price fills both sides.
+Weir: one price for next week's GPU-hour. The final frame of an example sealed round cleared by the Weir engine: demand steps down, supply steps up, and one clearing price of $0.40 fills both sides.

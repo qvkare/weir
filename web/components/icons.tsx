@@ -52,12 +52,3 @@ export const ExternalIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M9 2.5h4.5V7M13.5 2.5 7 9M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3" />
   </svg>
 );
-
-/** The wordmark's glyph: a weir's crest, water level on both sides held to one line. */
-export const WeirMark = (p: SVGProps<SVGSVGElement>) => (
-  <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false" {...p}>
-    <rect x="1" y="1" width="30" height="30" rx="4" fill="var(--ink)" />
-    <path d="M5 21h7l4-8 4 8h7" fill="none" stroke="var(--paper)" strokeWidth="2.5" strokeLinejoin="round" />
-    <path d="M5 13h22" stroke="var(--long)" strokeWidth="2.5" />
-  </svg>
-);

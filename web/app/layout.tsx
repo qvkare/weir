@@ -33,9 +33,16 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.WEIR_SITE_URL ?? "http://localhost:3000"),
   title: { default: "Weir: one price for next week's GPU-hour", template: "%s | Weir" },
   description: DESCRIPTION,
-  openGraph: { siteName: "Weir", title: "Weir: one price for next week's GPU-hour", description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. A sealed auction step chart: demand falls, supply rises, one clearing price." }] },
+  openGraph: { siteName: "Weir", title: "Weir: one price for next week's GPU-hour", description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The final frame of an example sealed round: demand steps down, supply steps up, one clearing price fills both sides." }] },
   twitter: { card: "summary_large_image", title: "Weir", description: DESCRIPTION, images: ["/opengraph-image.png"] },
-  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }], apple: "/apple-icon.png" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/icon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

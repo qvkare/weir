@@ -24,7 +24,7 @@ export function BacktestChart({ weeks, summary }: { weeks: BacktestWeek[]; summa
             {g.weeks.map((w) => (
               <rect key={`b${w.week.start}`} x={w.x} y={w.band.y0} width={w.w} height={Math.max(1, w.band.y1 - w.band.y0)} fill="var(--panel)" stroke="var(--rule)" strokeWidth={0.5} />
             ))}
-            <path d={line} fill="none" stroke="var(--ink)" strokeWidth={0.75} strokeOpacity={0.6} />
+            <path className="curve" pathLength={1} d={line} fill="none" stroke="var(--ink)" strokeWidth={0.75} strokeOpacity={0.6} />
             {g.weeks.map((w) => (
               <g key={`w${w.week.start}`}>
                 <line x1={w.x - 1} x2={w.x + w.w + 1} y1={w.hedgedY} y2={w.hedgedY} stroke="var(--long)" strokeWidth={2.5} />

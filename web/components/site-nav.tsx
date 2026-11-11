@@ -1,17 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { LINKS } from "@/lib/nav.ts";
 import { MARKET_INFO, MARKET_IDS, marketFromParam, type MarketId } from "@/lib/config.ts";
 
-export const LINKS = [
-  { href: "/", label: "Index" },
-  { href: "/auction", label: "Auction" },
-  { href: "/simulate", label: "Simulate" },
-  { href: "/backtest", label: "Backtest" },
-  { href: "/how", label: "How it works" },
-  { href: "/proof", label: "Proof" },
-  { href: "/agents", label: "Agents" },
-] as const;
+export { LINKS };
 
 const withMarket = (href: string, m: MarketId) => (m === "weekly" ? href : `${href}?m=${m}`);
 

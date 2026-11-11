@@ -113,7 +113,7 @@ for (;;) {
           <p className="lead">
             With near-cli-rs. {contract ? `The ${MARKET_INFO[market].label.toLowerCase()} market's contract is ${contract}.` : "The contract account goes where it says <weir contract> once a market is deployed."} Replace the upper-case names.
           </p>
-          <CopyBlock text={addKey} label="Commands to add an agent key and deposit" />
+          <CopyBlock text={addKey} label="Commands to add an agent key and deposit" title={`Shell · near-cli-rs · ${net}`} />
         </section>
 
         <section className="section" aria-labelledby="hash-h">
@@ -128,7 +128,7 @@ for (;;) {
         <section className="section" aria-labelledby="loop-h">
           <h2 id="loop-h">A minimal agent loop</h2>
           <p className="lead">About 30 lines of Node. It reads this site&rsquo;s status endpoint and signs with the key above through the near CLI. It is a sketch to start from: it bids a fixed price and does not handle a full round or a failed reveal.</p>
-          <CopyBlock text={loop} label="Minimal agent loop in JavaScript" />
+          <CopyBlock text={loop} label="Minimal agent loop in JavaScript" title="agent.mjs · Node 22" />
         </section>
 
         <section className="section" aria-labelledby="book-h">

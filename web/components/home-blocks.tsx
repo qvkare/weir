@@ -32,68 +32,74 @@ function coreProblem(core: Core, market: MarketId, href: string, what: string) {
 
 // 1. Index head
 
-export async function IndexHead({ market }: { market: MarketId }) {
+async function headData(market: MarketId) {
   const core = await getCore(market);
-  const href = `/${q(market)}`;
-  const params = valueOf(core.params);
   const last = valueOf(core.last);
-  const problem = coreProblem(core, market, href, "index print");
   const print = last ? valueOf(await core.src.view("get_print", { bucket: last.bucket })) : null;
   const pv = printView(print);
-  const stale = isStale(params, last, core.now);
-  const tick = params?.tick;
-  const shown = last ? priceParts(fmtPrice(last.price, tick)) : null;
-
   // Sources: the bundle behind the first report, from the bundle host, else the recorded sample.
   const firstHash = pv?.reporters[0]?.bundle ?? null;
   const hosted = firstHash ? await loadBundle(firstHash) : null;
+  return { core, last, pv, hosted };
+}
+const getHead = cache(headData);
+
+/** The live index figure in the hero: last final print, its age, and what it is the median of. */
+export async function HeroIndex({ market }: { market: MarketId }) {
+  const { core, last, pv } = await getHead(market);
+  const href = `/${q(market)}`;
+  const params = valueOf(core.params);
+  const problem = coreProblem(core, market, href, "index print");
+  const stale = isStale(params, last, core.now);
+  const shown = last ? priceParts(fmtPrice(last.price, params?.tick)) : null;
+  if (problem) return problem;
+  return (
+    <>
+      <Figure
+        display
+        live
+        label="H100, USD per GPU-hour"
+        value={shown?.value ?? null}
+        unit={shown?.unit}
+        source={
+          last ? (
+            <>
+              Final print for the bucket from {fmtUtcTime(last.bucket)}, {fmtDuration(core.now - last.bucket)} old
+              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href="#sources">Sources</a>
+            </>
+          ) : (
+            "No print has become final yet."
+          )
+        }
+      />
+      {stale && last && params ? (
+        <div style={{ marginTop: 16 }}>
+          <Stale>
+            Last print is {fmtDuration(core.now - last.bucket)} old. A series cannot open on it (max_anchor_age_secs is {fmtSpan(params.max_anchor_age_secs)}).
+          </Stale>
+        </div>
+      ) : null}
+      {!core.last.ok ? (
+        <div style={{ marginTop: 16 }}>
+          <RpcError read={core.last} href={href} model={core.src.kind === "model"} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/** The sources in the latest bundle and the reports behind the print. */
+export async function IndexSources({ market }: { market: MarketId }) {
+  const { core, pv, hosted } = await getHead(market);
+  const problem = coreProblem(core, market, `/${q(market)}`, "index print");
+  if (problem) return problem;
+  const tick = valueOf(core.params)?.tick;
   const hostedOk = hosted && hosted.ok ? hosted.value : null;
   const sample = hostedOk ? null : recordedBundle();
-
   return (
-    <div className="index-head">
-      <div>
-        <h1 className="hero-title">One price for next week&rsquo;s GPU-hour</h1>
-        <p className="hero-sub">Buyers and sellers of H100 time bid in sealed rounds. Everyone filled pays the same clearing price.</p>
-        <div style={{ marginTop: 32 }}>
-          {problem ?? (
-            <>
-              <Figure
-                display
-                label="H100, USD per GPU-hour"
-                value={shown?.value ?? null}
-                unit={shown?.unit}
-                source={
-                  last ? (
-                    <>
-                      Final print for the bucket from {fmtUtcTime(last.bucket)}, {fmtDuration(core.now - last.bucket)} old
-                      {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}.
-                    </>
-                  ) : (
-                    "No print has become final yet."
-                  )
-                }
-              />
-              {stale && last && params ? (
-                <div style={{ marginTop: 16 }}>
-                  <Stale>
-                    Last print is {fmtDuration(core.now - last.bucket)} old. A series cannot open on it (max_anchor_age_secs is {fmtSpan(params.max_anchor_age_secs)}).
-                  </Stale>
-                </div>
-              ) : null}
-              {!core.last.ok ? (
-                <div style={{ marginTop: 16 }}>
-                  <RpcError read={core.last} href={href} model={core.src.kind === "model"} />
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
-      <div>
-        <SourcesTable loaded={hostedOk ?? sample} hostedError={hosted && !hosted.ok ? hosted.error : null} reporterOfBundle={hostedOk ? (pv?.reporters[0]?.reporter ?? null) : null} tick={tick} />
-        {pv ? <ReportersTable pv={pv} tick={tick} /> : null}
-      </div>
+    <div className="grid-2 sources-grid">
+      <SourcesTable loaded={hostedOk ?? sample} hostedError={hosted && !hosted.ok ? hosted.error : null} reporterOfBundle={hostedOk ? (pv?.reporters[0]?.reporter ?? null) : null} tick={tick} />
+      {pv ? <ReportersTable pv={pv} tick={tick} /> : <Empty>No print has become final yet, so there are no reports to list.</Empty>}
     </div>
   );
 }
@@ -109,7 +115,7 @@ function SourcesTable({ loaded, hostedError, reporterOfBundle, tick }: { loaded:
         <caption>
           {recorded ? (
             <>
-              <span className="flag">Recorded sample</span>, bucket {fmtUtc(b.bucket)}, from <code>{loaded.origin.kind === "recorded" ? loaded.origin.file : ""}</code>. It is not the data behind the print on the left
+              <span className="flag">Recorded sample</span>, bucket {fmtUtc(b.bucket)}, from <code>{loaded.origin.kind === "recorded" ? loaded.origin.file : ""}</code>. It is not the data behind the print above
               {hostedError ? ` (the bundle host failed: ${hostedError})` : ""}.
             </>
           ) : (
@@ -153,7 +159,7 @@ function SourcesTable({ loaded, hostedError, reporterOfBundle, tick }: { loaded:
 
 function ReportersTable({ pv, tick }: { pv: NonNullable<ReturnType<typeof printView>>; tick?: number }) {
   return (
-    <div className="table-wrap" style={{ marginTop: 24 }}>
+    <div className="table-wrap">
       <table>
         <caption>Reports behind this print. The print is their median{pv.middle.length === 2 ? " (mean of the two middle reports, rounded down)" : ""}.</caption>
         <thead>
@@ -393,9 +399,9 @@ export async function LastClearing({ market }: { market: MarketId }) {
           Series {series}, round {round}, cleared {fmtUtc(result.cleared_at)}.
         </p>
         <div className="figures">
-          <Figure label="LONG price p*" value={pp.value} unit={pp.unit} source="Paid by every filled LONG" />
-          <Figure label="Implied forward, floor + p*" value={fp.value} unit={fp.unit} source="The GPU-hour price this round locks" />
-          <Figure label="Volume" value={s.volume.toLocaleString("en-US")} unit="GPU-h" source={`${s.orders} orders of ${s.commits} commits took part`} />
+          <Figure live label="LONG price p*" value={pp.value} unit={pp.unit} source="Paid by every filled LONG" />
+          <Figure live label="Implied forward, floor + p*" value={fp.value} unit={fp.unit} source="The GPU-hour price this round locks" />
+          <Figure live label="Volume" value={s.volume.toLocaleString("en-US")} unit="GPU-h" source={`${s.orders} orders of ${s.commits} commits took part`} />
         </div>
         <Link className="button ghost" href={`/auction${q(market, `series=${series}&round=${round}`)}`}>
           Open round {round}

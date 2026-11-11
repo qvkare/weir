@@ -4,12 +4,11 @@ import { clearRound, commitHash, commitPreimage, type Order } from "@weir/engine
 import type { WireParams } from "@weir/engine";
 import { LimitsList } from "@/components/home-blocks.tsx";
 import { QuoteWidget } from "@/components/quote-widget.tsx";
-import { SeriesStrip } from "@/components/series-strip.tsx";
-import { StepChart } from "@/components/step-chart.tsx";
+import { ClearingFigure, CommitFigure, FundingFigure, SeriesClockFigure, SettlementFigure } from "@/components/how-figures.tsx";
 import { buildData, deployments, funding } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
 import { marketFromParam, MARKET_INFO } from "@/lib/config.ts";
-import { fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtSpan, fmtUsd, fmtUtc, shortHash } from "@/lib/format.ts";
+import { dollarsOfPrice, fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtSpan, fmtUsd, fmtUtc, shortHash } from "@/lib/format.ts";
 import { loadCore } from "@/lib/load.ts";
 import { MODEL_PARAMS } from "@/lib/model.ts";
 import { longPayout, payoffAt } from "@/lib/payoff.ts";
@@ -42,7 +41,6 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
   const now = core.now;
   const s = Math.max(0, Math.floor((now + params.lead_secs - params.t0) / params.period_secs));
   const times = timesOf(live ? s : 1, params);
-  const clockNow = live ? now : times.auctionOpen + (times.commitSecs + times.revealSecs) * 2 + times.commitSecs / 2;
 
   // Commit and reveal: a worked hash, computed here by the engine.
   const salt = "5a17c0de".repeat(4);
@@ -64,7 +62,9 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
   const floor = snap(2_000_000);
   const sBand = snap(800_000);
   const p = snap(300_000);
-  const fixing = snap(2_550_000);
+  // An example delivery week: seven prints around $2.55, on the tick grid. The fixing is their average.
+  const prints = [-200_000, -100_000, 50_000, 150_000, 250_000, -50_000, -100_000].map((d) => snap(2_550_000 + d));
+  const fixing = Math.floor(prints.reduce((a, b) => a + b, 0) / prints.length);
   const lp = longPayout(fixing, floor, sBand);
   const buyer = payoffAt("Long", fixing, floor, sBand, p);
   const units = 1344;
@@ -88,12 +88,14 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             <p className="tiny muted">{paramsNote}</p>
           </div>
           <div>
-            <SeriesStrip times={times} now={clockNow} round={null} summary={`Series ${times.series}: auctions from ${fmtUtc(times.auctionOpen)} to ${fmtUtc(times.auctionClose)}, delivery from ${fmtUtc(times.deliveryStart)} to ${fmtUtc(times.deliveryEnd)}, settlement from ${fmtUtc(times.settleAt)}.`} />
-            <div className="legend" aria-hidden="true">
-              <span className="key"><span className="swatch box" style={{ color: "var(--ink)" }} /> Commit phase</span>
-              <span className="key"><span className="swatch box" style={{ color: "var(--ink-3)" }} /> Reveal phase (hatched)</span>
-              <span className="key"><span className="swatch box" style={{ color: "var(--panel)" }} /> Delivery window</span>
-            </div>
+            <SeriesClockFigure
+              series={times.series}
+              labels={{ lead: fmtSpan(params.lead_secs), commit: fmtSpan(params.commit_secs), reveal: fmtSpan(params.reveal_secs), cutoff: fmtSpan(params.cutoff_secs), period: fmtSpan(params.period_secs), grace: fmtSpan(params.report_grace_secs) }}
+              summary={`Series ${times.series}: auctions from ${fmtUtc(times.auctionOpen)} to the cutoff at ${fmtUtc(times.auctionClose)}, in rounds of ${fmtSpan(params.commit_secs)} commit and ${fmtSpan(params.reveal_secs)} reveal; delivery from ${fmtUtc(times.deliveryStart)} to ${fmtUtc(times.deliveryEnd)}; settlement from ${fmtUtc(times.settleAt)}.`}
+            />
+            <p className="tiny muted how-dates">
+              Series {times.series}: auctions {fmtUtc(times.auctionOpen)} to {fmtUtc(times.auctionClose)} · delivery {fmtUtc(times.deliveryStart)} to {fmtUtc(times.deliveryEnd)} · settles from {fmtUtc(times.settleAt)}
+            </p>
           </div>
         </section>
 
@@ -108,20 +110,15 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             </p>
           </div>
           <div className="stack">
-            <p className="small muted">The string that is hashed (SPEC 6.2), for one example order:</p>
-            <p className="preimage" aria-label={`Preimage: ${preimage}`}>
-              {preimage.split("|").map((part, i, all) => (
-                <span key={i}>
-                  <span className="part">{part}</span>
-                  {i < all.length - 1 ? "|" : ""}
-                </span>
-              ))}
-            </p>
+            <CommitFigure
+              ex={{ sideText: "LONG", size: fmtGpuH(example.size), price: fmtPrice(example.price, params.tick), salt, preimage, hash, lock: fmtUsd(BigInt(example.size) * BigInt(example.price)) }}
+              summary={`The example order, LONG ${fmtGpuH(example.size)} at ${fmtPrice(example.price, params.tick)}, is joined with a salt into the string ${preimage}. Its sha256 is ${hash}. During commits the chain holds only that hash and a lock of ${fmtUsd(BigInt(example.size) * BigInt(example.price))}; at reveal the contract hashes the order and salt again and gets the same hash.`}
+            />
             <dl className="kv">
               <dt>Fields</dt>
               <dd>version, series, round, account, side (L or S), size in GPU-hours, LONG price in micro-USD, salt (32 to 64 hex)</dd>
-              <dt>sha256</dt>
-              <dd className="mono" style={{ overflowWrap: "anywhere" }}>{hash}</dd>
+              <dt>Lock</dt>
+              <dd>At least {fmtUsd(params.min_lock)} (min_lock), and enough to cover the order: size x price for LONG, size x (band - price) for SHORT.</dd>
               <dt>Check yours</dt>
               <dd>
                 The view <code>commit_hash</code> returns the same hash for the same fields. See <Link href="/agents">Agents</Link>.
@@ -143,7 +140,18 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             </p>
           </div>
           <div>
-            <StepChart orders={filled} band={band} floor={null} tick={params.tick} price={cleared.price} volume={cleared.volume} cleared height={320} />
+            {cleared.price !== null ? (
+              <ClearingFigure
+                orders={filled}
+                band={band}
+                price={cleared.price}
+                volume={cleared.volume}
+                tick={params.tick}
+                priceText={`${dollarsOfPrice(cleared.price, params.tick)} per GPU-hour, ${fmtGpuH(cleared.volume)}`}
+                fillsText={`A fills ${fmtInt(cleared.fills[0]!)}, B fills ${fmtInt(cleared.fills[1]!)} of ${fmtInt(orders[1]!.size)}, C fills ${fmtInt(cleared.fills[2]!)}. Everyone pays the one price.`}
+                summary={`Worked example, band ${fmtPrice(band, params.tick)}. ${stepSummary({ orders, price: cleared.price, volume: cleared.volume, cleared: true, floor: null, tick: params.tick })}`}
+              />
+            ) : null}
           </div>
         </section>
 
@@ -157,6 +165,19 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
               If fewer than {fmtInt(params.min_prints)} prints (min_prints) arrived, the series waits; after {fmtSpan(params.void_after_secs)} (void_after_secs) it settles on what it has, or on the middle of the band if it has none, and is marked void.
             </p>
           </div>
+          <div className="stack">
+            <SettlementFigure
+              ex={{
+                floor,
+                band: sBand,
+                prints,
+                fixing,
+                longPay: lp,
+                tick: params.tick,
+                text: { floor: dollarsOfPrice(floor, params.tick), cap: dollarsOfPrice(floor + sBand, params.tick), fixing: dollarsOfPrice(fixing, params.tick), long: dollarsOfPrice(lp, params.tick), short: dollarsOfPrice(sBand - lp, params.tick), band: dollarsOfPrice(sBand, params.tick), prints: prints.map((x) => dollarsOfPrice(x, params.tick)) },
+              }}
+              summary={`Example week with a band from ${fmtPrice(floor, params.tick)} to ${fmtPrice(floor + sBand, params.tick)}. Seven prints, ${prints.map((x) => dollarsOfPrice(x, params.tick)).join(", ")}, average to a fixing of ${fmtPrice(fixing, params.tick)}. A LONG unit pays ${fmtPrice(lp, params.tick)}, a SHORT unit ${fmtPrice(sBand - lp, params.tick)}; together the band.`}
+            />
           <div className="table-wrap">
             <table>
               <caption>Worked example: a buyer hedges {fmtGpuH(units)} with LONG.</caption>
@@ -164,7 +185,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
                 <tr><th scope="row">Floor, band</th><td className="num">{fmtPrice(floor, params.tick)}, {fmtPrice(sBand, params.tick)}</td></tr>
                 <tr><th scope="row">LONG price paid at the auction, p</th><td className="num">{fmtPrice(p, params.tick)}</td></tr>
                 <tr><th scope="row">Locked at the open, {fmtInt(units)} x p</th><td className="num">{fmtUsd(BigInt(units) * BigInt(p))}</td></tr>
-                <tr><th scope="row">Fixing: the week&rsquo;s average</th><td className="num">{fmtPrice(fixing, params.tick)}</td></tr>
+                <tr><th scope="row">Fixing: the average of the {prints.length} prints</th><td className="num">{fmtPrice(fixing, params.tick)}</td></tr>
                 <tr><th scope="row">LONG payout, fixing - floor</th><td className="num">{fmtPrice(lp, params.tick)}</td></tr>
                 <tr><th scope="row">SHORT payout, band - LONG payout</th><td className="num">{fmtPrice(sBand - lp, params.tick)}</td></tr>
                 <tr><th scope="row">Buyer pays for compute</th><td className="num">{fmtPrice(buyer.unhedged, params.tick)}</td></tr>
@@ -172,6 +193,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
                 <tr><th scope="row">Paid out for {fmtInt(units)} units</th><td className="num">{fmtUsd(BigInt(units) * BigInt(lp))}</td></tr>
               </tbody>
             </table>
+          </div>
           </div>
         </section>
 
@@ -190,7 +212,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             </p>
           </div>
           <div className="stack">
-            <FundingDrawing recorded={f.tag === "recorded"} />
+            <FundingFigure recorded={f.tag === "recorded"} summary={`USDC on Base, Arbitrum, Ethereum or Solana goes through NEAR Intents to USDC on a NEAR account, then ft_transfer_call deposits it into Weir.${f.tag === "recorded" ? " A transfer along this path is on record." : " No transfer along this path is on record yet."}`} />
             {intents ? <QuoteWidget /> : <p className="small muted">Live quotes are not wired in this build: the quote module (chain/src/intents.ts) is not in the repository yet.</p>}
           </div>
         </section>
@@ -222,41 +244,5 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
         </section>
       </div>
     </main>
-  );
-}
-
-function FundingDrawing({ recorded }: { recorded: boolean }) {
-  const chains = ["Base", "Arbitrum", "Ethereum", "Solana"];
-  return (
-    <figure style={{ margin: 0 }}>
-      <svg viewBox="0 0 560 200" width="100%" role="img" aria-labelledby="funding-title" style={{ maxWidth: 560, display: "block" }}>
-        <title id="funding-title">USDC on Base, Arbitrum, Ethereum or Solana goes through NEAR Intents to USDC on a NEAR account, then ft_transfer_call deposits it into Weir.</title>
-        {chains.map((c, i) => (
-          <g key={c}>
-            <rect x={4} y={8 + i * 46} width={112} height={34} rx={4} fill="var(--panel)" stroke="var(--rule)" />
-            <text x={60} y={30 + i * 46} textAnchor="middle" style={{ fontSize: 13, fill: "var(--ink)" }}>USDC, {c}</text>
-            <path d={`M116,${25 + i * 46} C150,${25 + i * 46} 150,100 182,100`} fill="none" stroke="var(--ink-3)" />
-          </g>
-        ))}
-        <rect x={182} y={78} width={112} height={44} rx={4} fill="none" stroke="var(--ink)" strokeDasharray={recorded ? undefined : "4 3"} />
-        <text x={238} y={98} textAnchor="middle" style={{ fontSize: 13, fill: "var(--ink)", fontWeight: 650 }}>NEAR Intents</text>
-        <text x={238} y={114} textAnchor="middle" style={{ fontSize: 11, fill: "var(--ink-2)" }}>solver quote</text>
-        <path d="M294,100 H330" stroke="var(--ink)" markerEnd="url(#arr)" />
-        <rect x={330} y={78} width={104} height={44} rx={4} fill="var(--panel)" stroke="var(--ink)" />
-        <text x={382} y={98} textAnchor="middle" style={{ fontSize: 13, fill: "var(--ink)" }}>USDC on NEAR</text>
-        <text x={382} y={114} textAnchor="middle" style={{ fontSize: 11, fill: "var(--ink-2)" }}>your account</text>
-        <path d="M434,100 H462" stroke="var(--ink)" markerEnd="url(#arr)" />
-        <rect x={462} y={78} width={94} height={44} rx={4} fill="var(--ink)" />
-        <text x={509} y={98} textAnchor="middle" style={{ fontSize: 13, fill: "var(--paper)", fontWeight: 650 }}>Weir</text>
-        <text x={509} y={114} textAnchor="middle" style={{ fontSize: 11, fill: "var(--paper)" }}>free balance</text>
-        <text x={448} y={146} textAnchor="middle" style={{ fontSize: 11, fill: "var(--ink-2)" }}>ft_transfer_call</text>
-        <defs>
-          <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" fill="var(--ink)" />
-          </marker>
-        </defs>
-      </svg>
-      <figcaption className="tiny muted">{recorded ? "A transfer along this path is on record." : "Dashed: the step with no recorded transfer yet."}</figcaption>
-    </figure>
   );
 }

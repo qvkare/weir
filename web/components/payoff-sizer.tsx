@@ -206,8 +206,8 @@ function PayoffSvg(p: PayoffSizerProps & { side: HedgeSide; fixing: number; widt
       <text x={(g.band.x1 + g.band.x2) / 2} y={g.plot.y0 + 14} textAnchor="middle">
         Band
       </text>
-      <polyline points={g.unhedged} fill="none" stroke="var(--ink)" strokeWidth={1} />
-      <polyline points={g.hedged} fill="none" stroke={colour} strokeWidth={3} strokeLinejoin="round" />
+      <polyline className="curve" pathLength={1} points={g.unhedged} fill="none" stroke="var(--ink)" strokeWidth={1} />
+      <polyline className="curve" pathLength={1} points={g.hedged} fill="none" stroke={colour} strokeWidth={3} strokeLinejoin="round" />
       <g
         role="slider"
         tabIndex={0}

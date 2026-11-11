@@ -1,167 +1,217 @@
-# Weir design brief: "The clearing sheet"
+# Weir design brief: "The clearing sheet", v2
 
-Change this brief before building something it does not allow. Pages I could not open while writing it: none fully; Agate's home stayed on its loading grid in a browser, so its visuals are judged from text only. Every figure on the site comes from the contract views (SPEC section 12), `evidence/`, `backtest/` results or the engine running in the browser. No page types a number.
+This brief describes the site as it is. Change it before building something it does not allow. Every figure on the site comes from the contract views (SPEC section 12), `evidence/`, `backtest/` results or the engine running on the server or in the browser. No page types a number; worked examples are computed by the engine and labelled as examples.
 
 ## 1. Positioning
 
 **Promise:** buyers and sellers of H100 time agree next week's price in one sealed auction, and every position is paid in full when it opens.
 
-**First ten seconds, in this order:**
-1. The H100 index now, and the sources it is the median of.
-2. One sealed round sets one price for everyone; LONG pays the buyer when the week's average rises, SHORT pays the seller when it falls, both inside a stated band.
-3. Nothing to liquidate: a LONG and a SHORT together are backed by exactly `band` dollars.
+**First five seconds, in this order:**
+1. The promise, set large: "One price for next week's GPU-hour".
+2. The live H100 index and what it is the median of.
+3. The mechanism, moving: sealed bids arrive, open, the two staircases cross, one price is set, the filled orders light up (the hero film, section 7.3).
 
-**With no wallet, the first screen lets a visitor:** read the live index and each source; see the current series, its band and the phase clock; drag a fixing across the payoff diagram; type GPU-hours and see the hedge size and cost at the last clearing price; open the last clearing; start the simulation.
+**With no wallet, the home page lets a visitor:** read the live index and each source; watch one round clear; see the current series, its band and the phase clock; drag a fixing across the payoff diagram; size a hedge at the last clearing price; open the last clearing; start the simulation.
 
-## 2. Name check
+**Audience.** Investors and protocol founders judging a hackathon. Four sites with the same theme won elsewhere with dark trading terminals or particle-field landing pages. Weir is the opposite on purpose: warm paper, ink, two side colours, and one drawing that explains the product by moving.
 
-**Verdict: workable.** No crypto, DeFi or compute-market product named Weir turned up (searches with DeFi, NEAR, token, .xyz, .finance; nearest is WeFi, a money market). Collisions outside the category: WEIR AI, a public-identity app that owns weir.ai (https://www.producthunt.com/p/weir-ai , https://f4.fund/startups/weir); The Weir Group, an engineering company (search noise); a hobby language (https://weirlang.pages.dev/). Pair the name with a product word ("Weir auction") for search.
+## 2. Name
 
-**Alternates, if a clash appears:** **Clearhour**: one clearing price per GPU-hour, says the mechanism. **Batchrate**: a batch auction that sets a rate. Neither returned a product in a web search.
+**Weir**: a low dam that holds a river's level steady. The product holds your compute price level. No crypto, DeFi or compute product named Weir was found; collisions outside the category are WEIR AI (weir.ai) and The Weir Group. Pair the name with a product word ("Weir auction") in search. Alternates if a clash appears: Clearhour, Batchrate.
 
 **Tagline:** "One price for next week's GPU-hour."
-**Domains to propose (unchecked):** weir.market, weirauction.xyz, useweir.xyz.
 
-## 3. Site map
+## 3. Logo
 
-| Path | Purpose |
-|---|---|
-| `/` | Index with sources, current series and band, phase clock, last clearing, payoff and hedge sizer |
-| `/auction` | The round in progress; after clearing, the step chart, the price and every fill. `?series=&round=` for any past round |
-| `/simulate` | A market of scripted agents cleared by the real engine, in the browser, with fast-forward |
-| `/backtest` | Hedged against unhedged cost over real H100 history, and band coverage |
-| `/how` | Series, rounds, commit and reveal, clearing rule, settlement, funding through NEAR Intents, limits |
-| `/proof` | Contracts, parameters, transactions, bundle hashes re-verified in the browser, live solvency check |
-| `/agents` | Get a key that can bid and cannot withdraw; agents seen on the book |
+### 3.1 Three concepts
 
-Header: wordmark, the seven links, a "Testnet" outline tag. No "Connect wallet" in the header; it appears only on `/auction` beside the order form.
+| | Concept | Verdict |
+|---|---|---|
+| ![Concept A](brand/concept-a-slab-w.svg) | **A. Crest W.** A W whose top ends and centre are cut flat on one line, the crest of a weir. | Rejected. At every size it reads as a slab-serif capital W: the short flats look like serifs, not like water. Nothing about it is ownable. |
+| ![Concept B](brand/concept-b-staircases.svg) | **B. Two staircases.** Demand steps down, supply steps up, they meet at one point and a single price line runs on to the right. | Rejected, narrowly. It is the mechanism exactly, but at 16 px the steps merge into a bracket and the whole reads as a circuit or tree glyph. It survives as the hero film, where it has room. |
+| ![Concept C](brand/concept-c-level-seal.svg) | **C. Level seal.** A ring (the sealed bid) cut by a level line with one step in it. | Rejected. A ring with a bar through it is the grammar of "no entry" and power symbols; the seal idea is clearer in the product (the lock glyph) than in a badge. |
+| ![Chosen](brand/mark-wide.svg) | **Chosen: the held level.** One stroke: a level line runs flat, drops into a W, and comes back to exactly the same level. | It is a weir in profile (the level is the same on both banks, the drop is held between them) and the W of the name. The long banks are what make it ours: a W alone is a letter, a W hung from a level line is a mark. |
 
-## 4. Page by page
+### 3.2 Construction
 
-### `/`
-1. **Index head.** Left: "H100, USD per GPU-hour", last final print at display size, bucket time, age. Right: sources (name, price, included or excluded with reason), median row in ink, then reporters (account, price, short bundle hash). Loading: grey bars, never `$0.00`. Error: "The NEAR RPC did not answer", last good read time, Read again. Stale (`now - bucket > max_anchor_age_secs`): `--flag`, "Last print is 3 h 10 m old. A series cannot open on it."
-2. **Series strip.** One horizontal timeline for each live series: auction window as a row of round blocks (commit solid, reveal hatched), cutoff, delivery week, settlement. A "now" rule. Under it: floor, band, floor+band, `phase` and `phase_ends_at` as a countdown "Reveal ends in 04:12". Phone: vertical, time running down.
-3. **Last clearing.** Small step chart (section 5) plus three figures: LONG price `p*`, implied forward `floor + p*`, volume in GPU-hours. Link "Open round 14". Empty: "No round of this series has cleared yet."
-4. **Payoff and hedge sizer.** Payoff diagram with a draggable fixing. Beside it: input "GPU-hours you will use in the delivery week" (default 1,344 = 8 GPUs x 168 h), side toggle Buyer (LONG) / Seller (SHORT). Outputs: units, dollars locked, most you can lose, your effective price inside the band. Figures use the last clearing price and say so.
-5. **Three facts** in plain sentences with a link each: sealed uniform price, fully paid positions, funding from any chain via NEAR Intents (tag live, built or planned, set from `evidence/`).
-6. **Limits** (always on home, 5 lines): testnet only; index trusts `quorum` of named reporters; band caps the hedge; unrevealed commits forfeit `forfeit_bps`; settlement after `report_grace_secs`.
+![Construction on the 32 x 24 grid](brand/mark-construction.svg)
 
-Phone (375): blocks stack; sources table becomes two columns (source, price) with the reason under each row; payoff chart full width, 240 px tall, sizer under it; tap targets 44 px.
+- **Wide master** (`lib/logo.ts`, `MARK.wide`): 32 x 24 grid. Path `M1 6 H8.5 L12.25 18.5 L16 6 L19.75 18.5 L23.5 6 H31`, stroke 2.5 units, butt caps. The level is y = 6; the points sit at y = 18.5; the axis of symmetry is x = 16. Banks are 7.5 units, each diagonal rises 12.5 over 3.75.
+- **Compact master** (`MARK.compact`): 24 x 24 grid, stroke 3, `M1 7 H6.5 L9.25 18 L12 7 L14.75 18 L17.5 7 H23`. A narrower W so the banks stay long when the whole mark is a 16 px favicon. Used under 24 px and in every app icon.
+- **Optical corrections.** Joins use `miterlimit 2`: the four shoulders (107 degrees, ratio 1.24) keep their sharp miters, while the three acute points (ratio above 3) are cut flat. The cut stops the points from reading heavier and longer than the level line, and it makes the centre point a small flat crest that sits on the level. The points reach 0.4 units below y = 18.5 after the cut; that overshoot is intended, as in a typeface's W.
+- **Wordmark.** Set, not drawn: Archivo at width 125, weight 800, tracking -0.02 em. The lockup uses the mark cropped to its strokes (`viewBox 0 4.75 32 14.25`) at exactly cap height (0.715 em), aligned to the baseline, so the level line is the cap line of "Weir". Gap between mark and word: 0.28 em.
+- **Colour.** One colour only, always `currentColor`: ink on paper, paper on ink. No gradient, no second colour, never orange or teal (those mean LONG and SHORT).
 
-### `/auction`
-1. Head: series, round, phase, countdown, commits, total locked.
-2. **Sealed book** (commit phase): one row per commit: seq, owner, lock, state. Columns for side, size, price show a lock glyph until reveal. Rows fill in as reveals land (state Revealed/Void).
-3. **Order form** (wallet): side, size, price as LONG price with the forward price shown live; salt generated and offered as a download before commit; guard field. Commit hash shown and checked against `commit_hash`.
-4. After clearing: **step chart**, then **fills table** (seq, owner, side, size, limit, filled, paid, refunded), partial fills marked "part", void orders and forfeits listed under it with amounts.
-Empty: "No round in progress. Round 0 of series 47 opens Mon 17 Nov, 00:00 UTC." Phone: table columns collapse to owner, side, filled, paid; tap a row for the rest.
+### 3.3 Usage rules
 
-### `/simulate`
-Banner "Simulation. Nothing here touches the chain." Controls: Play/Pause, speed 1x / 60x / 3600x, "Skip to clearing", "Run 10 rounds", seed, Reset. Left: agents (name, role, one-line rule, balance). Centre: `/auction`'s sealed book and step chart, fed by the engine. Right: event log. After settlement, a per-agent result table. Phone: roster and log become tabs under the chart.
+- **Clear space:** the height of the W (12.5 units, about half the mark's height) on every side of the lockup.
+- **Minimum size:** wide mark 24 px wide; compact mark 16 px; lockup 72 px wide.
+- **Do:** use the lockup in the header and footer; use the compact mark on a tile for icons; let a long level line run into the mark's banks as a rule (the footer does).
+- **Do not:** recolour it in a side colour, outline it, add a shadow, round its joins, stretch it, set the wordmark in another face or width, or put the mark inside a circle.
 
-### `/backtest`
-Rule box first: data source and range, how each week's `p` is set, band rule, what is not modelled. Then the backtest chart, the coverage strip ("Average stayed inside the band in 41 of 52 weeks"), a table per week, caveats. Error: "Backtest file missing", never an empty chart.
+### 3.4 Files
 
-### `/how`
-Five sections, each a heading, a paragraph and a drawing: the series clock; commit and reveal (the `weir:v1|...` string); clearing, as a three-order worked step chart; settlement with numbers; funding from another chain. Then limits in full and trust (SPEC 15).
+`components/logo.tsx` (`Mark`, `Lockup`), `lib/logo.ts` (geometry), `brand/*.svg` (concepts, masters, construction). `tools/og-image.ts` renders from the same geometry: `public/icon.svg` (compact mark on a 7-unit-radius ink tile, swapping to a paper tile for dark tab bars), `public/icon-32.png`, `public/apple-icon.png` (180), `public/icon-512.png` (full-bleed squares; launchers round them), and `public/opengraph-image.png` (1200 x 630: lockup, promise, and the hero film's last frame with its price line running off the edge).
 
-### `/proof`
-Contracts table (account, NearBlocks link, code hash, keys remaining read live); parameters from `get_params`; transactions grouped by method (report, commit, reveal, clear, settle, redeem) with failed ones kept; **bundle verifier**: for each print, fetch the bundle, SHA-256 it with SubtleCrypto, compare to each report's hash, recompute the median, compare to the print; each check a row with "file 9f2c…a1 / chain 9f2c…a1 / matches". **Solvency**: `get_totals` five terms against the USDC balance, live.
+## 4. Colour and type
 
-### `/agents`
-"Who can do what" with Can / Cannot columns for a full-access key and a function-call key. Steps to add the key (commands from `agents/`), the commit-hash string, a copyable minimal agent loop. Then "Agents on the book": the last 20 commits from function-call-only accounts.
-
-## 5. Charts
-
-**Auction step chart.** x: cumulative GPU-hours, 0 to max(D(0), S(band)). y: LONG price in USD per GPU-hour, 0 to `band`; right axis shows the same ticks as forward price `floor + p`. Demand: LONG orders, highest price first, a falling staircase in `--long`. Supply: SHORT orders, lowest first, a rising staircase in `--short`. Clearing: a 2 px ink horizontal at `p*` across the full width labelled "Clears at $0.62 · forward $2.31", and a dashed vertical at `V*` labelled with the volume. Filled steps drawn 3 px, unfilled 1 px at 50% opacity; the part-filled step split at `V*` with a tick. The rectangle 0..V* x 0..p* tinted `--long-soft`, `p*..band` above it to V* tinted `--short-soft`: what each side paid. Hover/tap a step: owner, seq, size, limit, filled. Must make obvious: one price, where the curves cross, who was in and who was out.
-
-**Index chart.** x: UTC time, 7-day default, 24 h / 7 d / 30 d toggles. y: USD per GPU-hour, padded 10% beyond data and band. Each source a 1 px `--ink-3` line, labelled at its right end by name. The index as a 2 px ink step-after line over final prints; a missing print is a gap, never interpolated. Current series: band as a `--panel` rectangle across its delivery window, the running average as a dashed ink line with its value. Must make obvious: the index is the middle of the sources, and where it sits in the band.
-
-**Payoff diagram.** x: fixing, `floor - band/2` to `floor + 1.5 band`. y: your cost (buyer) or revenue (seller) per GPU-hour. Unhedged: thin ink diagonal. Hedged: thick `--long` (or `--short`) line, flat at `floor + p` inside the band, sloped outside. Band shaded. A draggable vertical handle at the fixing (keyboard: arrows move one `tick`, shift x10); readout: unhedged, LONG payout, hedged, difference. Must make obvious: inside the band your price is fixed; outside it the hedge stops.
-
-**Backtest chart.** x: delivery weeks. y: USD per GPU-hour. Each week a band rectangle; unhedged weekly average as ink dots joined thinly; hedged effective price as `--long` short horizontal ticks. Weeks where the average left the band carry a `--flag` mark under the axis. Must make obvious: how often and by how much hedging changed the bill, and the weeks it did not cover.
-
-## 6. Visual identity
-
-**Choice.** Weir looks like a printed clearing sheet: warm paper, ink, ruled tables, and two colours that mean the two sides. A market people trust is one whose results read like a ledger, so the step chart and the fills table are the heroes and decoration is absent. It differs from Levee's white metro map and from the winners' dark terminals and particle fields.
-
-**Type.** **Archivo** (OFL, variable width 62 to 125 and weight): expanded 112 at 700 to 800 for headings and display figures, normal width 400 for text, condensed 85 for dense tables. One family, three voices. **IBM Plex Mono** (OFL) for hashes, accounts and the commit string. Confirm `tnum` on Archivo at build; fall back to Public Sans if missing. Sizes: 13, 15, 17, 21, 32, clamp(40px, 5vw, 72px). No italic.
-
-**Colour tokens** (contrast against paper / panel):
+**What changed from v1, and why.** The palette and the two typefaces stay: the warm paper and two side colours are already unlike every competitor, and changing them would only cost recognition. What changes is hierarchy and surface. The hero headline is larger (up to 72 px) and tighter (-0.03 em) so the promise lands first; a slightly lighter `--sheet` surface sets off the things you are meant to look at (the film, the how drawings, code) from the paper they sit on; and the eyebrows carry a 20 px ink rule, the mark's level line, as the one recurring brand device.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
 | `--paper` | `#F7F5EF` | `#13120E` | Ground |
-| `--panel` | `#EDEAE1` | `#1D1B16` | Bands, cards |
+| `--sheet` | `#FBFAF6` | `#191813` | Figures to look at: hero film, /how drawings, code |
+| `--panel` | `#EDEAE1` | `#1D1B16` | Bands, footer, hover rows |
 | `--rule` | `#D6D0C2` | `#37332A` | Lines only |
-| `--ink` | `#17150F` 16.7 / 15.2 | `#EEEAE0` 15.6 / 14.3 | Text, clearing line, index |
-| `--ink-2` | `#5A5446` 6.9 / 6.3 | `#ABA494` 7.6 / 6.9 | Secondary text |
+| `--ink` | `#17150F` 16.7:1 | `#EEEAE0` 15.6:1 | Text, the clearing line, the index |
+| `--ink-2` | `#5A5446` 6.9:1 | `#ABA494` 7.6:1 | Secondary text |
 | `--ink-3` | `#7A7466` | `#857F70` | Source lines, gridlines; never text under 21 px |
-| `--long` | `#B23F0C` 5.3 / 4.8 | `#F2894A` 7.5 / 6.9 | LONG, buyers, demand |
-| `--short` | `#0A6670` 6.1 / 5.5 | `#52BEC4` 8.5 / 7.8 | SHORT, sellers, supply |
-| `--flag` | `#875A00` 5.5 / 5.0 | `#E2B04C` 9.4 / 8.6 | Stale, unverified, outside band |
-| `--bad` | `#A3202E` 6.9 / 6.2 | `#F27D86` 7.2 / 6.6 | Errors, failed checks |
+| `--long` | `#B23F0C` 5.3:1 | `#F2894A` 7.5:1 | LONG, buyers, demand. Also the "now" rule and the clock's beat |
+| `--short` | `#0A6670` 6.1:1 | `#52BEC4` 8.5:1 | SHORT, sellers, supply; a passed check |
+| `--flag` | `#875A00` 5.5:1 | `#E2B04C` 9.4:1 | Stale, unverified, part-filled, model ribbon |
+| `--bad` | `#A3202E` 6.9:1 | `#F27D86` 7.2:1 | Errors, failed checks |
 
-White on `--long` 5.8, on `--short` 6.7. Soft tints (`--long-soft`, `--short-soft`) at 18% of the side colour over paper. Orange and teal stay apart under deuteranopia; every series is also labelled directly. No red/green, no purple, no gradients.
+Soft tints (`--long-soft`, `--short-soft`) are 18% of the side colour over paper. No red/green pair, no purple, no gradients.
 
-**Space.** 4, 8, 12, 16, 24, 32, 48, 64, 96 px. Gutter 16 px at 375, 4vw, 56 max. Radius 4 px; tables have no boxes, only rules.
+**Type.** Archivo (OFL, width 62 to 125, weight 100 to 900): 125/800 for the wordmark, 112/750 to 800 for headings and display figures, 100/400 for text, 85 for dense tables. IBM Plex Mono (OFL) for hashes, accounts, the commit string and code. Both self-hosted in `app/fonts` with their licences. Sizes: 13, 15, 17, 21, 32, display clamp(40, 5vw, 72), hero clamp(42, 5.4vw, 72). Tabular figures everywhere. No italic.
 
-**Numbers.** Tabular figures everywhere. A unit on every figure: "$2.31 /GPU-h", "1,344 GPU-h", "$41,200 locked". Dollars to cents; prices to the `tick`. Times in UTC with the zone written. Missing is "no data", never 0.
+**Space.** 4, 8, 12, 16, 24, 32, 48, 64, 96 px. Gutter 16 px at 375, 4vw, 56 max. Radius 4 px; 2 px on tickets and cards that stand for orders.
 
-**Icons.** A small set drawn in SVG at 1.5 px: lock (sealed), eye (revealed), check, cross, clock, external link. No icon cards.
+**Numbers.** A unit on every figure: "$2.31 /GPU-h", "1,344 GPU-h", "$41,200 locked". Dollars to the `tick`. Times in UTC with the zone written. Missing is "no data", never 0; a real zero amount reads "none"; a chart origin reads "0".
 
-**Motion.** What moves: the countdown, reveals filling rows, the simulation at the speed chosen, the step chart drawing its curves once on clearing (400 ms). Never: scroll effects, count-ups, looping backgrounds, hover lifts. `prefers-reduced-motion` turns all of it into instant state changes.
+## 5. Site map
 
-## 7. Copy rules
+| Path | Purpose |
+|---|---|
+| `/` | Hero (promise, live index, the clearing film), series and phase clock, index chart, the index and its sources, last clearing, payoff and hedge sizer, three facts, limits |
+| `/auction` | The round in progress: sealed book, phase clock, curves as reveals land, the last cleared round, recent rounds. `?series=&round=` for any past round |
+| `/simulate` | A market of scripted agents cleared by the real engine in a Web Worker |
+| `/backtest` | Hedged against unhedged cost over real H100 history, and band coverage |
+| `/how` | Five explanatory sequences (series clock, commit and reveal, clearing, settlement, funding), then limits and trust |
+| `/proof` | Contracts, parameters, transactions, bundle hashes re-verified in the browser, live solvency |
+| `/agents` | A key that can bid and cannot withdraw; the commands, the commit string, a minimal loop; agents on the book |
 
-Voice: a clerk reading the results: the figure, then its source. Headings are names without a full stop. No "X, not Y" turns, em dashes or emoji. Banned: revolutionary, seamless, unlock, empower, trustless, guaranteed, risk-free, insurance, yield, bet, AI-powered, next-gen. "Testnet" in the header and on `/proof`. A modelled or simulated figure says so in the same line; one not verifiable on chain carries "unverified" in `--flag`. Limits: one fact per line, naming the parameter that sets it.
+Header: lockup, the seven links, a "Testnet" tag with a teal dot (hidden under 420 px, where the hero eyebrow and the footer say it), the Weekly / Fast switch, the theme button. The model ribbon sits above it in model mode. Footer on `--panel`: a level rule that runs into the mark, the lockup and tagline, three link columns (Market, Read, For agents), and a colophon line (build time, SPEC version, no analytics, typefaces).
 
-Headline / sub pairs:
-1. "One price for next week's GPU-hour" / "Buyers and sellers of H100 time bid in sealed rounds. Everyone filled pays the same clearing price."
-2. "Round 14 reveals in 04:12" / "11 sealed commits, $41,200 locked. Sides and prices stay hidden until reveal."
-3. "What a hedge would have done" / "52 weeks of H100 prices, hedged and unhedged. Clearing prices are modelled; the rule is above the chart."
-4. "A key that bids and stops there" / "A function-call key can commit, reveal, clear and redeem. Withdrawing needs 1 yoctoNEAR, which that key cannot attach."
-5. "Check every print yourself" / "Each report carries the hash of the data behind it. This page fetches the data and hashes it in your browser."
+## 6. Page by page
 
-Microcopy: "Skip to clearing" · "No round in progress. Round 0 of series 47 opens Mon 17 Nov, 00:00 UTC." · "The NEAR RPC did not answer. Figures are from 14:02 UTC. Read again" · "Hash does not match: file 9f2c…a1, chain 41ab…07" · "Save your salt. Without it you cannot reveal, and 5% of the lock is forfeit." (Figures in these strings are examples; the real ones come from the views and `get_params`.)
+### `/`
+1. **Hero.** Left: eyebrow "Sealed auctions for H100 time · NEAR testnet", h1 "One price for next week's GPU-hour", one sentence, then under a 2 px ink rule the live index figure (last final print, its age, how many reports it is the median of, a link to the sources) and two actions: "The round in progress" and "How it works". Right, on a sheet: the clearing film (7.3). Under 1000 px the film goes under the copy. The h1 and the figure are server HTML, so the film never delays the largest paint.
+2. **Series and phase clock.** One strip per live series (auction rounds, cutoff, delivery, settlement, a "now" rule), then floor, band, open sets and the phase countdown with its beat.
+3. **Index chart**, 24 h / 7 d / 30 d (1 h / 6 h / 24 h on Fast), with the delivering series' band and running average.
+4. **The index and its sources.** The sources of the latest bundle (or the recorded sample, labelled) beside the reports behind the print.
+5. **Last clearing.** Compact step chart and three figures.
+6. **Payoff and hedge size**, **three facts**, **limits**.
 
-## 8. What to steal and what to avoid
+### `/how`
+Page head, then five sections. Each is a paragraph on the left and a sequence on the right (on a sheet, with Back, Play and Next and a "2/5" step count). Below the sequences: the dates of the series drawn, the commit fields and lock rule, the settlement table. Then limits and trust in full.
+
+### `/auction`, `/simulate`, `/backtest`, `/proof`, `/agents`
+As v1 (section 12), with the shared polish: page heads with the level-rule eyebrow, tables with a hover row, live figures that settle when they change, the sealed book's rows landing with an ink edge, the bundle verifier resolving check by check. `/agents` code blocks have an ink title bar (`Shell · near-cli-rs · testnet`, `agent.mjs · Node 22`), comment lines in `--ink-2` and a copy button that confirms with a check.
+
+### States
+Loading: grey bars, never `$0.00`. Error: left rule in `--bad`, "The NEAR RPC did not answer", the last good read time, "Read again". Stale: `--flag`. **Empty and not deployed** are designed states: a dashed outline, a small level-line glyph with a gap in it, the sentence, and for "not deployed" a line pointing to the simulation and the backtest, which run without a chain.
+
+### 404
+"No page at this address", the line "The level runs out here", a drawing of the mark's level line that drops off into a dashed lower level with "404" on it (it draws itself once), and every page of the site as a list of large links.
+
+## 7. Motion
+
+### 7.1 Principle
+Motion explains or confirms; it never decorates. Every motion below has a purpose that fits in a few words. Nothing loops, nothing moves on scroll, and nothing counts up on load. Under `prefers-reduced-motion: reduce` every CSS animation and transition is off, figures show their last frame with a caption, and the /how sequences can still be stepped by hand (each step is an instant change).
+
+### 7.2 Tokens
+In `app/globals.css` as custom properties and in `lib/motion.ts` for scripts; the two lists are the same.
+
+| Token | Value | For |
+|---|---|---|
+| `--dur-micro` | 120 ms | Hover, press, focus: the interface answering a hand |
+| `--dur-quick` | 200 ms | Toggles, tabs, a row changing state, nav underline |
+| `--dur-base` | 320 ms | Something arriving or being revealed |
+| `--dur-settle` | 560 ms | A value that changed under you |
+| `--dur-draw` | 900 ms | A line drawing itself |
+| `--ease-out` | cubic-bezier(0.22, 0.61, 0.36, 1) | Arrivals and reveals |
+| `--ease-in-out` | cubic-bezier(0.65, 0, 0.35, 1) | Lines and sweeps that travel |
+| linear | | Progress bars and clocks |
+
+### 7.3 The hero film
+`lib/film.ts` builds one example round of eight orders (four LONG, four SHORT, interleaved), hashes each with the engine's `commitHash` and clears it with `clearRound` (`engine/src/mod.ts`). The example is chosen so that every outcome appears: four filled, one filled in part (G, 5 of 25), three out. The film is a score (`Score` in `lib/motion.ts`): tracks keyed by `data-track` names, played with the Web Animations API by `components/motion-figure.tsx`. In 8.8 seconds:
+
+| Beat | At | What moves |
+|---|---|---|
+| Sealed bids arrive | 0 ms | Eight tickets drop in, 170 ms apart; each shows only a lock and the start of its hash |
+| Reveal | 1.7 s | Each hash cross-fades into side, size and LONG price |
+| Curves | 3.2 s | Demand draws down from the highest bid, supply up from the lowest ask |
+| Cross | 4.8 s | A ring pops where they meet |
+| Sweep | 5.3 s | One ink price line sweeps across; the price appears beside it |
+| Fill | 6.3 s | Filled steps thicken, the two paid areas tint, tickets read "filled 30", "part, 5 of 25" or "out" (out tickets dim) |
+| Hold | 7.5 s | "SHORT pays $0.50 / LONG pays $0.40" settle in; the caption says each pair is backed in full |
+
+Controls: Play / Pause / Replay (one button, labelled with its action) and a Replay-from-start button, both 44 px, keyboard-operable. A 2 px progress line runs under the stage. The caption under the controls narrates the current beat. The stage's space is fixed (chart height by breakpoint, tickets at fixed height) so nothing shifts. The server renders the last frame; elements that enter are hidden only while the score binds (with a 2.5 s CSS failsafe), and the h1 and index figure are plain HTML, so the film cannot hold back the largest paint. Under reduced motion it shows the last frame and the summary sentence, and no play controls. Text alternative: the stage is `role="img"` with the summary as its label.
+
+### 7.4 The /how sequences
+`lib/how-scores.ts`, five scores of four or five 1.5 s steps, each played or stepped by hand; Back and Next move whole steps (a step's parts all finish inside it; a unit test holds that). They autoplay once when a third of the figure is in view.
+1. **Series clock**: the auction window opens; one round fills, commit then reveal; the other rounds and the cutoff; delivery with its prints; the grace period and settlement. Labels carry the live `get_params` durations. Not to scale, and says so.
+2. **Commit and reveal**: the order; the preimage with its salt highlighted and its sha256; what the chain holds (hash, lock, three locked columns); the reveal; the check "same hash" and the order in the round.
+3. **Clearing**: the three order chips; demand draws; supply draws; the cross and the price; fills and paid areas, each step labelled "A filled 10", "B 5 of 10".
+4. **Settlement**: the band; seven example prints arrive; their running average draws and the fixing is marked (the fixing is computed as their average, and the table under it uses the same number); the LONG share of the band grows; the SHORT share completes the band.
+5. **Funding**: USDC on four chains; NEAR Intents (dashed, in `--flag`, while no transfer is on record); USDC on NEAR; `ft_transfer_call` into Weir.
+
+### 7.5 Everywhere else
+
+| Motion | Where | Purpose |
+|---|---|---|
+| Lines draw in once (900 ms) when a chart first enters view; clearing lines and labels fade in after | Every `ChartFrame` chart: index, step, payoff, backtest | Shows how the line is built; never on charts already on screen at load |
+| A revealed row lands: panel tint fades and a 3 px ink edge fades (560 ms, 1.6 s) | Sealed book on `/auction` and `/simulate` | Points at what just changed |
+| The clock beats: an orange dot shrinks and fades once a second | Every phase countdown | Says the clock is live |
+| Checks resolve one after another: "checking" then the result, 140 ms apart | Bundle verifier on `/proof` | The checks are real work done in this browser |
+| A live figure settles: rises 0.18 em and fades a `--flag-soft` tint (1.1 s), only when its value changes after a refresh | Hero index, last clearing figures, auction commits and total locked | A moved number is noticed; an unchanged one is left alone |
+| Nav underline grows from the left (200 ms); current page fully underlined | Header | Where you are, where you are going |
+| Buttons, switches, tabs, rows: colour in 120 ms; buttons press 1 px | Everywhere | The interface answers |
+| Theme: one 320 ms cross-fade via the View Transitions API, with every transition off during the swap; instant where unsupported or reduced | Theme button | No element fades through the wrong colour |
+| Mark compresses slightly on hover (560 ms) | Header lockup | A quiet sign that it is a link home |
+| The 404 level line draws and drops | 404 | The page's one joke, told once |
+
+## 8. Charts
+
+As v1. **Auction step chart:** x cumulative GPU-hours, y LONG price 0 to `band` with forward ticks on the right; demand a falling staircase in `--long`, supply a rising one in `--short`; the clearing a 2 px ink horizontal with "Clears at $0.62 · forward $2.31" and a dashed vertical at the volume; filled steps 3 px, unfilled 1 px at 50%; part fills ticked; the paid areas tinted. **Index chart:** reporters as thin `--ink-3` lines, the index a 2 px ink step line with gaps, the delivering series' band and running average. **Payoff diagram:** draggable fixing (arrows one tick, shift ten). **Backtest chart:** band per week, unhedged dots, hedged ticks, `--flag` marks for weeks outside the band.
+
+## 9. Copy rules
+
+Voice: a clerk reading the results: the figure, then its source. Headings are names without a full stop. No "X, not Y" turns, em dashes or emoji. Banned: revolutionary, seamless, unlock, empower, trustless, guaranteed, risk-free, insurance, yield, bet, AI-powered, next-gen. "Testnet" in the header and on `/proof`. A modelled or simulated figure says so in the same line; a figure not verifiable on chain carries "unverified" in `--flag`. Animated captions follow the same rules and carry the engine's figures.
+
+## 10. What to steal and what to avoid
 
 | Site | Steal | Avoid |
 |---|---|---|
-| PIRY | The browser-verified checklist ("file 0xa895… vs chain 0xa895…", "passed") for our bundle verifier. Its source table with status and "needs 3" quorum | Dark serif hero with italic accent; settlement prose nested three parentheses deep |
-| Agate | "See where the price comes from" source bars with the middle value marked. The AI budget card (per-trade cap, trades per day) as the model for `/agents` | Tiles showing "$0.00" while prices load; in my browser the app sat on a loading grid |
-| Rackrate | "Know the outcome before the week starts" slider with Unhedged and Hedged figures. The oracle publisher scorecard ("Avg. from final", "Worst") | Purple-on-black hero with "Connect wallet" in the header; a hedge example ($466 bid) that does not reconcile |
-| Corpus | The versioned methodology ("2026.09.14-2", changelog, "Known limitations"). The "whats_live" Surface / Where / Status table | Particle-field hero and snake_case nav; "Permanently funded" contradicted by its FAQ |
-| Levee | Failures kept on the record ("Failed and aborted runs stay on this page"). "Who can do what" Can / Can't boards | Its metro lanes, Overpass and white ground (Weir needs its own face); a hero paragraph of four sentences |
+| PIRY | The browser-verified checklist for the bundle verifier; the source table with quorum | Dark serif hero with an italic accent |
+| Agate | Source bars with the middle value marked; the agent budget card | "$0.00" tiles while loading |
+| Rackrate | "Know the outcome before the week starts" slider | Purple-on-black hero, "Connect wallet" in the header |
+| Corpus | Versioned methodology, known limitations | Particle-field hero |
+| Levee | Failures kept on the record; Can / Can't boards | Its metro lanes and white ground |
 
-## 9. Build notes
+## 11. Build notes
 
-Next.js App Router, React, TypeScript, no component library, charts in hand-written SVG drawn on the server at 375 and 1200 px and redrawn at real width. CSS variables in `app/globals.css`; light and dark via `prefers-color-scheme` plus a toggle. Views read through one `lib/near.ts` (JSON-RPC `call_function`). `/simulate` imports the engine from `engine/src/mod.ts` (not in the repo yet; the page waits on it) and runs it in a Web Worker. SHA-256 via SubtleCrypto.
+Next.js App Router, React, TypeScript, no component library and no animation library: motion is CSS plus the Web Animations API. The motion code added for v2 (`motion-figure.tsx`, `clearing-film.tsx`, `how-figures.tsx`, `live-value.tsx`, `lib/motion.ts`, `lib/how-scores.ts`) is about 10 kB gzipped before minification. Charts are hand-written SVG drawn on the server at 375 and 1200 px and redrawn at real width. Views read through `lib/near.ts`. The film and the /how scores are built on the server and passed as plain data. No external requests beyond the RPC endpoints and the bundle host.
 
-Components:
-- `SiteHeader`, `SiteFooter`: nav, Testnet tag, limits link.
-- `IndexHead`, `SourcesTable`: last print and age; sources, reporters, median, exclusions.
-- `IndexChart`, `StepChart`, `PayoffChart`, `BacktestChart`: section 5.
-- `SeriesStrip`, `PhaseClock`: rounds, delivery, settlement; countdown from `get_status`.
-- `SealedBook`, `FillsTable`, `OrderForm`: commits that fill on reveal; fills, void, forfeits; order entry with salt download.
-- `HedgeSizer`: GPU-hours to units, lock, worst case.
-- `SimRunner`, `AgentRoster`, `EventLog`: engine in a worker and its panels.
-- `CoverageStrip`, `BacktestTable`: weeks inside and outside the band.
-- `BundleVerifier`, `SolvencyCheck`: hash and median re-check; `get_totals` against the token balance.
-- `KeyBoards`: Can / Cannot per key type.
-- `Figure`: number, unit, source; the only way a figure renders.
-- `State`: loading, empty, error, stale wrappers for every block.
+Components added in v2: `Lockup`, `Mark` (logo); `MotionFigure` (plays a score, controls, reduced-motion fallback); `ClearingFilm`, `ClearingChart` (hero and /how clearing); `SeriesClockFigure`, `CommitFigure`, `ClearingFigure`, `SettlementFigure`, `FundingFigure`; `LiveValue`; `HeroIndex`, `IndexSources` (the old `IndexHead` split in two).
 
-## 10. Changes made while building (v1)
+## 12. Changes made while building (v1), still in force
 
-Each departure from sections 1 to 9, and why. Where this list and the sections above differ, this list holds.
+- **No order form, no wallet.** `/auction` shows the sealed book, the phase clock, the curves as reveals land, the last cleared round and recent rounds, and a "Bid with an agent" panel linking to `/agents`.
+- **Two markets.** Weekly / Fast in the header, `?m=fast` in the URL; light / dark / system theme button.
+- **Series strip** shows auction rounds, the cutoff, delivery and settlement, with no trading inside delivery; home draws the series in delivery as well.
+- **Index chart lines are reporters, not sources**; sources are in the table under the hero.
+- **Fills table has no "refunded" column**: `get_result` does not carry locks.
+- **Exact zero dollar amounts read "none".**
+- **Phone fills table**: hidden columns appear as a second line under the owner.
+- **Bundle verifier without a bundle host** re-hashes the recorded sample in `evidence/bundles/`, labelled.
+- **Model mode** (`WEIR_MODEL=1`): every view from the engine running a fixed script; every page carries the ribbon "Model data, not the chain".
 
-- **No order form, no wallet.** The first version reads only. `/auction` shows the sealed book, the phase clock, the curves as reveals land, the last cleared round and recent rounds; where section 4 puts the order form there is a "Bid with an agent" panel linking to `/agents`. "Connect wallet" appears nowhere.
-- **Two markets.** The header carries a Weekly / Fast switch beside the Testnet tag, reflected in the URL as `?m=fast`, and a light / dark / system theme button. Weekly is the default.
-- **Series strip.** Under SPEC 0.2 auctions close `cutoff_secs` before delivery starts, so the strip shows auction rounds, the cutoff, then the delivery window and settlement, with no trading inside delivery. The home page also draws the series that is in delivery (not only the one in auction), because its band and running average are what the index chart is measured against.
-- **Index chart lines are reporters, not sources.** Source prices live only in bundles, one file per report; drawing 168 bundles per page view is not reasonable. Each reporter's own reports are the thin `--ink-3` lines, labelled at the right end, and the sources of the latest print are in the table beside the index head.
-- **Fills table has no "refunded" column.** `get_result` does not carry locks and the round's book is deleted at clearing, so the refund cannot be read from views. The page says so under the table.
-- **Exact zero dollar amounts read "none".** A real zero ("forfeited: none", "paid: none") must never look like a loading placeholder.
-- **Phone fills table.** Instead of tap-to-expand rows, the hidden columns (seq, size, limit) appear as a small second line under the owner.
-- **Bundle verifier without a bundle host.** Until `bundles_base` is set, the verifier checks the medians of recent prints and re-hashes the recorded sample in `evidence/bundles/` (its file name carries the start of its hash), labelled as a recorded sample with its bucket time.
-- **Model mode.** With `WEIR_MODEL=1` the server answers every view from the engine running a fixed script, and every page carries the ribbon "Model data, not the chain".
+## 13. Changes in v2
+
+- New logo system (section 3), favicons, app icons and Open Graph image from one geometry.
+- Home opens with a composed hero and the clearing film; the sources table moved from the opening into its own section.
+- A motion system (section 7) replaces v1's rule that almost nothing moves.
+- `/how` drawings became stepable sequences; the settlement fixing is now the computed average of the example prints.
+- Designed empty, not-deployed and 404 states; code blocks with title bars; footer rebuilt.

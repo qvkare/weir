@@ -15,19 +15,36 @@ export function Skeleton({ lines = 3, label = "Loading" }: { lines?: number; lab
   );
 }
 
+/** A flat level line with a gap: "nothing here yet", the mark of an empty state. */
+function Level({ dashed = false }: { dashed?: boolean }) {
+  return (
+    <svg className="state-glyph" viewBox="0 0 40 16" aria-hidden="true" focusable="false">
+      <path d="M1 5H11L14.5 13L18 5H22" fill="none" stroke="currentColor" strokeWidth="2" strokeMiterlimit="2" />
+      <path d="M26 5H39" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={dashed ? "3 3" : undefined} />
+    </svg>
+  );
+}
+
 export function NotDeployed({ market, what }: { market: MarketId; what?: string }) {
   return (
-    <div className="state none" role="note">
-      <p>
-        The {MARKET_INFO[market].label.toLowerCase()} market is not deployed yet{what ? `, so there is no ${what} to show` : ""}.
-      </p>
+    <div className="state none designed" role="note">
+      <Level dashed />
+      <div>
+        <p>
+          The {MARKET_INFO[market].label.toLowerCase()} market is not deployed yet{what ? `, so there is no ${what} to show` : ""}.
+        </p>
+        <p className="tiny muted">
+          The <a href="/simulate">simulation</a> and the <a href="/backtest">backtest</a> run without it.
+        </p>
+      </div>
     </div>
   );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="state none">
+    <div className="state none designed">
+      <Level />
       <p>{children}</p>
     </div>
   );

@@ -59,11 +59,15 @@ build scripts of `esbuild` and `workerd`; if `opennextjs-cloudflare` complains, 
 `pnpm approve-builds` at the root first. Model mode on a Worker needs `WEIR_MODEL=1` as a Worker
 variable.
 
-## Regenerate the link preview
+## Regenerate the icons and the link preview
 
 ```sh
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node tools/og-image.ts
 ```
+
+Writes `public/icon.svg`, `icon-32.png`, `apple-icon.png`, `icon-512.png` and
+`opengraph-image.png` from the mark's geometry (`lib/logo.ts`) and the hero film's clearing
+(`lib/film.ts`). Logo concepts, construction and usage rules: `DESIGN.md` section 3, files in `brand/`.
 
 ## Not built
 
