@@ -1,6 +1,6 @@
 # Weir specification
 
-Version 0.3. This file is the source of truth. The NEAR contract (`contracts/weir`) and
+Version 0.4. This file is the source of truth. The NEAR contract (`contracts/weir`) and
 the TypeScript engine (`engine/`) are written from it independently and must agree
 on every number. Where code and this file differ, the code is wrong.
 
@@ -57,12 +57,13 @@ method.
 | `tick` | u64 | Price increment |
 | `print_interval_secs` | u64 | Spacing of index prints |
 | `report_grace_secs` | u64 | How long after a bucket ends a report for it is still accepted |
-| `max_move_bps` | u32 | A print further than this from the last print needs every reporter |
+| `max_spread_bps` | u32 | How far apart the two middle reports may be when an even number of reporters decide a print |
 | `min_prints` | u32 | Prints a series needs for a normal settlement |
 | `void_after_secs` | u64 | After `delivery_end + void_after_secs` a series can settle without `min_prints` |
 | `max_anchor_age_secs` | u64 | Oldest print a series may be opened on |
 | `forfeit_bps` | u32 | Share of its lock a commit loses if it is not revealed |
 | `min_lock` | u128 | Smallest lock a commit may carry |
+| `commit_fee` | u128 | Dollars burned for every commit that reaches clearing. May be zero |
 | `max_commits` | u32 | Commits a round can hold |
 | `max_order_size` | u64 | Largest order, in GPU-hours |
 | `reporters` | account ids | Accounts allowed to report the index. 1 to 9, no duplicates |
@@ -70,7 +71,10 @@ method.
 
 `new` panics unless: every duration except `cutoff_secs` is above zero; `tick > 0`; `0 < band_bps < 10000`;
 `forfeit_bps <= 10000`; `max_commits` is 1 to 128; `max_order_size >= 1`;
-`cutoff_secs < lead_secs`; `min_prints >= 1`; `t0` and `period_secs` are multiples of
+`cutoff_secs < lead_secs`; `1 <= min_prints <= period_secs / print_interval_secs`;
+`void_after_secs >= report_grace_secs`; `0 < max_spread_bps <= 10000`;
+`max_order_size * max_commits * rounds_per_series < 2^52`, where `rounds_per_series =
+(lead_secs - cutoff_secs) / round_secs`; `t0` and `period_secs` are multiples of
 `print_interval_secs`, so a delivery window is a whole number of print buckets;
 reporters and quorum are as above.
 
@@ -115,8 +119,9 @@ series is in auction at any time.
 - `withdraw(amount)`, `amount >= 1`. Requires exactly 1 yoctoNEAR attached, so a function-call key
   cannot call it. Debits the caller's free balance and sends USDC with `ft_transfer`.
   If the transfer fails, the callback credits the amount back.
-- `set_guard(guard?)`. Requires exactly 1 yoctoNEAR. Sets or clears the caller's
-  guard (section 6.4).
+- `set_guard(guard?, max_round_lock?)`. Requires exactly 1 yoctoNEAR. Sets or clears
+  the caller's two limits (section 6.4): `guard`, a price distance in micro-USD, and
+  `max_round_lock`, the most the account's commits may lock in one round.
 
 Every account has a **free balance**. Locks, mints and auction costs are taken from
 it; refunds, merges and payouts go to it.
@@ -148,12 +153,17 @@ parameters and is kept as a guard. `floor` and `band` never change.
 - The caller is registered. `now` is in the commit phase of round
   `r = (now - auction_open(series)) / round_secs`, and round `r` exists.
 - `hash` is 64 lowercase hex characters. `lock >= min_lock`. The caller's free
-  balance covers `lock`, which moves from free balance into the commit.
+  balance covers `lock + commit_fee`; both move from the free balance into the commit.
+- If the caller has a `max_round_lock`, the locks of all its commits in this round,
+  this one included, may not exceed it. Otherwise the call panics with
+  `over the round lock limit`.
+- The commit records the caller's `guard` and the reference price
+  `ref = clamp(last_print.price - floor, 0, band)` as they are at this moment.
 - The commit gets `seq`, the round's next sequence number, starting at 0. Lower
   `seq` is earlier.
 - If the round already holds `max_commits` commits, the new commit must carry a
   larger lock than the smallest lock in the round. The smallest one (the latest
-  `seq` among equals) is removed and its lock returned to its owner in full. If the
+  `seq` among equals) is removed and its lock and fee returned to its owner in full. If the
   new lock is not larger, the call panics with `round is full`.
 - An account may hold several commits in one round.
 
@@ -190,15 +200,22 @@ pay per unit is `band - price`.
 
 ### 6.4 Guard
 
-An account may set a guard `g`, in micro-USD. At reveal, with
-`ref = clamp(last_print.price - floor, 0, band)`:
+An account may set a guard `g`, in micro-USD. It is applied at reveal, using the
+guard and the reference `ref` that the commit recorded when it was made
+(section 6.2), not the values at reveal time:
 
 - a LONG order with `price > ref + g` is void;
 - a SHORT order with `price + g < ref` is void.
 
 A void order takes no part in clearing. Its lock returns to the free balance at once
-and nothing is forfeited. An account that holds only a function-call key cannot
-change its guard. If there is no print yet, the guard is not applied.
+and nothing is forfeited; its fee stays with the round. Because the guard and the
+reference are fixed at commit, whether an order is void is settled the moment it is
+committed, so changing the guard afterwards cannot be used to back out of a bid.
+
+An account that holds only a function-call key cannot change its guard or its
+`max_round_lock`. Together they bound what a faulty or hijacked agent can do: it
+cannot bid further than `g` from the reference, and it cannot put more than
+`max_round_lock` at risk of forfeit in a round.
 
 ## 7. Clearing
 
@@ -246,8 +263,13 @@ For each commit of the round:
   LONG position; a SHORT order costs `f * (band - p*)` and adds `f` to the owner's
   SHORT position. `lock - cost` returns to the free balance.
 - Void: nothing to do, the lock went back at reveal.
-- Not revealed: `forfeit = lock * forfeit_bps / 10000` (rounded down) goes to the
-  series' bonus pool. `lock - forfeit` returns to the free balance.
+- Not revealed: `forfeit = lock * forfeit_bps / 10000` (rounded down) is burned.
+  `lock - forfeit` returns to the free balance.
+
+The fee of every commit the round holds at clearing is burned too. **Burned** dollars
+stay in the contract and belong to nobody: there is no method that pays them out.
+They are burned rather than shared so that nobody can profit from another account's
+forfeit, and so that taking a slot in a round always costs something.
 
 `V*` is added to the series' `open_sets`. The contract stores a result for the round
 (section 12) and deletes the round's book.
@@ -259,7 +281,10 @@ the new sets are fully backed.
 
 - `mint(series, sets)`: during the auction window, `sets >= 1`. Costs `sets * band` from the free
   balance and adds `sets` to both the caller's LONG and SHORT. Adds `sets` to
-  `open_sets`. Opens the series if needed.
+  `open_sets`. Opens the series if needed. It panics with `too many sets` if
+  `open_sets` would exceed `2^53 - 1 - max_order_size * max_commits *
+  rounds_per_series`; the margin is what the series' auctions can still add, so
+  `clear` can never overflow and no unit count ever exceeds what JSON can carry.
 - `merge(series, sets)`: before settlement, `sets >= 1`. Burns `sets` LONG and `sets` SHORT of the
   caller and credits `sets * band`. Subtracts `sets` from `open_sets`.
 - `transfer_position(series, to, long, short)`: moves units to another registered
@@ -273,27 +298,32 @@ A holder leaves a position by buying the other side in an auction and merging.
 `report(bucket, price, bundle) -> bool`
 
 - The caller is a reporter. `bucket` is a multiple of `print_interval_secs`.
-- `bucket <= now < bucket + print_interval_secs + report_grace_secs`.
+- `bucket <= now < bucket + print_interval_secs + report_grace_secs`. This is the
+  bucket's **report window**.
 - `price > 0`. `bundle` is 64 lowercase hex characters: the `sha256` of the raw
   observations the reporter used.
-- If the bucket's print is already final, the call does nothing and returns `false`.
-  This is checked before the next rule.
+- If the bucket is already decided, the call does nothing and returns `false`. This
+  is checked before the next rule.
 - A reporter reports once per bucket; a second report panics.
 
-After a report is stored, with `n` reports for the bucket:
+A bucket is **decided** once, at the first of these moments:
+
+- every reporter has reported for it (inside `report`);
+- its report window has closed and someone calls `finalize_print(bucket)`, or a later
+  `report` or a `settle` reaches it (below).
+
+Deciding a bucket with `n` reports, sorted ascending:
 
 ```
-candidate = median of the reports   (even count: mean of the two middle values, rounded down)
-far = last print exists and |candidate - last.price| * 10000 > last.price * max_move_bps
+if n < quorum:                      no print
+if n is odd:   price = the middle report
+if n is even:  lo, hi = the two middle reports
+               if (hi - lo) * 10000 > lo * max_spread_bps:   no print
+               price = (lo + hi) / 2, rounded down
 ```
 
-`far` is measured against the contract's last print only when that print's bucket is
-lower than this bucket. If there is no last print, or it is for this bucket or a later
-one, `far` is false.
-
-The print becomes final when `n >= quorum` and `far` is false, or when
-`n = reporters.len()`. A print that is not final when its report window closes never
-becomes final; that bucket has no print.
+A bucket decided with a price has a **final print**. A bucket decided without one
+has no print, for good. Nothing compares a print with earlier prints.
 
 When a print becomes final:
 
@@ -302,7 +332,24 @@ When a print becomes final:
 - if `bucket >= t0`, with `s = (bucket - t0) / period_secs`, the accumulator of
   series `s` gains `sum += price` and `count += 1`.
 
-`report` returns `true` when this call made the print final.
+`report` returns `true` when this call gave the bucket a final print. Before it
+returns, `report` also decides up to four earlier buckets that have reports, are
+undecided and whose report window has closed, oldest first.
+
+`finalize_print(bucket) -> bool`. Anyone may call it once the bucket's report window
+has closed. The bucket must have at least one report and be undecided, otherwise the
+call panics. It decides the bucket and returns whether it got a final print.
+
+`prune_print(bucket)`. Anyone may call it for a decided bucket once
+`now >= bucket + 2 * period_secs`. It deletes the stored reports and price of that
+bucket. The last print and the accumulators are kept separately and are not
+affected.
+
+Why these rules: with every reporter present the print is the median, which fewer
+than half of them cannot move beyond what the others report. When a reporter is
+missing and an even number decide, they must agree with each other within
+`max_spread_bps`; a single reporter can then stop a print by disagreeing, and can
+move it by at most half that tolerance, but cannot steer it.
 
 ## 10. Settlement
 
@@ -313,7 +360,8 @@ When a print becomes final:
   of the delivery window has closed;
 - no round of the series with commits still waiting to be cleared.
 
-With the series' accumulator `(sum, count)`:
+It first decides every undecided bucket of the delivery window that has reports
+(their windows have all closed). Then, with the series' accumulator `(sum, count)`:
 
 - if `count >= min_prints`: `fixing = sum / count` (rounded down), `void = false`;
 - else if `now >= delivery_end + void_after_secs`: `fixing = sum / count` if
@@ -323,35 +371,31 @@ With the series' accumulator `(sum, count)`:
 ```
 long_payout  = min(max(fixing - floor, 0), band)
 short_payout = band - long_payout
-pool         = series.bonus_pool + carry_pool
-if open_sets > 0:
-    per_set     = pool / open_sets
-    bonus_long  = per_set / 2
-    bonus_short = per_set - bonus_long
-    carry_pool  = pool - per_set * open_sets
-else:
-    bonus_long = bonus_short = 0
-    carry_pool = pool
 ```
 
 `redeem(series, account_id?)`. Anyone may call it for any account after settlement.
-It credits `long * (long_payout + bonus_long) + short * (short_payout + bonus_short)`
-to that account's free balance and deletes the position. It panics with
-`nothing to redeem` if the account holds no position in the series.
+It credits `long * long_payout + short * short_payout` to that account's free balance
+and deletes the position. It panics with `nothing to redeem` if the account holds no
+position in the series.
 
 ## 11. Invariants
 
 These hold after every call and are checked by property tests.
 
-1. **Solvency.** The USDC the contract holds is at least: all free balances, plus all
-   commit locks, plus `open_sets * band` for every unsettled series, plus every bonus
-   pool and the carry pool, plus everything not yet redeemed on settled series.
+1. **Solvency.** The USDC the contract holds equals: all free balances, plus all
+   commit locks and fees held in rounds not yet cleared, plus `open_sets * band` for
+   every unsettled series, plus everything not yet redeemed on settled series, plus
+   everything burned.
 2. **Sets.** For every series, total LONG equals total SHORT equals `open_sets`
-   until it is settled.
+   until it is settled, and `open_sets` never exceeds `2^53 - 1`.
 3. **Clearing.** Total LONG fill equals total SHORT fill. No order is filled above its
    size. No LONG is filled at a price above its limit and no SHORT below its limit.
 4. **No better price.** No other tick price trades more volume than `p*`.
 5. **Bounded loss.** An account can never lose more than it locked or paid.
+6. **No gain from a forfeit.** No account's balance can rise because another
+   account's commit was not revealed.
+7. **Always clearable.** A round that is over can be cleared, and a series whose
+   rounds are cleared can be settled once its time comes, whatever anyone did.
 
 ## 12. Views
 
@@ -361,17 +405,18 @@ All views are free and take JSON.
 |---|---|
 | `get_params()` | The parameters of section 3 |
 | `get_status()` | `{ now, live: [{ series, delivery_start, delivery_end, auction_open, auction_close, round, phase, phase_ends_at }] }` for every series whose auction window contains `now`. `phase` is `Commit` or `Reveal`; `round` is null and `phase` is `Closed` when no round is in progress |
-| `get_series(series)` | `{ series, anchor, floor, band, opened_at, open_sets, bonus_pool, pending_rounds, settlement }` or null. `settlement` is null or `{ fixing, long_payout, short_payout, bonus_long, bonus_short, prints, void, settled_at }` |
-| `get_account(account_id)` | `{ balance, guard }` or null |
+| `get_series(series)` | `{ series, anchor, floor, band, opened_at, open_sets, pending_rounds, settlement }` or null. `settlement` is null or `{ fixing, long_payout, short_payout, prints, void, settled_at }` |
+| `get_account(account_id)` | `{ balance, guard, max_round_lock }` or null |
 | `get_position(series, account_id)` | `{ long, short }` |
-| `get_round(series, round)` | `{ next_seq, commits: [{ seq, owner, hash, lock, state, order }] }` or null once cleared. `state` is `Committed`, `Revealed` or `Void`; `order` is `{ side, size, price }` once revealed |
-| `get_result(series, round)` | `{ price, volume, long_size, short_size, orders, commits, forfeited, cleared_at, fills: [{ seq, owner, side, size, price, filled }] }` or null |
+| `get_round(series, round)` | `{ next_seq, commits: [{ seq, owner, hash, lock, fee, state, order }] }` or null once cleared. `state` is `Committed`, `Revealed` or `Void`; `order` is `{ side, size, price }` once revealed |
+| `get_result(series, round)` | `{ price, volume, long_size, short_size, orders, commits, forfeited, fees, cleared_at, fills: [{ seq, owner, side, size, price, filled }] }` or null |
 | `get_results(series, from_round, limit)` | `[[round, result], ...]` for the rounds in range that have a result |
-| `get_print(bucket)` | `{ bucket, price, final, reports: [{ reporter, price, bundle }] }` or null |
+| `get_print(bucket)` | `{ bucket, price, state, reports: [{ reporter, price, bundle }] }` or null. `state` is `Open`, `Final` or `NoPrint` |
+| `get_pending_prints()` | The undecided buckets that have reports, ascending |
 | `get_last_print()` | `{ bucket, price }` or null |
 | `get_prints(from_bucket, limit)` | Final prints from `from_bucket` upward, at most `limit` (up to 200) |
 | `get_accumulator(series)` | `{ sum, count }` |
-| `get_totals()` | `{ free, locked, sets_backing, pools, unredeemed }`, the five terms of invariant 1 |
+| `get_totals()` | `{ free, locked, sets_backing, unredeemed, burned }`, the five terms of invariant 1 |
 | `commit_hash(series, round, account_id, side, size, price, salt)` | The hash of section 6.2, so a client can check its own |
 
 Dollar amounts in JSON are decimal strings. Prices, sizes and times are numbers.
@@ -387,12 +432,14 @@ Details:
   are not void. `commits` counts every commit the round held when it was cleared.
   `price` is null when nothing traded.
 - `get_results`: the range is `from_round` to `from_round + limit - 1`.
-- `get_print`: `price` is null until the print is final.
+- `get_print`: `price` is null unless `state` is `Final`. A pruned bucket returns null.
+- `get_result`: `fills` lists only the orders that were filled, in `seq` order.
+  `forfeited` and `fees` are what the round burned.
 - `get_results`: a `limit` above 100 is treated as 100.
 - `get_accumulator`: `sum` is a decimal string, `count` a number.
 
 Return values of the state-changing methods: `commit` returns the commit's `seq`
-(a number), `report` returns a boolean, and `ft_on_transfer` returns the amount to send
+(a number), `report` and `finalize_print` return a boolean, and `ft_on_transfer` returns the amount to send
 back, as the token standard requires. Every other method returns nothing.
 
 ## 13. Events
@@ -406,37 +453,66 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
 | `withdraw` | `account_id`, `amount` |
 | `withdraw_failed` | `account_id`, `amount` |
 | `series_opened` | `series`, `anchor`, `floor`, `band` |
-| `commit` | `series`, `round`, `seq`, `account_id`, `hash`, `lock` |
-| `evict` | `series`, `round`, `seq`, `account_id`, `lock` |
+| `commit` | `series`, `round`, `seq`, `account_id`, `hash`, `lock`, `fee` |
+| `evict` | `series`, `round`, `seq`, `account_id`, `lock`, `fee` |
 | `reveal` | `series`, `round`, `seq`, `account_id`, `side`, `size`, `price`, `void` |
-| `clear` | `series`, `round`, `price`, `volume`, `forfeited` |
+| `clear` | `series`, `round`, `price`, `volume`, `forfeited`, `fees` |
 | `mint`, `merge` | `series`, `account_id`, `sets` |
 | `transfer_position` | `series`, `from`, `to`, `long`, `short` |
 | `report` | `bucket`, `reporter`, `price`, `bundle` |
 | `print` | `bucket`, `price`, `reports` (the number of reports behind it) |
+| `no_print` | `bucket`, `reports` |
+| `prune_print` | `bucket` |
+| `prune_result` | `series`, `round` |
 | `settle` | `series`, `fixing`, `long_payout`, `short_payout`, `void` |
 | `redeem` | `series`, `account_id`, `amount` |
-| `guard` | `account_id`, `guard` |
+| `guard` | `account_id`, `guard`, `max_round_lock` |
 
-## 14. Limits and gas
+## 14. Limits, gas and storage
 
 - A round holds at most `max_commits` commits, so `clear` does a bounded amount of
   work. The sandbox tests measure the gas of clearing a full round and the README
-  reports it.
-- `clear` must fit in one transaction (300 Tgas) at `max_commits`.
-- Results keep their fills. `prune_result(series, round)` deletes a result once its
-  series is settled; anyone may call it.
+  reports it. `clear` must fit in one transaction at `max_commits`.
+- The contract pays for its own storage from its NEAR balance: the registration fees
+  and whatever anyone sends it. Nothing it stores grows without bound: an account
+  record is paid for by its registration; a round's book is deleted when the round
+  is cleared; a result keeps only the orders that were filled and can be deleted with
+  `prune_result(series, round)` once its series is settled; a print can be deleted
+  with `prune_print` two periods after its bucket. Anyone may call the two prune
+  methods. If the balance ever runs short, calls that add storage fail until someone
+  sends the contract NEAR; no funds are at risk.
 
 ## 15. Trust
 
-- **Reporters.** The index is whatever `quorum` of the reporters say it is. A print
-  is the median of their reports, a large move needs all of them, and every report
-  carries the hash of the raw data behind it, which is published so anyone can
-  recompute it. Reporters cannot take funds; they can move the fixing.
+- **Reporters.** The index is what the reporters say it is. When all of them report,
+  a print is the median of their reports, so fewer than half cannot move it past
+  what the others say. When some are missing, at least `quorum` must report and, if
+  an even number decide, the two middle reports must agree within `max_spread_bps`,
+  or there is no print. A reporter can therefore stop a print when another is absent,
+  which pushes a series towards the void rule of section 10, but cannot steer one.
+  Every report carries the hash of the raw data behind it, which is published so
+  anyone can recompute it. Reporters cannot take funds. A majority of reporters
+  acting together can set the fixing.
 - **USDC.** The contract trusts the `usdc` token contract.
 - **No admin.** There is no owner, pause, fee switch or upgrade method. Once the
-  contract account's keys are deleted, the code cannot change.
+  contract account's keys are deleted, the code cannot change. `new` must be called
+  in the transaction that deploys the code.
 - **Agents.** An account that holds only a function-call key limited to `commit`,
-  `reveal`, `clear`, `mint`, `merge`, `settle` and `redeem` can trade with the dollars already
-  deposited for it. It cannot withdraw, cannot move positions and cannot change its
-  guard, because those need 1 yoctoNEAR.
+  `reveal`, `clear`, `mint`, `merge`, `settle` and `redeem` can trade with the
+  dollars already deposited for it. It cannot withdraw, cannot move positions and
+  cannot change its guard or its round lock limit, because those need 1 yoctoNEAR.
+  The worst such a key can do in a round is forfeit `forfeit_bps` of
+  `max_round_lock`, pay `commit_fee` per commit, and trade at prices within the
+  guard of the reference.
+- **Blocking a round.** A round has `max_commits` slots. Someone can fill them, and a
+  larger lock evicts a smaller one, so a determined bidder with capital can keep
+  others out of a round; each slot they take costs them `commit_fee`. This raises
+  the price of blocking; it does not make it impossible.
+
+## 16. Error messages
+
+When a call is refused, the contract panics with a fixed text. The texts are the
+`ERR_*` constants of `contracts/weir/src/lib.rs`, listed in `contracts/README.md`,
+and they are part of this specification: the engine refuses the same calls with the
+same texts, and the integration test compares them call by call. A client may match
+on them.
