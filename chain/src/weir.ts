@@ -46,29 +46,55 @@ const TGAS = 1_000_000_000_000n;
 export const REGISTRATION_FEE = 20_000_000_000_000_000_000_000n;
 export const ONE_YOCTO = 1n;
 
-/** Gas and attached deposit per state-changing method. The gas figures are generous upper
- * bounds (unused gas is refunded), not measurements; `clear` gets the full 300 Tgas that
- * section 14 says a full round must fit in. `deposit` is sent to the token, not to Weir. */
-export const CALLS: { readonly [M in PortChange]: { readonly gas: bigint; readonly deposit: bigint } } = {
-  register: { gas: 30n * TGAS, deposit: REGISTRATION_FEE },
-  deposit: { gas: 100n * TGAS, deposit: ONE_YOCTO },
-  withdraw: { gas: 100n * TGAS, deposit: ONE_YOCTO },
-  set_guard: { gas: 30n * TGAS, deposit: ONE_YOCTO },
-  commit: { gas: 50n * TGAS, deposit: 0n },
-  reveal: { gas: 50n * TGAS, deposit: 0n },
-  clear: { gas: 300n * TGAS, deposit: 0n },
-  mint: { gas: 50n * TGAS, deposit: 0n },
-  merge: { gas: 50n * TGAS, deposit: 0n },
-  transfer_position: { gas: 50n * TGAS, deposit: ONE_YOCTO },
-  report: { gas: 50n * TGAS, deposit: 0n },
-  settle: { gas: 100n * TGAS, deposit: 0n },
-  redeem: { gas: 50n * TGAS, deposit: 0n },
-  prune_result: { gas: 50n * TGAS, deposit: 0n },
+/** Gas per state-changing method, in Tgas: one table, easy to adjust. From the sandbox
+ * measurements in `integration/RESULTS.md`: every simple method burns under 3.7 Tgas, so 10
+ * leaves at least 2.7x; `clear` burns 25.5 Tgas at 64 commits and 51.25 at 128, so 150;
+ * `withdraw` needs 24 (it reserves gas for the transfer and its callback), so 50; the token
+ * deposit keeps 100 because the real USDC's needs are unmeasured. `settle` gets 100 because
+ * in 0.4 it may first decide a whole delivery window of undecided buckets (not yet measured). */
+export const GAS_TGAS: { readonly [M in PortChange]: number } = {
+  register: 10,
+  deposit: 100,
+  withdraw: 50,
+  set_guard: 10,
+  commit: 10,
+  reveal: 10,
+  clear: 150,
+  mint: 10,
+  merge: 10,
+  transfer_position: 10,
+  report: 10,
+  finalize_print: 10,
+  prune_print: 10,
+  settle: 100,
+  redeem: 10,
+  prune_result: 10,
 };
+
+/** Attached deposits: the registration fee, and 1 yoctoNEAR where the spec requires it (so a
+ * function-call key cannot make the call). */
+const DEPOSITS: { readonly [M in PortChange]?: bigint } = {
+  register: REGISTRATION_FEE,
+  deposit: ONE_YOCTO,
+  withdraw: ONE_YOCTO,
+  set_guard: ONE_YOCTO,
+  transfer_position: ONE_YOCTO,
+};
+
+/** Gas and attached deposit per state-changing method. `deposit` is sent to the token, not to Weir. */
+export const CALLS = Object.fromEntries(
+  Object.entries(GAS_TGAS).map(([m, tgas]) => [m, { gas: BigInt(tgas) * TGAS, deposit: DEPOSITS[m as PortChange] ?? 0n }]),
+) as { readonly [M in PortChange]: { readonly gas: bigint; readonly deposit: bigint } };
 
 /** What an agent's function-call key may call (SPEC section 15). Everything else either
  * needs 1 yoctoNEAR (withdraw, set_guard, transfer_position) or is not an agent's business. */
 export const AGENT_KEY_METHODS = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"] as const satisfies readonly PortChange[];
+
+/** The keeper's housekeeping key: an agent's methods plus deciding and pruning prints and pruning results. */
+export const KEEPER_KEY_METHODS = [...AGENT_KEY_METHODS, "finalize_print", "prune_print", "prune_result"] as const satisfies readonly PortChange[];
+
+/** A reporter's key. */
+export const REPORTER_KEY_METHODS = ["report", "finalize_print"] as const satisfies readonly PortChange[];
 
 const VIEWS: { readonly [M in ViewMethod]: true } = {
   get_params: true,
@@ -80,6 +106,7 @@ const VIEWS: { readonly [M in ViewMethod]: true } = {
   get_result: true,
   get_results: true,
   get_print: true,
+  get_pending_prints: true,
   get_last_print: true,
   get_prints: true,
   get_accumulator: true,
@@ -88,7 +115,7 @@ const VIEWS: { readonly [M in ViewMethod]: true } = {
 };
 
 export const VIEW_METHODS = Object.keys(VIEWS) as ViewMethod[];
-export const CHANGE_METHODS = Object.keys(CALLS) as PortChange[];
+export const CHANGE_METHODS = Object.keys(GAS_TGAS) as PortChange[];
 
 type AnyFn = (method: string, args: unknown) => Promise<unknown>;
 
@@ -238,12 +265,13 @@ export function paramsFromWire(p: WireParams): Params {
     tick: p.tick,
     printIntervalSecs: p.print_interval_secs,
     reportGraceSecs: p.report_grace_secs,
-    maxMoveBps: p.max_move_bps,
+    maxSpreadBps: p.max_spread_bps,
     minPrints: p.min_prints,
     voidAfterSecs: p.void_after_secs,
     maxAnchorAgeSecs: p.max_anchor_age_secs,
     forfeitBps: p.forfeit_bps,
     minLock: BigInt(p.min_lock),
+    commitFee: BigInt(p.commit_fee),
     maxCommits: p.max_commits,
     maxOrderSize: p.max_order_size,
     reporters: [...p.reporters],

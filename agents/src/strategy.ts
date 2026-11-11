@@ -28,7 +28,7 @@ export interface AgentView {
   /** Prints so far inside this series' delivery window. */
   accumulator: WireAccumulator;
   position: WirePosition;
-  /** Free balance in micro-USDC. */
+  /** Free balance in micro-USDC. Every order costs its lock plus `params.commit_fee`. */
   free: bigint;
   /** Recent results of this series, oldest first. */
   results: [number, WireResult][];
@@ -63,30 +63,43 @@ export function fairLong(v: AgentView): number | null {
 export const lockOf = (intent: Intent, band: number): bigint =>
   BigInt(intent.size) * BigInt(intent.side === "Long" ? intent.price : band - intent.price);
 
+/** An order must lock at least this many commit fees, so the fee is at most 2% of what it
+ * puts up. */
+export const FEE_MULTIPLE = 50n;
+
+/** The smallest lock worth committing: `min_lock`, or 50 commit fees if that is more. */
+export const minWorthwhileLock = (v: AgentView): bigint => {
+  const byFee = BigInt(v.params.commit_fee) * FEE_MULTIPLE;
+  const min = BigInt(v.params.min_lock);
+  return byFee > min ? byFee : min;
+};
+
 /** Makes intents valid: prices onto the tick (down for LONG, up for SHORT, so never worse
  * than asked) and strictly inside the band; sizes whole, at most `max_order_size`, and small
- * enough that the free balance covers the lock of every intent; anything whose lock is below
- * `min_lock` dropped. In order, so earlier intents get the balance first. */
+ * enough that the free balance covers every intent's lock plus its commit fee; any intent
+ * whose lock is below `minWorthwhileLock` (so the fee would be over 2% of it) dropped. In
+ * order, so earlier intents get the balance first. */
 export function fit(v: AgentView, intents: Intent[]): Intent[] {
   const { tick, max_order_size } = v.params;
-  const minLock = BigInt(v.params.min_lock);
+  const fee = BigInt(v.params.commit_fee);
+  const minLock = minWorthwhileLock(v);
   let free = v.free;
   const out: Intent[] = [];
   for (const it of intents) {
-    if (!Number.isFinite(it.price) || !Number.isFinite(it.size)) continue;
+    if (!Number.isFinite(it.price) || !Number.isFinite(it.size) || free <= fee) continue;
     const onTick = it.side === "Long" ? Math.floor(it.price / tick) * tick : Math.ceil(it.price / tick) * tick;
     const price = Math.min(Math.max(onTick, tick), v.band - tick);
     const unit = BigInt(it.side === "Long" ? price : v.band - price);
-    const size = Math.min(Math.floor(it.size), max_order_size, Number(free / unit));
+    const size = Math.min(Math.floor(it.size), max_order_size, Number((free - fee) / unit));
     if (size < 1 || BigInt(size) * unit < minLock) continue;
-    free -= BigInt(size) * unit;
+    free -= BigInt(size) * unit + fee;
     out.push({ side: it.side, size, price });
   }
   return out;
 }
 
-/** The smallest order at `unit` per GPU-hour whose lock reaches `min_lock`. */
+/** The smallest order at `unit` per GPU-hour whose lock is worth its fee (`minWorthwhileLock`). */
 export const minSize = (v: AgentView, unit: number): number =>
-  Math.max(1, Math.ceil(Number(BigInt(v.params.min_lock)) / Math.max(1, unit)));
+  Math.max(1, Math.ceil(Number(minWorthwhileLock(v)) / Math.max(1, unit)));
 
 export const pct = (bps: number): string => `${+(bps / 100).toFixed(2)}%`;

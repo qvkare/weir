@@ -9,9 +9,9 @@ const TGAS = 1_000_000_000_000n;
 export const STORAGE_DEPOSIT = 1_250_000_000_000_000_000_000n;
 
 export const TOKEN_CALLS = {
-  storage_deposit: { gas: 30n * TGAS, deposit: STORAGE_DEPOSIT },
+  storage_deposit: { gas: 10n * TGAS, deposit: STORAGE_DEPOSIT },
   ft_transfer_call: { gas: 100n * TGAS, deposit: 1n },
-  mint: { gas: 30n * TGAS, deposit: 0n },
+  mint: { gas: 10n * TGAS, deposit: 0n },
 } as const;
 
 export interface StorageBalance {

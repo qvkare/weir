@@ -1,5 +1,6 @@
-// The two market presets, as the contract's `new(params)` JSON (SPEC section 3). Deployment
-// uses the same numbers and replaces only `usdc`, `reporters` and `t0`.
+// The two market presets and the markets built on them, one per chip, as the contract's
+// `new(params)` JSON (SPEC section 3). Deployment uses the same numbers and replaces only
+// `usdc`, `reporters` and `t0`.
 import type { WireParams } from "@weir/engine";
 
 export type PresetName = "weekly" | "fast";
@@ -17,9 +18,13 @@ const common = {
   // weeks (68 of 69). See backtest/results/summary.md.
   band_bps: 1500,
   tick: 1000,
-  max_move_bps: 1500,
+  // With one of three reporters missing, the other two must agree within 2%.
+  max_spread_bps: 200,
   forfeit_bps: 100,
   min_lock: "1000000",
+  // Two cents burned per commit: taking a slot in a round always costs something, so filling
+  // rounds to keep others out is not free.
+  commit_fee: "20000",
   max_commits: 64,
   max_order_size: 10_000,
   reporters: ["reporter-a", "reporter-b", "reporter-c"],
@@ -63,3 +68,34 @@ export const PRESETS: Readonly<Record<PresetName, Readonly<WireParams>>> = {
     max_anchor_age_secs: 900,
   },
 };
+
+/** A market: one chip, one preset. `chip` is the id `index/src/chips.ts` uses. */
+export interface MarketDef {
+  id: string;
+  label: string;
+  chip: "h100" | "h200" | "a100-80";
+  underlying: string;
+  preset: PresetName;
+  params: Readonly<WireParams>;
+  /** The chip's index level on 2026-11-12, micro-USD per GPU-hour: where the simulation's random index starts. */
+  startPrice: number;
+}
+
+const market = (id: string, label: string, chip: MarketDef["chip"], underlying: string, preset: PresetName, startPrice: number): MarketDef => ({
+  id,
+  label,
+  chip,
+  underlying,
+  preset,
+  params: { ...PRESETS[preset], reporters: [...PRESETS[preset].reporters], underlying },
+  startPrice,
+});
+
+export const MARKETS = {
+  "h100-fast": market("h100-fast", "H100, hourly (demo)", "h100", "H100-USD-HR", "fast", 2_900_000),
+  "h100-weekly": market("h100-weekly", "H100, weekly", "h100", "H100-USD-HR", "weekly", 2_900_000),
+  "h200-weekly": market("h200-weekly", "H200, weekly", "h200", "H200-USD-HR", "weekly", 4_250_000),
+  "a100-80-weekly": market("a100-80-weekly", "A100 80 GB, weekly", "a100-80", "A100-80-USD-HR", "weekly", 1_550_000),
+} as const satisfies Record<string, MarketDef>;
+
+export type MarketId = keyof typeof MARKETS;

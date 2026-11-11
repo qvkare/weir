@@ -4,13 +4,13 @@
 // Same seed, same events, byte for byte. Browser-safe.
 import { auctionClose, auctionOpen, deliveryEnd, Market, roundCount, roundSecs, sha256Hex, wireEvent, type WeirEvent } from "@weir/engine";
 import { ModelWeir, paramsFromWire, type SyncWeir } from "@weir/chain";
-import { PRESETS, type PresetName } from "./presets.ts";
+import { MARKETS, type MarketDef, type MarketId, type PresetName } from "./presets.ts";
 import { mulberry32 } from "./random.ts";
 import type { Role, Strategy } from "./strategy.ts";
 import { buyer, maker, noise, seller } from "./strategies/mod.ts";
 import { MemoryStore, newestSeries, tickSync, timeParams, type LogEntry } from "./swarm.ts";
 
-export { PRESETS, SIM_T0, type PresetName } from "./presets.ts";
+export { MARKETS, PRESETS, SIM_T0, type MarketDef, type MarketId, type PresetName } from "./presets.ts";
 
 export interface SimConfig {
   seed: number;
@@ -18,7 +18,9 @@ export interface SimConfig {
   sellers: number;
   makers: number;
   noise: number;
-  market?: PresetName;
+  /** A market id of `MARKETS` (default `h100-weekly`). The preset names `weekly` and `fast`
+   * still work and mean the H100 market on that preset. */
+  market?: MarketId | PresetName;
   /** Index prices to replay, in micro-USD per GPU-hour, one per print; the last one repeats.
    * Without it the index is a seeded random walk with occasional jumps. */
   prices?: readonly number[];
@@ -42,6 +44,8 @@ export interface SimEvent {
 
 export interface Simulation {
   readonly market: Market;
+  /** The market definition simulated. */
+  readonly def: MarketDef;
   readonly agents: SimAgent[];
   /** Every event so far, setup included. */
   readonly log: readonly SimEvent[];
@@ -59,15 +63,21 @@ export interface Simulation {
 }
 
 const KEEPER = "keeper";
-/** Index start: $2.00 per H100-hour. */
-const START_PRICE = 2_000_000;
+
+/** The market a config names. */
+export function marketOf(id: SimConfig["market"] = "h100-weekly"): MarketDef {
+  const key = id === "weekly" || id === "fast" ? `h100-${id}` : id;
+  const def = (MARKETS as Record<string, MarketDef>)[key];
+  if (!def) throw new Error(`unknown market ${id}; one of ${Object.keys(MARKETS).join(", ")}`);
+  return def;
+}
 
 /** The random index, scaled to the preset so both see the same delivery period: normal
  * steps adding up to 6% volatility per period, and a jump of 8 to 15% about once every
  * four periods. `printsPerPeriod` is 168 for weekly, 12 for fast. */
-function randomWalk(seed: number, printsPerPeriod: number): (k: number) => number {
+function randomWalk(seed: number, start: number, printsPerPeriod: number): (k: number) => number {
   const rng = mulberry32(seed ^ 0x5eed1d3c);
-  const path = [START_PRICE];
+  const path = [start];
   const sigma = 0.06 / Math.sqrt(printsPerPeriod);
   const jumpChance = 0.25 / printsPerPeriod;
   const gauss = () => Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
@@ -75,7 +85,7 @@ function randomWalk(seed: number, printsPerPeriod: number): (k: number) => numbe
     while (path.length <= k) {
       const jump = rng() < jumpChance ? (rng() < 0.5 ? -1 : 1) * (0.08 + 0.07 * rng()) : 0;
       const next = path.at(-1)! * Math.exp(sigma * gauss() + jump);
-      path.push(Math.max(200_000, Math.round(next)));
+      path.push(Math.max(Math.round(start / 10), Math.round(next)));
     }
     return path[k]!;
   };
@@ -123,9 +133,9 @@ function describe(e: WeirEvent, band: (series: number) => { floor: number; band:
     case "withdraw_failed":
       return { agent, text: `${agent} ${e.event.replace("_", " ")} ${usd(e.data.amount)}` };
     case "series_opened":
-      return { text: `series ${e.data.series} opened on ${per(e.data.anchor)}: LONG pays the week's average above ${per(e.data.floor)}, up to ${usd(e.data.band, 3)}` };
+      return { text: `series ${e.data.series} opened on ${per(e.data.anchor)}: LONG pays the delivery window's average above ${per(e.data.floor)}, up to ${usd(e.data.band, 3)}` };
     case "commit":
-      return { agent, text: `${agent} sealed an order in round ${e.data.round}, locking ${usd(e.data.lock)}` };
+      return { agent, text: `${agent} sealed an order in round ${e.data.round}, locking ${usd(e.data.lock)} plus a ${usd(e.data.fee)} fee` };
     case "evict":
       return { agent, text: `${agent}'s commit ${e.data.seq} was evicted from a full round` };
     case "reveal":
@@ -133,7 +143,7 @@ function describe(e: WeirEvent, band: (series: number) => { floor: number; band:
     case "clear": {
       const b = band(e.data.series);
       const { price, volume, round, series } = e.data;
-      const forfeit = e.data.forfeited > 0n ? `, ${usd(e.data.forfeited)} forfeited` : "";
+      const forfeit = `; burned ${usd(e.data.fees)} in fees${e.data.forfeited > 0n ? ` and ${usd(e.data.forfeited)} in forfeits` : ""}`;
       if (price === null) return { text: `round ${round} of series ${series}: no trade${forfeit}` };
       return { text: `round ${round} of series ${series} cleared at ${usd(price, 3)} (forward ${per(b!.floor + price)}), ${volume} GPU-hours${forfeit}` };
     }
@@ -146,18 +156,24 @@ function describe(e: WeirEvent, band: (series: number) => { floor: number; band:
       return { agent, text: `${agent} reported ${per(e.data.price)}` };
     case "print":
       return { text: `index print ${per(e.data.price)} (${e.data.reports} reports)` };
+    case "no_print":
+      return { text: `no print for bucket ${e.data.bucket} (${e.data.reports} reports did not agree or were too few)` };
+    case "prune_print":
+      return { text: `print ${e.data.bucket} pruned` };
+    case "prune_result":
+      return { text: `result of round ${e.data.round} of series ${e.data.series} pruned` };
     case "settle":
       return { text: `series ${e.data.series} settled at ${per(e.data.fixing)}: LONG pays ${usd(e.data.longPayout, 3)}, SHORT ${usd(e.data.shortPayout, 3)}${e.data.void ? " (void)" : ""}` };
     case "redeem":
       return { agent, text: `${agent} redeemed ${usd(e.data.amount)}` };
     case "guard":
-      return { agent, text: `${agent} set guard ${e.data.guard ?? "none"}` };
+      return { agent, text: `${agent} set guard ${e.data.guard ?? "none"}, round lock limit ${e.data.maxRoundLock === null ? "none" : usd(e.data.maxRoundLock)}` };
   }
 }
 
 export function createSimulation(config: SimConfig): Simulation {
-  const preset = config.market ?? "weekly";
-  const params = PRESETS[preset];
+  const def = marketOf(config.market);
+  const params = def.params;
   const tp = timeParams(params);
   const cadence = [params.commit_secs, params.reveal_secs, params.print_interval_secs, params.report_grace_secs].reduce(gcd);
   const start = auctionOpen(tp, 0) - params.print_interval_secs;
@@ -179,7 +195,7 @@ export function createSimulation(config: SimConfig): Simulation {
 
   const indexAt = config.prices
     ? (k: number) => config.prices![Math.min(k, config.prices!.length - 1)]!
-    : randomWalk(config.seed, params.period_secs / params.print_interval_secs);
+    : randomWalk(config.seed, def.startPrice, params.period_secs / params.print_interval_secs);
   // Reporters see the same index a little differently: -0.1%, exact, +0.1%.
   const reporters = params.reporters.map((name, i) => ({ port: keeper.as(name).sync, skew: 1 + (i - 1) * 0.001 }));
 
@@ -257,6 +273,7 @@ export function createSimulation(config: SimConfig): Simulation {
 
   return {
     market,
+    def,
     agents,
     log,
     now: () => market.now,
@@ -291,25 +308,28 @@ export interface AgentReport {
   paid: bigint;
   /** Received at redemption. */
   received: bigint;
-  /** Lost to forfeits. */
+  /** Commit fees burned. */
+  fees: bigint;
+  /** Lost to forfeits, burned. */
   forfeited: bigint;
-  /** Free balance now minus the deposit. */
+  /** Free balance now minus the deposit: received - paid - fees - forfeited once all is redeemed. */
   result: bigint;
 }
 
-/** Per agent: what it traded, paid and received, from the market's results and events. */
+/** Per agent: what it traded, paid, received and burned, from the market's results and events. */
 export function agentReports(sim: Simulation): AgentReport[] {
   const m = sim.market;
   const rows = new Map<string, AgentReport>(
-    sim.agents.map((a) => [a.id, { id: a.id, role: a.role, long: 0, short: 0, paid: 0n, received: 0n, forfeited: 0n, result: 0n }]),
+    sim.agents.map((a) => [a.id, { id: a.id, role: a.role, long: 0, short: 0, paid: 0n, received: 0n, fees: 0n, forfeited: 0n, result: 0n }]),
   );
   const forfeitBps = BigInt(m.params.forfeitBps);
-  const locks = new Map<string, { owner: string; lock: bigint }>();
+  // Commits waiting for their round to clear.
+  const open = new Map<string, { owner: string; lock: bigint; fee: bigint; revealed: boolean }>();
+  const key = (s: number, r: number, q: number) => `${s}/${r}/${q}`;
   for (const e of m.events) {
-    const key = (s: number, r: number, q: number) => `${s}/${r}/${q}`;
-    if (e.event === "commit") locks.set(key(e.data.series, e.data.round, e.data.seq), { owner: e.data.accountId, lock: e.data.lock });
-    if (e.event === "reveal") locks.delete(key(e.data.series, e.data.round, e.data.seq));
-    if (e.event === "evict") locks.delete(key(e.data.series, e.data.round, e.data.seq));
+    if (e.event === "commit") open.set(key(e.data.series, e.data.round, e.data.seq), { owner: e.data.accountId, lock: e.data.lock, fee: e.data.fee, revealed: false });
+    if (e.event === "reveal") open.get(key(e.data.series, e.data.round, e.data.seq))!.revealed = true;
+    if (e.event === "evict") open.delete(key(e.data.series, e.data.round, e.data.seq));
     if (e.event === "redeem") {
       const row = rows.get(e.data.accountId);
       if (row) row.received += e.data.amount;
@@ -325,11 +345,14 @@ export function agentReports(sim: Simulation): AgentReport[] {
         else row.short += f.filled;
         row.paid += BigInt(f.filled) * BigInt(f.side === "Long" ? result!.price : bandOf - result!.price);
       }
-      for (const [k, c] of locks) {
+      for (const [k, c] of open) {
         if (!k.startsWith(`${series}/${round}/`)) continue;
         const row = rows.get(c.owner);
-        if (row) row.forfeited += (c.lock * forfeitBps) / 10_000n;
-        locks.delete(k);
+        if (row) {
+          row.fees += c.fee;
+          if (!c.revealed) row.forfeited += (c.lock * forfeitBps) / 10_000n;
+        }
+        open.delete(k);
       }
     }
   }
@@ -338,4 +361,16 @@ export function agentReports(sim: Simulation): AgentReport[] {
     row.result = (m.getAccount(a.id)?.balance ?? 0n) - BigInt(a.deposit);
   }
   return [...rows.values()];
+}
+
+/** Dollars burned so far, in commit fees and in forfeits (SPEC 7.3). */
+export function burned(market: Market): { fees: bigint; forfeits: bigint } {
+  let fees = 0n;
+  let forfeits = 0n;
+  for (const e of market.events) {
+    if (e.event !== "clear") continue;
+    fees += e.data.fees;
+    forfeits += e.data.forfeited;
+  }
+  return { fees, forfeits };
 }

@@ -13,8 +13,8 @@ Workers. A test checks that no file but the CLI imports a Node built-in.
 | File | What it is |
 |---|---|
 | `src/tx.ts` | Base58, base64, `KeyPair` from a NEAR secret key `ed25519:<base58>` (64-byte or 32-byte form), the borsh encoding of a transaction of function-call actions, and `signTransaction` (ed25519 over `sha256(borsh(tx))`). `AnyTransaction` may also carry the account-setup actions (create account, deploy contract, transfer, add a full-access or function-call key), which the integration test uses to set up the sandbox; nothing in `src/` sends them. |
-| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL` (polling `tx` if the node times out). Fails over between URLs on network errors, per-call timeouts, HTTP 429/5xx and node `INTERNAL_ERROR`/`TIMEOUT_ERROR`; any other JSON-RPC error is an answer and is thrown at once. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and rereads the nonce once on `InvalidNonce`. |
-| `src/weir.ts` | `WeirPort`, typed by `@weir/engine`'s wire types (`ViewMethods`, `ChangeMethods`), never redefined here. `ChainWeir` (over `near.ts`) and `ModelWeir` (over an engine `Market` through `callView`/`callChange`, settable clock, plus a synchronous `sync` face). A failed chain call throws `CallFailed`, whose message is the contract's bare panic text, the same text `ModelWeir` throws. `paramsFromWire` turns `get_params` JSON into engine `Params`. `AGENT_KEY_METHODS` is what an agent's function-call key may call (SPEC section 15): `commit, reveal, clear, mint, merge, settle, redeem`. |
+| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL` (polling `tx` if the node times out). Fails over between URLs on network errors, per-call timeouts, HTTP 429/5xx and node `INTERNAL_ERROR`/`TIMEOUT_ERROR`; any other JSON-RPC error is an answer and is thrown at once. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and on `InvalidNonce` retries up to three times (`NONCE_RETRIES`) with a fresh nonce, starting above the `ak_nonce` the refusal names. |
+| `src/weir.ts` | `WeirPort`, typed by `@weir/engine`'s wire types (`ViewMethods`, `ChangeMethods`), never redefined here. `ChainWeir` (over `near.ts`) and `ModelWeir` (over an engine `Market` through `callView`/`callChange`, settable clock, plus a synchronous `sync` face). A failed chain call throws `CallFailed`, whose message is the contract's bare panic text, the same text `ModelWeir` throws. `paramsFromWire` turns `get_params` JSON into engine `Params`. Function-call key method lists: `AGENT_KEY_METHODS` (SPEC section 15: `commit, reveal, clear, mint, merge, settle, redeem`), `KEEPER_KEY_METHODS` (those plus `finalize_print`, `prune_print`, `prune_result`) and `REPORTER_KEY_METHODS` (`report`, `finalize_print`). The port covers spec 0.4: `set_guard(guard?, max_round_lock?)`, `finalize_print`, `prune_print`, `get_pending_prints`, and the 0.4 shapes (totals with `burned`, print `state`, commit `fee`, result `fees`). |
 | `src/token.ts` | `Token`: `storage_deposit`, `ft_balance_of`, `storage_balance_of`, `ft_transfer_call` into Weir (the optional beneficiary goes in `msg`, SPEC section 5) and the test token's open `mint(account_id, amount)`. |
 | `src/intents.ts` | NEAR Intents 1Click client, quotes only: `POST /v0/quote` with `dry: true` (it refuses anything else) and `GET /v0/tokens`. USDC asset ids for Base, Arbitrum, Ethereum, Solana and NEAR. |
 | `src/cli.ts` | Node only. `quote --from arbitrum\|ethereum\|solana\|base --amount 20 --to <near account>`. |
@@ -31,30 +31,34 @@ It returns the amount Weir kept, as `ft_transfer_call` does (`"0"` when the acco
 is not registered).
 
 `ModelWeir` passes every argument and result through JSON, so it hands back exactly what a
-chain client parses. One test runs the same 45-step scenario (reports, registration,
+chain client parses. One test runs the same 50-step scenario (reports, an early `finalize_print`, registration,
 deposits including one to an unregistered account, commits, reveals, clearing, mint,
-merge, transfer, guard, withdrawals, void settlement, redemption, prune, seven expected
-panics) through `ModelWeir` and through `ChainWeir` over a fake RPC that executes the
+merge, transfer, guard, withdrawals, void settlement, redemption, pruning a result and a print, eight expected
+refusals, each checked against the engine's `ERR` text, which is the contract's) through `ModelWeir` and through `ChainWeir` over a fake RPC that executes the
 signed transactions on a second `Market`, and requires identical transcripts.
 
 ### Gas and deposits
 
 | Method | Gas | Attached |
 |---|---|---|
-| `register` | 30 Tgas | 0.02 NEAR (`REGISTRATION_FEE`; the contract refunds any excess) |
+| `register` | 10 Tgas | 0.02 NEAR (`REGISTRATION_FEE`; the contract refunds any excess) |
 | `deposit` (`ft_transfer_call` on the token) | 100 Tgas | 1 yoctoNEAR |
-| `withdraw` | 100 Tgas | 1 yoctoNEAR |
-| `set_guard` | 30 Tgas | 1 yoctoNEAR |
-| `transfer_position` | 50 Tgas | 1 yoctoNEAR |
-| `commit`, `reveal`, `mint`, `merge`, `report`, `redeem`, `prune_result` | 50 Tgas | none |
+| `withdraw` | 50 Tgas | 1 yoctoNEAR |
+| `set_guard` | 10 Tgas | 1 yoctoNEAR |
+| `transfer_position` | 10 Tgas | 1 yoctoNEAR |
+| `commit`, `reveal`, `mint`, `merge`, `report`, `finalize_print`, `prune_print`, `redeem`, `prune_result` | 10 Tgas | none |
 | `settle` | 100 Tgas | none |
-| `clear` | 300 Tgas | none |
-| token `storage_deposit` | 30 Tgas | 0.00125 NEAR, `registration_only: true` |
-| token `mint` | 30 Tgas | none |
+| `clear` | 150 Tgas | none |
+| token `storage_deposit` | 10 Tgas | 0.00125 NEAR, `registration_only: true` |
+| token `mint` | 10 Tgas | none |
 
-The gas figures are generous guesses, not measurements: unused gas is refunded, and `clear`
-gets the 300 Tgas a full round must fit in (SPEC section 14). They should be replaced by the
-contract's sandbox measurements.
+The gas is one table, `GAS_TGAS` in `src/weir.ts`, from the sandbox measurements in
+`integration/RESULTS.md`: every simple method burns at most 3.7 Tgas (10 leaves 2.7x);
+`clear` burns 25.5 Tgas at 64 commits and 51.25 at 128 (150 leaves 2.9x at the maximum);
+`withdraw` needs 24 (50); the deposit stays at 100 because the real USDC's needs are
+unmeasured. `settle` keeps 100 because in 0.4 it may first decide every undecided bucket of a
+delivery window; its real figure is still to be measured. Unused gas is refunded, and a key's
+allowance is charged about the gas burnt.
 
 ## Dependencies
 
@@ -82,7 +86,7 @@ WEIR_LIVE=1 pnpm --filter @weir/chain test   # adds one read-only call to NEAR t
   signed byte-identically to `@near-js`; out-of-range values refused.
 - `near.test.ts`: failover on network errors, 5xx, 429 and timeouts; handler errors not
   retried; view request shape and decoding; both panic shapes; outcome decoding; signing and
-  `send_tx` at `FINAL`; nonces under concurrency and after `InvalidNonce`; polling `tx` after
+  `send_tx` at `FINAL`; nonces under concurrency, after `InvalidNonce`, and three retries then the refusal; polling `tx` after
   a `send_tx` timeout.
 - `weir.test.ts`: every state change sends the spec's argument names (SPEC sections 5 to 14)
   with the gas and deposit above, every view sends the spec's argument names, the
@@ -123,16 +127,14 @@ moves nothing.
 
 ## Not proven
 
-`ChainWeir` has never touched a real Weir contract. Proven offline: the bytes of every
-transaction (against `@near-js`), the method names, argument names and JSON shapes against
-the spec, the gas and deposits we attach, and identical behaviour to the model when a fake
-RPC executes our transactions on the engine. Not proven: that the Rust contract accepts
-these JSON shapes (for example `Option` fields left out, u128 as strings, `side` as
-`"Long"`), that its panic messages are exactly the spec's, that the gas figures suffice, the
-`ft_transfer_call` round trip through a real token, function-call-key permissions, and the
-RPC behaviour under real `send_tx` timeouts and nonce races. The only live call made is the
-read-only `ft_metadata` above.
-
-Since 2026-11-12, `integration/` runs `ChainWeir` and `Token` against the real wasm on a local
-near-sandbox node, with the model alongside; what that proved, and what it cannot, is in
-`integration/RESULTS.md`.
+Offline, the tests prove the bytes of every transaction (against `@near-js`), the method
+names, argument names and JSON shapes against the spec, the gas and deposits we attach, and
+identical behaviour to the model when a fake RPC executes our transactions on the engine.
+`integration/` has since run `ChainWeir` and `Token` against the real contract wasm on a local
+near-sandbox node, with the model alongside, and found no client bug; what that proved, the
+measured gas and what it cannot prove are in `integration/RESULTS.md`. Still unproven here:
+the 0.4 additions against the real contract (`finalize_print`, `prune_print`,
+`get_pending_prints`, `max_round_lock`, the fee shapes) unless that run covered them; `settle`'s
+gas when it decides a whole window of buckets; the official testnet USDC's
+`ft_transfer_call`; RPC behaviour under real `send_tx` timeouts and nonce races on a public
+network. The only live call this package's tests make is the read-only `ft_metadata` above.

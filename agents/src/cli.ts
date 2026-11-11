@@ -1,8 +1,9 @@
-// Node CLI: `sim --preset fast --seed 7 --rounds 20 [--buyers 20 --sellers 5 --makers 2 --noise 3]`.
+// Node CLI: `sim --market h100-fast --seed 7 --rounds 20 [--buyers 20 --sellers 5 --makers 2 --noise 3]`
+// (`--preset fast|weekly` still works and means the H100 market on that preset).
 // Runs the simulation on the engine (no keys, no network): one line per round, then
 // settlement and a table per agent.
 import { parseArgs } from "node:util";
-import { agentReports, createSimulation, PRESETS, type PresetName } from "./sim.ts";
+import { agentReports, burned, createSimulation, marketOf, type MarketId } from "./sim.ts";
 
 const usd = (micro: bigint, sign = false): string => {
   const v = Number(micro) / 1e6;
@@ -15,7 +16,8 @@ function sim(argv: string[]): void {
   const { values } = parseArgs({
     args: argv,
     options: {
-      preset: { type: "string", default: "fast" },
+      market: { type: "string" },
+      preset: { type: "string" },
       seed: { type: "string", default: "7" },
       rounds: { type: "string", default: "20" },
       buyers: { type: "string", default: "20" },
@@ -24,21 +26,22 @@ function sim(argv: string[]): void {
       noise: { type: "string", default: "3" },
     },
   });
-  const preset = values.preset as PresetName;
-  if (!(preset in PRESETS)) throw new Error(`--preset must be ${Object.keys(PRESETS).join(" or ")}`);
+  // --preset fast|weekly is kept as a short form of --market h100-fast|h100-weekly.
+  const def = marketOf((values.market ?? (values.preset ? `h100-${values.preset}` : "h100-fast")) as MarketId);
   const n = (name: keyof typeof values) => {
     const v = Number(values[name]);
     if (!Number.isSafeInteger(v) || v < 0) throw new Error(`--${name} must be a whole number`);
     return v;
   };
-  const config = { seed: n("seed"), buyers: n("buyers"), sellers: n("sellers"), makers: n("makers"), noise: n("noise"), market: preset };
+  const config = { seed: n("seed"), buyers: n("buyers"), sellers: n("sellers"), makers: n("makers"), noise: n("noise"), market: def.id as MarketId };
   const s = createSimulation(config);
-  const p = PRESETS[preset];
+  const p = def.params;
   const unit = p.period_secs === 7 * 86_400 ? "week" : p.period_secs === 3600 ? "hour" : `${p.period_secs} s`;
   console.log(
-    `Weir sim, ${preset} preset: each ${unit} of delivery is auctioned the ${unit} before, in ${p.commit_secs / 60}+${p.reveal_secs / 60} min rounds. ` +
-      `Seed ${config.seed}: ${config.buyers} buyers, ${config.sellers} sellers, ${config.makers} makers, ${config.noise} noise. Prices per H100-hour.`,
+    `Weir sim, ${def.label} (${def.id}): each ${unit} of delivery is auctioned the ${unit} before, in ${p.commit_secs / 60}+${p.reveal_secs / 60} min rounds. ` +
+      `Seed ${config.seed}: ${config.buyers} buyers, ${config.sellers} sellers, ${config.makers} makers, ${config.noise} noise. Prices per ${def.chip.toUpperCase()}-hour.`,
   );
+  console.log(`Every commit burns a ${usd(BigInt(p.commit_fee))} fee, so taking a slot in a round always costs something and filling rounds to keep others out is not free.`);
   console.log("series round  commits revealed  LONG price  forward  volume  forfeits");
 
   const events = s.runRounds(n("rounds"));
@@ -60,19 +63,21 @@ function sim(argv: string[]): void {
   const t = s.market.getTotals();
   const deposits = s.agents.reduce((sum, a) => sum + BigInt(a.deposit), 0n);
   console.log(`${traded} of ${rounds} rounds traded. ` + settled.map((x) => `Series ${x.series} fixed at ${per(x.fixing)}, LONG paid ${per(x.longPayout)}.`).join(" "));
-  console.log(`Money check: deposits ${usd(deposits)} = free ${usd(t.free)} + locked ${usd(t.locked)} + sets ${usd(t.setsBacking)} + pools ${usd(t.pools)} + unredeemed ${usd(t.unredeemed)}.`);
-  console.log("agent       role    LONG  SHORT      paid  received   result");
+  const b = burned(s.market);
+  console.log(`Burned: ${usd(b.fees)} in commit fees and ${usd(b.forfeits)} in forfeits (${usd(t.burned)} in all; burned dollars belong to nobody).`);
+  console.log(`Money check: deposits ${usd(deposits)} = free ${usd(t.free)} + locked ${usd(t.locked)} + sets ${usd(t.setsBacking)} + unredeemed ${usd(t.unredeemed)} + burned ${usd(t.burned)}.`);
+  console.log("agent       role    LONG  SHORT      paid  received   fees   result");
   for (const r of agentReports(s)) {
-    console.log(`${r.id.padEnd(10)}  ${r.role.padEnd(6)} ${pad(r.long, 5)}  ${pad(r.short, 5)}  ${pad(usd(r.paid), 8)}  ${pad(usd(r.received), 8)}  ${pad(usd(r.result, true), 7)}`);
+    console.log(`${r.id.padEnd(10)}  ${r.role.padEnd(6)} ${pad(r.long, 5)}  ${pad(r.short, 5)}  ${pad(usd(r.paid), 8)}  ${pad(usd(r.received), 8)}  ${pad(usd(r.fees + r.forfeited), 5)}  ${pad(usd(r.result, true), 7)}`);
   }
-  console.log("paid: cost of auction fills; received: payout at settlement; result: free balance now minus deposit (forfeits included).");
+  console.log("paid: auction fills; received: payout at settlement; fees: commit fees and forfeits burned; result: balance now minus deposit.");
 }
 
 const [command, ...rest] = process.argv.slice(2);
 try {
   if (command === "sim") sim(rest);
   else {
-    console.log("usage: node agents/src/cli.ts sim --preset fast|weekly --seed 7 --rounds 20 [--buyers 20 --sellers 5 --makers 2 --noise 3]");
+    console.log(`usage: node agents/src/cli.ts sim [--market h100-fast|h100-weekly|h200-weekly|a100-80-weekly] --seed 7 --rounds 20 [--buyers 20 --sellers 5 --makers 2 --noise 3]`);
     process.exitCode = command ? 1 : 0;
   }
 } catch (e) {

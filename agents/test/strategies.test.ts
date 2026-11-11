@@ -47,7 +47,7 @@ test("buyer: forecast plus its premium, its unhedged need spread over the rounds
   assert.deepEqual(b.decide(view({ position: { long: 37, short: 0 } }), Math.random), [{ side: "Long", size: 3, price: 440_000 }]);
   assert.deepEqual(b.decide(view({ position: { long: 39, short: 0 }, roundsLeft: 1 }), Math.random), [], "1 hour is below min_lock");
   assert.deepEqual(b.decide(view({ position: { long: 40, short: 0 } }), Math.random), []);
-  // Only $1.40 free: room for 3 units at $0.44, locking exactly $1.32.
+  // Only $1.40 free: room for 3 units at $0.44, locking exactly $1.32, plus the $0.02 fee.
   assert.deepEqual(b.decide(view({ free: 1_400_000n }), Math.random), [{ side: "Long", size: 3, price: 440_000 }]);
   assert.deepEqual(b.decide(view({ free: 900_000n }), Math.random), [], "2 units would lock $0.88, below min_lock");
   // A premium rounding off the tick rounds down for a LONG: never pays more than asked.
@@ -74,7 +74,7 @@ test("maker quotes both sides around fair value; noise follows its random view",
   assert.deepEqual(orders, [{ side: "Long", size: 5, price: 464_000 }]);
 });
 
-test("5,000 random views: every order is on the tick, strictly inside the band, within max size, and the balance covers every lock", () => {
+test("5,000 random views: every order is on the tick, strictly inside the band, within max size, and the balance covers every lock and its fee", () => {
   const r = mulberry32(99);
   const strategies = [
     buyer("b", { need: 60, premiumBps: 800 }),
@@ -104,7 +104,7 @@ test("5,000 random views: every order is on the tick, strictly inside the band, 
         assert.ok(o.price > 0 && o.price < band, `${s.id} price ${o.price} band ${band}`);
         assert.ok(Number.isInteger(o.size) && o.size >= 1 && o.size <= params.max_order_size);
         assert.ok(lockOf(o, band) >= BigInt(params.min_lock));
-        locked += lockOf(o, band);
+        locked += lockOf(o, band) + BigInt(params.commit_fee);
       }
       assert.ok(locked <= v.free, `${s.id} locks ${locked} of ${v.free}`);
     }
@@ -113,14 +113,18 @@ test("5,000 random views: every order is on the tick, strictly inside the band, 
 });
 
 test("fit drops what it cannot make valid and gives earlier intents the balance first", () => {
+  // The fee rule: an order must lock at least 50 commit fees. With a 10-cent fee that is $5.
+  const pricey = view({ params: { ...params, commit_fee: "100000" } });
+  assert.deepEqual(fit(pricey, [{ side: "Long", size: 40, price: 100_000 }]), []);
+  assert.deepEqual(fit(pricey, [{ side: "Long", size: 50, price: 100_000 }]), [{ side: "Long", size: 50, price: 100_000 }]);
   const v = view({ free: 5_000_000n });
   const out = fit(v, [
     { side: "Long", size: 30, price: 100_000 },
     { side: "Short", size: 30, price: 700_000 },
     { side: "Long", size: Number.NaN, price: 1 },
   ]);
-  // $3.00 for the LONG leaves $2.00: 20 SHORT at $0.10 each.
-  assert.deepEqual(out, [{ side: "Long", size: 30, price: 100_000 }, { side: "Short", size: 20, price: 700_000 }]);
+  // $3.00 and a $0.02 fee for the LONG leave $1.98; less the next fee, 19 SHORT at $0.10 each.
+  assert.deepEqual(out, [{ side: "Long", size: 30, price: 100_000 }, { side: "Short", size: 19, price: 700_000 }]);
   assert.deepEqual(fit(v, [{ side: "Long", size: 3, price: 100_000 }]), [], "$0.30 is below min_lock");
   assert.deepEqual(fit(v, [{ side: "Long", size: 2000, price: -5 }]), [{ side: "Long", size: 2000, price: 1000 }]);
 });

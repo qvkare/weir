@@ -130,6 +130,28 @@ test("concurrent calls from one account get increasing nonces; a stale nonce is 
   assert.equal(fake.sent.at(-1)!.nonce, 5n);
 });
 
+test("InvalidNonce is retried with a fresh nonce up to three times, then the error is thrown", async () => {
+  const fake = fakeNear();
+  const rpc = new NearRpc({ urls: ["x"], fetch: fake.fetch });
+  const k = await key();
+  let refusals = 2;
+  let sends = 0;
+  const invalid = rpcErr({ name: "HANDLER_ERROR", cause: { name: "INVALID_TRANSACTION" }, data: { TxExecutionError: { InvalidTxError: { InvalidNonce: { tx_nonce: 1, ak_nonce: 1 } } } } });
+  fake.intercept = (_url, method) => {
+    if (method !== "send_tx") return undefined;
+    sends++;
+    return refusals-- > 0 ? invalid : undefined;
+  };
+  const out = await new NearAccount(rpc, "dave.testnet", k).functionCall("c", "m", {}, 1n, 0n);
+  assert.equal(out.ok, true);
+  assert.equal(sends, 3);
+  // Refused every time: one try and three retries, then the refusal itself.
+  refusals = Infinity;
+  sends = 0;
+  await assert.rejects(new NearAccount(rpc, "erin.testnet", k).functionCall("c", "m", {}, 1n, 0n), /InvalidNonce/);
+  assert.equal(sends, 4);
+});
+
 test("when send_tx times out the client polls tx for the same hash", async () => {
   const fake = fakeNear();
   let txPolls = 0;

@@ -7,7 +7,7 @@ import { ModelWeir, paramsFromWire, type WeirPort } from "@weir/chain";
 import { PRESETS } from "../src/presets.ts";
 import { mulberry32 } from "../src/random.ts";
 import { buyer, maker, noise, seller } from "../src/strategies/mod.ts";
-import { MemoryStore, newestSeries, orderKey, rebuildOrder, saltFor, tick, timeParams, type LogEntry, type OrderStore, type StoredOrder, type SwarmContext } from "../src/swarm.ts";
+import { capToRoundLock, MemoryStore, newestSeries, orderKey, rebuildOrder, saltFor, tick, timeParams, type LogEntry, type OrderStore, type StoredOrder, type SwarmContext } from "../src/swarm.ts";
 
 const params = PRESETS.fast;
 const tp = timeParams(params);
@@ -99,7 +99,8 @@ test("ticked every 60 s through two full series: no forfeits, every round cleare
   assert.equal(checked, commits);
   const totals = await model.get_totals({});
   assert.deepEqual([totals.locked, totals.sets_backing, totals.unredeemed], ["0", "0", "0"]);
-  assert.equal(BigInt(totals.free) + BigInt(totals.pools), 5n * 200_000_000n);
+  assert.equal(BigInt(totals.free) + BigInt(totals.burned), 5n * 200_000_000n);
+  assert.equal(BigInt(totals.burned), BigInt(commits) * BigInt(params.commit_fee), "only fees were burned");
   assert.ok(maxCalls <= 200, `a tick made ${maxCalls} calls`);
 });
 
@@ -116,7 +117,7 @@ test("a tick is idempotent: calling it again at the same moment does nothing new
   assert.deepEqual(again.entries, []);
 });
 
-test("ticks with a gap over a reveal window: the forfeit is in the log and in the bonus pool", async () => {
+test("ticks with a gap over a reveal window: the forfeit is in the log and burned", async () => {
   const { model, ctx, report } = setup();
   const open = auctionOpen(tp, 0);
   for (let t = model.now(); t <= open + 60; t += 60) {
@@ -134,8 +135,9 @@ test("ticks with a gap over a reveal window: the forfeit is in the log and in th
   const expected = round0.commits.reduce((sum, c) => sum + (BigInt(c.lock) * BigInt(params.forfeit_bps)) / 10_000n, 0n);
   assert.equal(lost.reduce((sum, e) => sum + BigInt((e.data as { forfeit: string }).forfeit), 0n), expected);
   assert.ok(log.entries.some((e) => e.action === "clear" && e.round === 0 && e.status === "done"));
-  const series = await model.get_series({ series: 0 });
-  assert.equal(series!.bonus_pool, expected.toString());
+  const result = await model.get_result({ series: 0, round: 0 });
+  assert.equal(result!.forfeited, expected.toString());
+  assert.equal(BigInt((await model.get_totals({})).burned), expected + BigInt(result!.fees));
   assert.ok(expected > 0n);
 });
 
@@ -168,7 +170,7 @@ test("a store wiped between commit and reveal: without recovery, each commit is 
   // Logged at every tick of the reveal window (two here), for every commit.
   assert.equal(new Set(cannot.map((e) => (e.data as { seq: number }).seq)).size, commits);
   assert.equal(forfeits(logs).length, commits);
-  assert.ok(BigInt((await model.get_series({ series: 0 }))!.bonus_pool) > 0n);
+  assert.ok(BigInt((await model.get_result({ series: 0, round: 0 }))!.forfeited) > 0n);
 });
 
 test("a store wiped between commit and reveal: with recovery (the default), every order is rebuilt and revealed", async () => {
@@ -191,4 +193,36 @@ test("a small budget stops the tick and says so; the next tick picks up the rest
   assert.ok(committed.size < 5);
   await tick(ctx);
   assert.equal((await model.get_round({ series: 0, round: 0 }))!.commits.length >= 5, true);
+});
+
+test("an account's max_round_lock is respected when sizing, and the trim is logged", async () => {
+  const { model, ctx, report } = setup();
+  await model.as("seller-1").set_guard({ max_round_lock: "1500000" });
+  const open = auctionOpen(tp, 0);
+  model.setTime(open - 300);
+  await report(open - 300);
+  model.setTime(open);
+  const log = await tick(ctx);
+  const trim = log.entries.find((e) => e.agent === "seller-1" && e.text.startsWith("trimmed its orders to its max_round_lock"));
+  assert.ok(trim, "trim logged");
+  const book = (await model.get_round({ series: 0, round: 0 }))!;
+  const locked = book.commits.filter((c) => c.owner === "seller-1").reduce((sum, c) => sum + BigInt(c.lock), 0n);
+  assert.ok(locked > 0n && locked <= 1_500_000n, `locked ${locked}`);
+  assert.deepEqual(log.entries.filter((e) => e.status === "failed"), []);
+});
+
+test("capToRoundLock shrinks in order and drops what falls below min_lock", () => {
+  const band = 800_000;
+  const out = capToRoundLock(
+    [
+      { side: "Long", size: 10, price: 400_000 },
+      { side: "Short", size: 10, price: 600_000 },
+    ],
+    band,
+    5_000_000n,
+    1_000_000n,
+  );
+  // 10 LONG at $0.40 = $4.00 fits; $1.00 left buys 5 SHORT at $0.20.
+  assert.deepEqual(out, [{ side: "Long", size: 10, price: 400_000 }, { side: "Short", size: 5, price: 600_000 }]);
+  assert.deepEqual(capToRoundLock([{ side: "Long", size: 10, price: 400_000 }], band, 900_000n, 1_000_000n), []);
 });

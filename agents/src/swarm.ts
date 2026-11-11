@@ -188,6 +188,23 @@ export function rebuildOrder(
   return null;
 }
 
+const sumLocks = (intents: Intent[], band: number): bigint => intents.reduce((sum, o) => sum + lockOf(o, band), 0n);
+
+/** Shrinks orders, in order, so their locks together stay within an account's
+ * `max_round_lock` (SPEC 6.2); an order left below `min_lock` is dropped. */
+export function capToRoundLock(intents: Intent[], band: number, cap: bigint, minLock: bigint): Intent[] {
+  let room = cap;
+  const out: Intent[] = [];
+  for (const o of intents) {
+    const unit = BigInt(o.side === "Long" ? o.price : band - o.price);
+    const size = Math.min(o.size, Number(room / unit));
+    if (size < 1 || BigInt(size) * unit < minLock) continue;
+    room -= BigInt(size) * unit;
+    out.push({ ...o, size });
+  }
+  return out;
+}
+
 const usd = (micro: bigint | string | number): string => {
   const v = BigInt(micro);
   const a = v < 0n ? -v : v;
@@ -293,7 +310,7 @@ class Planner<P, S> {
         for (const c of book.commits.filter((x) => x.state === "Committed")) {
           const forfeit = (BigInt(c.lock) * BigInt(params.forfeit_bps)) / 10_000n;
           const whose = this.#mine.has(c.owner) ? "" : " (not ours)";
-          this.#entry({ action: "forfeit", status: "done", agent: c.owner, series, round, text: `commit ${c.seq} was never revealed${whose}: forfeits ${usd(forfeit)} to the bonus pool`, data: { seq: c.seq, forfeit: forfeit.toString() } });
+          this.#entry({ action: "forfeit", status: "done", agent: c.owner, series, round, text: `commit ${c.seq} was never revealed${whose}: forfeits ${usd(forfeit)}, burned`, data: { seq: c.seq, forfeit: forfeit.toString() } });
         }
         const r = yield* this.#change(null, "clear", { series, round });
         if (r.ok) pending--;
@@ -354,7 +371,15 @@ class Planner<P, S> {
         params, now, series, floor: band.floor, band: band.band, round, roundsLeft,
         lastPrint: last, prints, accumulator, position, free: BigInt(account.balance), results,
       };
-      const intents = agent.decide(view, rngFor(this.#ctx.secret, series, round, agent.id)).slice(0, MAX_ORDERS_PER_ROUND);
+      let intents = agent.decide(view, rngFor(this.#ctx.secret, series, round, agent.id)).slice(0, MAX_ORDERS_PER_ROUND);
+      if (account.max_round_lock !== null) {
+        const capped = capToRoundLock(intents, band.band, BigInt(account.max_round_lock), BigInt(params.min_lock));
+        if (JSON.stringify(capped) !== JSON.stringify(intents)) {
+          const text = `trimmed its orders to its max_round_lock of ${usd(account.max_round_lock)}: ${intents.length} orders locking ${usd(sumLocks(intents, band.band))} became ${capped.length} locking ${usd(sumLocks(capped, band.band))}`;
+          this.#entry({ action: "commit", status: "skipped", ...at, text, data: { before: intents, after: capped } });
+        }
+        intents = capped;
+      }
       if (intents.length === 0) continue;
       // Store, commit, store the seq: three calls per order, all or none for this agent.
       if (this.log.calls + 3 * intents.length > this.#budget) throw new OutOfBudget();
@@ -369,7 +394,7 @@ class Planner<P, S> {
           break;
         }
         const r = yield* this.#change(agent.id, "commit", { series, hash, lock: lock.toString() });
-        const text = r.ok ? `sealed an order, locking ${usd(lock)}` : `commit failed: ${r.error}`;
+        const text = r.ok ? `sealed an order, locking ${usd(lock)} (fee ${usd(params.commit_fee)})` : `commit failed: ${r.error}`;
         this.#entry({ action: "commit", status: r.ok ? "done" : "failed", ...at, text, data: { n, hash, lock: lock.toString(), seq: r.ok ? r.value : null } });
         if (!r.ok) break;
         yield* this.#put(key, JSON.stringify({ ...order, seq: r.value }));

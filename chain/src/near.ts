@@ -247,6 +247,9 @@ function failureMessage(failure: unknown): string {
 /** The text after `Smart contract panicked: `, or the whole error when it is not a panic. */
 export const panicMessage = (error: string): string => error.replace(/^.*?Smart contract panicked: /s, "");
 
+/** Retries after an `InvalidNonce` refusal. */
+export const NONCE_RETRIES = 3;
+
 /** An account that signs and sends function calls with one ed25519 key. Calls from one
  * instance are sent one at a time, so nonces never collide. */
 export class NearAccount {
@@ -288,9 +291,13 @@ export class NearAccount {
       try {
         return await this.rpc.sendTx(signed, base58Encode(hash), this.accountId);
       } catch (e) {
-        // Another signer used the key in between: read the nonce again, once.
-        if (attempt === 0 && /InvalidNonce/.test(e instanceof Error ? e.message : String(e))) continue;
-        throw e;
+        // Another signer used the key in between: retry with a fresh nonce, up to three times.
+        // The error names the key's nonce on chain; start above it even if the node we read
+        // the access key from lags behind.
+        const text = e instanceof Error ? e.message : String(e);
+        if (attempt >= NONCE_RETRIES || !/InvalidNonce/.test(text)) throw e;
+        const onChain = /"ak_nonce":\s*(\d+)/.exec(text);
+        if (onChain && BigInt(onChain[1]!) > this.#nonce) this.#nonce = BigInt(onChain[1]!);
       }
     }
   }

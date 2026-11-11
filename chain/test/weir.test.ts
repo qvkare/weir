@@ -2,10 +2,10 @@
 // exactly like ModelWeir: one scenario runs on both and must produce the same transcript.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { commitHash, Market, type WireParams } from "@weir/engine";
+import { commitHash, ERR, Market, type WireParams } from "@weir/engine";
 import { NearAccount, NearRpc } from "../src/near.ts";
 import { base58Encode, KeyPair } from "../src/tx.ts";
-import { AGENT_KEY_METHODS, CallFailed, CHANGE_METHODS, ChainWeir, ModelWeir, paramsFromWire, VIEW_METHODS, type WeirPort } from "../src/weir.ts";
+import { AGENT_KEY_METHODS, CallFailed, CHANGE_METHODS, KEEPER_KEY_METHODS, REPORTER_KEY_METHODS, ChainWeir, ModelWeir, paramsFromWire, VIEW_METHODS, type WeirPort } from "../src/weir.ts";
 import { fakeNear } from "./fake_near.ts";
 
 const T0 = 1_767_571_200;
@@ -22,12 +22,13 @@ const PARAMS: WireParams = {
   tick: 1000,
   print_interval_secs: 300,
   report_grace_secs: 60,
-  max_move_bps: 1500,
+  max_spread_bps: 200,
   min_prints: 9,
   void_after_secs: 1800,
   max_anchor_age_secs: 900,
   forfeit_bps: 100,
   min_lock: "1000000",
+  commit_fee: "20000",
   max_commits: 64,
   max_order_size: 10_000,
   reporters: ["r0.testnet", "r1.testnet", "r2.testnet"],
@@ -39,26 +40,28 @@ const FEE = 20_000_000_000_000_000_000_000n;
 
 // Argument names exactly as SPEC sections 5 to 14 write them, and the gas and deposit the README lists.
 const SPEC_CHANGES: Record<string, { args: Record<string, unknown>; receiver: "weir" | "usdc"; method: string; gas: bigint; deposit: bigint }> = {
-  register: { args: { account_id: "x.testnet" }, receiver: "weir", method: "register", gas: 30n * TGAS, deposit: FEE },
+  register: { args: { account_id: "x.testnet" }, receiver: "weir", method: "register", gas: 10n * TGAS, deposit: FEE },
   deposit: { args: { receiver_id: "weir.testnet", amount: "5000000", msg: "x.testnet" }, receiver: "usdc", method: "ft_transfer_call", gas: 100n * TGAS, deposit: 1n },
-  withdraw: { args: { amount: "5" }, receiver: "weir", method: "withdraw", gas: 100n * TGAS, deposit: 1n },
-  set_guard: { args: { guard: 50_000 }, receiver: "weir", method: "set_guard", gas: 30n * TGAS, deposit: 1n },
-  commit: { args: { series: 1, hash: "ab".repeat(32), lock: "2000000" }, receiver: "weir", method: "commit", gas: 50n * TGAS, deposit: 0n },
+  withdraw: { args: { amount: "5" }, receiver: "weir", method: "withdraw", gas: 50n * TGAS, deposit: 1n },
+  set_guard: { args: { guard: 50_000, max_round_lock: "30000000" }, receiver: "weir", method: "set_guard", gas: 10n * TGAS, deposit: 1n },
+  commit: { args: { series: 1, hash: "ab".repeat(32), lock: "2000000" }, receiver: "weir", method: "commit", gas: 10n * TGAS, deposit: 0n },
   reveal: {
     args: { series: 1, round: 2, seq: 3, side: "Short", size: 4, price: 5000, salt: "cd".repeat(16) },
     receiver: "weir",
     method: "reveal",
-    gas: 50n * TGAS,
+    gas: 10n * TGAS,
     deposit: 0n,
   },
-  clear: { args: { series: 1, round: 2 }, receiver: "weir", method: "clear", gas: 300n * TGAS, deposit: 0n },
-  mint: { args: { series: 1, sets: 2 }, receiver: "weir", method: "mint", gas: 50n * TGAS, deposit: 0n },
-  merge: { args: { series: 1, sets: 2 }, receiver: "weir", method: "merge", gas: 50n * TGAS, deposit: 0n },
-  transfer_position: { args: { series: 1, to: "y.testnet", long: 2, short: 0 }, receiver: "weir", method: "transfer_position", gas: 50n * TGAS, deposit: 1n },
-  report: { args: { bucket: 300, price: 2_000_000, bundle: "ef".repeat(32) }, receiver: "weir", method: "report", gas: 50n * TGAS, deposit: 0n },
+  clear: { args: { series: 1, round: 2 }, receiver: "weir", method: "clear", gas: 150n * TGAS, deposit: 0n },
+  mint: { args: { series: 1, sets: 2 }, receiver: "weir", method: "mint", gas: 10n * TGAS, deposit: 0n },
+  merge: { args: { series: 1, sets: 2 }, receiver: "weir", method: "merge", gas: 10n * TGAS, deposit: 0n },
+  transfer_position: { args: { series: 1, to: "y.testnet", long: 2, short: 0 }, receiver: "weir", method: "transfer_position", gas: 10n * TGAS, deposit: 1n },
+  report: { args: { bucket: 300, price: 2_000_000, bundle: "ef".repeat(32) }, receiver: "weir", method: "report", gas: 10n * TGAS, deposit: 0n },
   settle: { args: { series: 1 }, receiver: "weir", method: "settle", gas: 100n * TGAS, deposit: 0n },
-  redeem: { args: { series: 1, account_id: "y.testnet" }, receiver: "weir", method: "redeem", gas: 50n * TGAS, deposit: 0n },
-  prune_result: { args: { series: 1, round: 2 }, receiver: "weir", method: "prune_result", gas: 50n * TGAS, deposit: 0n },
+  finalize_print: { args: { bucket: 300 }, receiver: "weir", method: "finalize_print", gas: 10n * TGAS, deposit: 0n },
+  prune_print: { args: { bucket: 300 }, receiver: "weir", method: "prune_print", gas: 10n * TGAS, deposit: 0n },
+  redeem: { args: { series: 1, account_id: "y.testnet" }, receiver: "weir", method: "redeem", gas: 10n * TGAS, deposit: 0n },
+  prune_result: { args: { series: 1, round: 2 }, receiver: "weir", method: "prune_result", gas: 10n * TGAS, deposit: 0n },
 };
 
 const SPEC_VIEWS: Record<string, Record<string, unknown>> = {
@@ -71,6 +74,7 @@ const SPEC_VIEWS: Record<string, Record<string, unknown>> = {
   get_result: { series: 1, round: 2 },
   get_results: { series: 1, from_round: 0, limit: 10 },
   get_print: { bucket: 300 },
+  get_pending_prints: {},
   get_last_print: {},
   get_prints: { from_bucket: 0, limit: 10 },
   get_accumulator: { series: 1 },
@@ -112,9 +116,11 @@ test("ChainWeir sends each state change with the spec's argument names, the READ
   assert.deepEqual(fake.sent.at(-1)!.args, { receiver_id: "weir.testnet", amount: "7", msg: "" });
 });
 
-test("an agent key's methods are SPEC section 15's list, and none of them attaches a deposit", () => {
+test("agent, keeper and reporter key methods, none of which attaches a deposit", () => {
   assert.deepEqual([...AGENT_KEY_METHODS], ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"]);
-  for (const m of AGENT_KEY_METHODS) assert.equal(SPEC_CHANGES[m]!.deposit, 0n, m);
+  assert.deepEqual([...KEEPER_KEY_METHODS], ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem", "finalize_print", "prune_print", "prune_result"]);
+  assert.deepEqual([...REPORTER_KEY_METHODS], ["report", "finalize_print"]);
+  for (const m of [...KEEPER_KEY_METHODS, ...REPORTER_KEY_METHODS]) assert.equal(SPEC_CHANGES[m]!.deposit, 0n, m);
 });
 
 test("ChainWeir sends each view with the spec's argument names", async () => {
@@ -139,13 +145,16 @@ async function scenario(port: (account: string) => WeirPort, setTime: (t: number
       out.push([label, "threw", (e as Error).message]);
     }
   };
-  const [alice, bob, r0, r1] = ["alice.testnet", "bob.testnet", "r0.testnet", "r1.testnet"].map(port) as [WeirPort, WeirPort, WeirPort, WeirPort];
+  const [alice, bob, r0, r1, r2] = ["alice.testnet", "bob.testnet", "r0.testnet", "r1.testnet", "r2.testnet"].map(port) as [WeirPort, WeirPort, WeirPort, WeirPort, WeirPort];
   const open = T0 - 3900;
   setTime(open - 300);
   await attempt("commit unregistered", () => alice.commit({ series: 0, hash: "00".repeat(32), lock: "1000000" }));
   const bundle = "11".repeat(32);
   await attempt("report r0", () => r0.report({ bucket: open - 300, price: 2_000_000, bundle }));
   await attempt("report r1", () => r1.report({ bucket: open - 300, price: 2_010_000, bundle }));
+  await attempt("pending prints", () => alice.get_pending_prints({}));
+  await attempt("finalize too early", () => alice.finalize_print({ bucket: open - 300 }));
+  await attempt("report r2", () => r2.report({ bucket: open - 300, price: 2_005_000, bundle }));
   await attempt("report r1 again", () => r1.report({ bucket: open - 300, price: 2_010_000, bundle }));
   await attempt("last print", () => alice.get_last_print({}));
   await attempt("register alice", () => alice.register({}));
@@ -199,6 +208,8 @@ async function scenario(port: (account: string) => WeirPort, setTime: (t: number
   await attempt("redeem bob", () => bob.redeem({ series: 0 }));
   await attempt("redeem bob again", () => bob.redeem({ series: 0 }));
   await attempt("prune", () => bob.prune_result({ series: 0, round: 0 }));
+  await attempt("prune print", () => bob.prune_print({ bucket: open - 300 }));
+  await attempt("print after prune", () => alice.get_print({ bucket: open - 300 }));
   await attempt("totals after", () => alice.get_totals({}));
   return out;
 }
@@ -212,24 +223,25 @@ test("one scenario gives the same transcript on ModelWeir and on ChainWeir over 
   const fake = fakeNear({ market: chainMarket, contractId: "weir.testnet", usdcId: "usdc.testnet" });
   const rpc = new NearRpc({ urls: ["x"], fetch: fake.fetch });
   const ports = new Map<string, ChainWeir>();
-  for (const a of ["alice.testnet", "bob.testnet", "r0.testnet", "r1.testnet"]) ports.set(a, await chainPort(rpc, a));
+  for (const a of ["alice.testnet", "bob.testnet", "r0.testnet", "r1.testnet", "r2.testnet"]) ports.set(a, await chainPort(rpc, a));
   const chainOut = await scenario((a) => ports.get(a)!, (t) => chainMarket.setTime(t));
 
   assert.deepEqual(chainOut, modelOut);
-  const threw = modelOut.filter((x) => (x as unknown[])[1] === "threw").map((x) => (x as unknown[])[0]);
+  // Every refusal carries the contract's exact text (SPEC section 16).
+  const threw = modelOut.filter((x) => (x as unknown[])[1] === "threw").map((x) => [(x as unknown[])[0], (x as unknown[])[2]]);
   assert.deepEqual(threw, [
-    "commit unregistered",
-    "register alice twice",
-    "reveal twice",
-    "clear early",
-    "withdraw too much",
-    "settle early",
-    "redeem bob again",
+    ["commit unregistered", ERR.NOT_REGISTERED],
+    ["finalize too early", ERR.REPORT_WINDOW_OPEN],
+    ["register alice twice", ERR.REGISTERED],
+    ["reveal twice", ERR.ALREADY_REVEALED],
+    ["clear early", ERR.ROUND_NOT_OVER],
+    ["withdraw too much", ERR.BALANCE],
+    ["settle early", ERR.DELIVERY_NOT_OVER],
+    ["redeem bob again", ERR.NO_POSITION],
   ]);
   assert.deepEqual(modelOut.find((x) => (x as unknown[])[0] === "deposit to unregistered"), ["deposit to unregistered", "0"]);
   // A report for a bucket already final is ignored, not refused (section 9).
   assert.deepEqual(modelOut.find((x) => (x as unknown[])[0] === "report r1 again"), ["report r1 again", false]);
-  assert.deepEqual(modelOut.find((x) => (x as unknown[])[0] === "commit unregistered"), ["commit unregistered", "threw", "account is not registered"]);
 });
 
 test("a failed chain call throws CallFailed carrying the outcome and the bare panic message", async () => {
@@ -245,7 +257,7 @@ test("a failed chain call throws CallFailed carrying the outcome and the bare pa
   });
   await assert.rejects(port.withdraw({ amount: "1" }), (e: unknown) => {
     assert.ok(e instanceof CallFailed);
-    assert.equal(e.message, "account is not registered");
+    assert.equal(e.message, ERR.NOT_REGISTERED);
     assert.equal(e.outcome.ok, false);
     return true;
   });
