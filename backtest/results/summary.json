@@ -1,0 +1,1599 @@
+{
+ "parameters": {
+  "tick": 1000,
+  "bandBpsGrid": [
+   1000,
+   1500,
+   2000,
+   2500,
+   3000,
+   4000
+  ],
+  "coverageTarget": 0.95,
+  "leadDays": 7,
+  "maxAnchorAgeDays": 3,
+  "minDeliveryPrints": 4,
+  "hoursPerWeek": 1344,
+  "forwardShifts": [
+   -0.05,
+   -0.02,
+   0,
+   0.02,
+   0.05
+  ],
+  "minProviderWeeks": 20,
+  "band_rule": "anchor = last daily index print; mid = anchor rounded down to tick; half = anchor * band_bps / 10000 rounded down to tick; floor = mid - half; band = 2 * half; cap = floor + band (engine computeBand)",
+  "payoff_rule": "LONG pays clamp(fixing - floor, 0, band); SHORT pays band - LONG payout (engine payouts); fixing = floor(sum / count) of the daily prints in the delivery week (engine fixingOf)",
+  "week_rule": "delivery week = Monday 00:00 UTC to the next Monday; auction opens leadDays before; anchor = latest daily print whose day started 1..maxAnchorAgeDays days before the opening; at least minDeliveryPrints daily prints in the delivery week",
+  "neutral_price": "LONG price p = half, so the forward floor + p equals mid (the anchor on the tick grid)",
+  "cost_rule": "unhedged weekly cost = fixing * hoursPerWeek (the buyer pays the index every hour, so the week's average price is the fixing); hedged = (fixing - LONG payout + p) * hoursPerWeek",
+  "surprise_rule": "surprise = weekly cost minus hoursPerWeek * anchor, i.e. the part of the week's cost not known when the auction opened",
+  "prices": "integer micro-USD per GPU-hour internally; dollars in outputs"
+ },
+ "data": {
+  "first_day": "2024-11-01",
+  "last_day": "2026-11-10",
+  "days": 740,
+  "days_with_index": 536,
+  "days_without_index": 204,
+  "first_index_day": "2025-04-01",
+  "last_index_day": "2026-11-10"
+ },
+ "weeks": {
+  "candidate_mondays": 82,
+  "kept": 69,
+  "excluded": [
+   {
+    "week": "2025-04-21",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2025-06-23",
+    "reason": "few_prints"
+   },
+   {
+    "week": "2025-07-07",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2025-07-28",
+    "reason": "few_prints"
+   },
+   {
+    "week": "2025-08-11",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2025-08-25",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2025-09-15",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2026-03-09",
+    "reason": "few_prints"
+   },
+   {
+    "week": "2026-03-23",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2026-04-27",
+    "reason": "few_prints"
+   },
+   {
+    "week": "2026-05-11",
+    "reason": "stale_anchor"
+   },
+   {
+    "week": "2026-07-06",
+    "reason": "few_prints"
+   },
+   {
+    "week": "2026-07-20",
+    "reason": "stale_anchor"
+   }
+  ],
+  "first": "2025-04-14",
+  "last": "2026-11-02"
+ },
+ "move": {
+  "weeks": 69,
+  "mean": 0.010279,
+  "sd": 0.04706,
+  "min": -0.094234,
+  "max": 0.225028,
+  "percentiles": {
+   "p1": -0.081507,
+   "p5": -0.047536,
+   "p10": -0.031172,
+   "p25": -0.011525,
+   "p50": 0,
+   "p75": 0.021783,
+   "p90": 0.052049,
+   "p95": 0.104373,
+   "p99": 0.169166
+  },
+  "abs_percentiles": {
+   "p50": 0.019729,
+   "p90": 0.061202,
+   "p95": 0.104373,
+   "p99": 0.169166
+  },
+  "largest_rises": [
+   {
+    "week": "2026-06-01",
+    "move": 0.225028
+   },
+   {
+    "week": "2026-10-05",
+    "move": 0.142877
+   },
+   {
+    "week": "2026-02-02",
+    "move": 0.112253
+   },
+   {
+    "week": "2026-06-08",
+    "move": 0.1046
+   },
+   {
+    "week": "2026-05-25",
+    "move": 0.104033
+   }
+  ],
+  "largest_falls": [
+   {
+    "week": "2026-05-04",
+    "move": -0.094234
+   },
+   {
+    "week": "2025-07-14",
+    "move": -0.075517
+   },
+   {
+    "week": "2026-08-24",
+    "move": -0.057623
+   },
+   {
+    "week": "2025-12-22",
+    "move": -0.048936
+   },
+   {
+    "week": "2026-05-18",
+    "move": -0.045435
+   }
+  ]
+ },
+ "coverage": [
+  {
+   "band_bps": 1000,
+   "weeks": 69,
+   "inside": 64,
+   "above_cap": 5,
+   "below_floor": 0,
+   "share_inside": 0.9275,
+   "share_inside_wilson95": [
+    0.8413,
+    0.9687
+   ]
+  },
+  {
+   "band_bps": 1500,
+   "weeks": 69,
+   "inside": 68,
+   "above_cap": 1,
+   "below_floor": 0,
+   "share_inside": 0.9855,
+   "share_inside_wilson95": [
+    0.9224,
+    0.9974
+   ]
+  },
+  {
+   "band_bps": 2000,
+   "weeks": 69,
+   "inside": 68,
+   "above_cap": 1,
+   "below_floor": 0,
+   "share_inside": 0.9855,
+   "share_inside_wilson95": [
+    0.9224,
+    0.9974
+   ]
+  },
+  {
+   "band_bps": 2500,
+   "weeks": 69,
+   "inside": 69,
+   "above_cap": 0,
+   "below_floor": 0,
+   "share_inside": 1,
+   "share_inside_wilson95": [
+    0.9473,
+    1
+   ]
+  },
+  {
+   "band_bps": 3000,
+   "weeks": 69,
+   "inside": 69,
+   "above_cap": 0,
+   "below_floor": 0,
+   "share_inside": 1,
+   "share_inside_wilson95": [
+    0.9473,
+    1
+   ]
+  },
+  {
+   "band_bps": 4000,
+   "weeks": 69,
+   "inside": 69,
+   "above_cap": 0,
+   "below_floor": 0,
+   "share_inside": 1,
+   "share_inside_wilson95": [
+    0.9473,
+    1
+   ]
+  }
+ ],
+ "recommendation": {
+  "rule": "smallest band_bps in [1000,1500,2000,2500,3000,4000] whose fixing stayed inside the band in at least 95% of weeks",
+  "band_bps": 1500,
+  "met": true,
+  "no_breach_band_bps": 2500,
+  "lower_bound_band_bps": null
+ },
+ "hedge_neutral": {
+  "forward_shift": 0,
+  "weeks": 69,
+  "long_price_clamped_weeks": 0,
+  "mean_forward_usd_per_gpu_hour": 2.986652,
+  "buyer": {
+   "unhedged_weekly_cost": {
+    "mean": 4055.99,
+    "sd": 554.91,
+    "min": 3540,
+    "max": 5723.52,
+    "total": 279863.17
+   },
+   "hedged_weekly_cost": {
+    "mean": 4017.96,
+    "sd": 502.38,
+    "min": 3212.16,
+    "max": 5635.39,
+    "total": 277238.98
+   },
+   "sd_of_surprise": {
+    "unhedged": 184.72,
+    "hedged": 32.37
+   },
+   "variance_removed": 0.1804,
+   "surprise_variance_removed": 0.9693,
+   "largest_week_on_week_increase": {
+    "unhedged": {
+     "from_week": "2026-09-28",
+     "to_week": "2026-10-05",
+     "change": 500.45
+    },
+    "hedged": {
+     "from_week": "2026-10-05",
+     "to_week": "2026-10-12",
+     "change": 528.19
+    }
+   },
+   "hedge_cost_total": -2624.19,
+   "locked_per_week": {
+    "mean": 601.55,
+    "sd": 75.73,
+    "min": 481.15,
+    "max": 844.03,
+    "total": 41506.75
+   }
+  },
+  "seller": {
+   "unhedged_weekly_revenue": {
+    "mean": 4055.99,
+    "sd": 554.91,
+    "min": 3540,
+    "max": 5723.52,
+    "total": 279863.17
+   },
+   "hedged_weekly_revenue": {
+    "mean": 4017.96,
+    "sd": 502.38,
+    "min": 3212.16,
+    "max": 5635.39,
+    "total": 277238.98
+   },
+   "sd_of_surprise": {
+    "unhedged": 184.72,
+    "hedged": 32.37
+   },
+   "variance_removed": 0.1804,
+   "surprise_variance_removed": 0.9693,
+   "largest_week_on_week_decrease": {
+    "unhedged": {
+     "from_week": "2026-10-26",
+     "to_week": "2026-11-02",
+     "change": -108.48
+    },
+    "hedged": {
+     "from_week": "2026-08-24",
+     "to_week": "2026-08-31",
+     "change": -376.32
+    }
+   },
+   "hedge_gain_total": -2624.19,
+   "locked_per_week": {
+    "mean": 601.55,
+    "sd": 75.73,
+    "min": 481.15,
+    "max": 844.03,
+    "total": 41506.75
+   }
+  }
+ },
+ "capped_weeks": [
+  {
+   "week": "2026-06-01",
+   "side": "above_cap",
+   "anchor": 2.653,
+   "fixing": 3.25,
+   "move": 0.225028,
+   "floor": 2.256,
+   "cap": 3.05,
+   "unhedged_excess_usd_per_gpu_hour": 0.2,
+   "unhedged_excess_usd_per_week": 268.8,
+   "who_bears_it": "buyer pays spot above the cap"
+  }
+ ],
+ "sensitivity": [
+  {
+   "forward_shift": -0.05,
+   "weeks": 69,
+   "long_price_clamped_weeks": 0,
+   "mean_forward_usd_per_gpu_hour": 2.837609,
+   "buyer": {
+    "unhedged_weekly_cost": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_cost": {
+     "mean": 3817.64,
+     "sd": 477.22,
+     "min": 3052.22,
+     "max": 5353.15,
+     "total": 263417.28
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 43.07
+    },
+    "variance_removed": 0.2604,
+    "surprise_variance_removed": 0.9456,
+    "largest_week_on_week_increase": {
+     "unhedged": {
+      "from_week": "2026-09-28",
+      "to_week": "2026-10-05",
+      "change": 500.45
+     },
+     "hedged": {
+      "from_week": "2026-10-05",
+      "to_week": "2026-10-12",
+      "change": 501.31
+     }
+    },
+    "hedge_cost_total": -16445.89,
+    "locked_per_week": {
+     "mean": 401.23,
+     "sd": 50.53,
+     "min": 321.22,
+     "max": 561.79,
+     "total": 27685.06
+    }
+   },
+   "seller": {
+    "unhedged_weekly_revenue": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_revenue": {
+     "mean": 3817.64,
+     "sd": 477.22,
+     "min": 3052.22,
+     "max": 5353.15,
+     "total": 263417.28
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 43.07
+    },
+    "variance_removed": 0.2604,
+    "surprise_variance_removed": 0.9456,
+    "largest_week_on_week_decrease": {
+     "unhedged": {
+      "from_week": "2026-10-26",
+      "to_week": "2026-11-02",
+      "change": -108.48
+     },
+     "hedged": {
+      "from_week": "2026-08-24",
+      "to_week": "2026-08-31",
+      "change": -357.5
+     }
+    },
+    "hedge_gain_total": -16445.89,
+    "locked_per_week": {
+     "mean": 801.86,
+     "sd": 100.94,
+     "min": 641.09,
+     "max": 1126.27,
+     "total": 55328.45
+    }
+   }
+  },
+  {
+   "forward_shift": -0.02,
+   "weeks": 69,
+   "long_price_clamped_weeks": 0,
+   "mean_forward_usd_per_gpu_hour": 2.927101,
+   "buyer": {
+    "unhedged_weekly_cost": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_cost": {
+     "mean": 3937.92,
+     "sd": 492.31,
+     "min": 3147.65,
+     "max": 5522.5,
+     "total": 271716.48
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 34.92
+    },
+    "variance_removed": 0.2129,
+    "surprise_variance_removed": 0.9643,
+    "largest_week_on_week_increase": {
+     "unhedged": {
+      "from_week": "2026-09-28",
+      "to_week": "2026-10-05",
+      "change": 500.45
+     },
+     "hedged": {
+      "from_week": "2026-10-05",
+      "to_week": "2026-10-12",
+      "change": 517.44
+     }
+    },
+    "hedge_cost_total": -8146.69,
+    "locked_per_week": {
+     "mean": 521.51,
+     "sd": 65.65,
+     "min": 416.64,
+     "max": 731.14,
+     "total": 35984.26
+    }
+   },
+   "seller": {
+    "unhedged_weekly_revenue": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_revenue": {
+     "mean": 3937.92,
+     "sd": 492.31,
+     "min": 3147.65,
+     "max": 5522.5,
+     "total": 271716.48
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 34.92
+    },
+    "variance_removed": 0.2129,
+    "surprise_variance_removed": 0.9643,
+    "largest_week_on_week_decrease": {
+     "unhedged": {
+      "from_week": "2026-10-26",
+      "to_week": "2026-11-02",
+      "change": -108.48
+     },
+     "hedged": {
+      "from_week": "2026-08-24",
+      "to_week": "2026-08-31",
+      "change": -369.6
+     }
+    },
+    "hedge_gain_total": -8146.69,
+    "locked_per_week": {
+     "mean": 681.58,
+     "sd": 85.82,
+     "min": 545.66,
+     "max": 956.93,
+     "total": 47029.25
+    }
+   }
+  },
+  {
+   "forward_shift": 0,
+   "weeks": 69,
+   "long_price_clamped_weeks": 0,
+   "mean_forward_usd_per_gpu_hour": 2.986652,
+   "buyer": {
+    "unhedged_weekly_cost": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_cost": {
+     "mean": 4017.96,
+     "sd": 502.38,
+     "min": 3212.16,
+     "max": 5635.39,
+     "total": 277238.98
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 32.37
+    },
+    "variance_removed": 0.1804,
+    "surprise_variance_removed": 0.9693,
+    "largest_week_on_week_increase": {
+     "unhedged": {
+      "from_week": "2026-09-28",
+      "to_week": "2026-10-05",
+      "change": 500.45
+     },
+     "hedged": {
+      "from_week": "2026-10-05",
+      "to_week": "2026-10-12",
+      "change": 528.19
+     }
+    },
+    "hedge_cost_total": -2624.19,
+    "locked_per_week": {
+     "mean": 601.55,
+     "sd": 75.73,
+     "min": 481.15,
+     "max": 844.03,
+     "total": 41506.75
+    }
+   },
+   "seller": {
+    "unhedged_weekly_revenue": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_revenue": {
+     "mean": 4017.96,
+     "sd": 502.38,
+     "min": 3212.16,
+     "max": 5635.39,
+     "total": 277238.98
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 32.37
+    },
+    "variance_removed": 0.1804,
+    "surprise_variance_removed": 0.9693,
+    "largest_week_on_week_decrease": {
+     "unhedged": {
+      "from_week": "2026-10-26",
+      "to_week": "2026-11-02",
+      "change": -108.48
+     },
+     "hedged": {
+      "from_week": "2026-08-24",
+      "to_week": "2026-08-31",
+      "change": -376.32
+     }
+    },
+    "hedge_gain_total": -2624.19,
+    "locked_per_week": {
+     "mean": 601.55,
+     "sd": 75.73,
+     "min": 481.15,
+     "max": 844.03,
+     "total": 41506.75
+    }
+   }
+  },
+  {
+   "forward_shift": 0.02,
+   "weeks": 69,
+   "long_price_clamped_weeks": 0,
+   "mean_forward_usd_per_gpu_hour": 3.046203,
+   "buyer": {
+    "unhedged_weekly_cost": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_cost": {
+     "mean": 4097.99,
+     "sd": 512.45,
+     "min": 3276.67,
+     "max": 5748.29,
+     "total": 282761.47
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 32.85
+    },
+    "variance_removed": 0.1472,
+    "surprise_variance_removed": 0.9684,
+    "largest_week_on_week_increase": {
+     "unhedged": {
+      "from_week": "2026-09-28",
+      "to_week": "2026-10-05",
+      "change": 500.45
+     },
+     "hedged": {
+      "from_week": "2026-10-05",
+      "to_week": "2026-10-12",
+      "change": 538.94
+     }
+    },
+    "hedge_cost_total": 2898.3,
+    "locked_per_week": {
+     "mean": 681.58,
+     "sd": 85.82,
+     "min": 545.66,
+     "max": 956.93,
+     "total": 47029.25
+    }
+   },
+   "seller": {
+    "unhedged_weekly_revenue": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_revenue": {
+     "mean": 4097.99,
+     "sd": 512.45,
+     "min": 3276.67,
+     "max": 5748.29,
+     "total": 282761.47
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 32.85
+    },
+    "variance_removed": 0.1472,
+    "surprise_variance_removed": 0.9684,
+    "largest_week_on_week_decrease": {
+     "unhedged": {
+      "from_week": "2026-10-26",
+      "to_week": "2026-11-02",
+      "change": -108.48
+     },
+     "hedged": {
+      "from_week": "2026-08-24",
+      "to_week": "2026-08-31",
+      "change": -383.04
+     }
+    },
+    "hedge_gain_total": 2898.3,
+    "locked_per_week": {
+     "mean": 521.51,
+     "sd": 65.65,
+     "min": 416.64,
+     "max": 731.14,
+     "total": 35984.26
+    }
+   }
+  },
+  {
+   "forward_shift": 0.05,
+   "weeks": 69,
+   "long_price_clamped_weeks": 0,
+   "mean_forward_usd_per_gpu_hour": 3.136348,
+   "buyer": {
+    "unhedged_weekly_cost": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_cost": {
+     "mean": 4219.15,
+     "sd": 527.56,
+     "min": 3373.44,
+     "max": 5917.63,
+     "total": 291121.15
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 38.8
+    },
+    "variance_removed": 0.0961,
+    "surprise_variance_removed": 0.9559,
+    "largest_week_on_week_increase": {
+     "unhedged": {
+      "from_week": "2026-09-28",
+      "to_week": "2026-10-05",
+      "change": 500.45
+     },
+     "hedged": {
+      "from_week": "2026-10-05",
+      "to_week": "2026-10-12",
+      "change": 555.07
+     }
+    },
+    "hedge_cost_total": 11257.98,
+    "locked_per_week": {
+     "mean": 802.74,
+     "sd": 100.97,
+     "min": 642.43,
+     "max": 1126.27,
+     "total": 55388.93
+    }
+   },
+   "seller": {
+    "unhedged_weekly_revenue": {
+     "mean": 4055.99,
+     "sd": 554.91,
+     "min": 3540,
+     "max": 5723.52,
+     "total": 279863.17
+    },
+    "hedged_weekly_revenue": {
+     "mean": 4219.15,
+     "sd": 527.56,
+     "min": 3373.44,
+     "max": 5917.63,
+     "total": 291121.15
+    },
+    "sd_of_surprise": {
+     "unhedged": 184.72,
+     "hedged": 38.8
+    },
+    "variance_removed": 0.0961,
+    "surprise_variance_removed": 0.9559,
+    "largest_week_on_week_decrease": {
+     "unhedged": {
+      "from_week": "2026-10-26",
+      "to_week": "2026-11-02",
+      "change": -108.48
+     },
+     "hedged": {
+      "from_week": "2026-08-24",
+      "to_week": "2026-08-31",
+      "change": -395.14
+     }
+    },
+    "hedge_gain_total": 11257.98,
+    "locked_per_week": {
+     "mean": 400.36,
+     "sd": 50.5,
+     "min": 319.87,
+     "max": 561.79,
+     "total": 27624.58
+    }
+   }
+  }
+ ],
+ "basis_risk": [
+  {
+   "provider": "akash",
+   "in_composite": true,
+   "weeks": 33,
+   "enough_history": true,
+   "first_week": "2025-08-04",
+   "last_week": "2026-10-12",
+   "mean_price": 1.973218,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 311.01,
+    "hedged": 364.35
+   },
+   "surprise_variance_removed": -0.3725,
+   "correlation_of_moves_with_index": 0.1457,
+   "verdict": "hedge makes it worse"
+  },
+  {
+   "provider": "aws",
+   "in_composite": false,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 8.877135,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 1137.53,
+    "hedged": 1144.6
+   },
+   "surprise_variance_removed": -0.0125,
+   "correlation_of_moves_with_index": 0.0315,
+   "verdict": "hedge makes it worse"
+  },
+  {
+   "provider": "cudo",
+   "in_composite": true,
+   "weeks": 12,
+   "enough_history": false
+  },
+  {
+   "provider": "daytona",
+   "in_composite": true,
+   "weeks": 4,
+   "enough_history": false
+  },
+  {
+   "provider": "gcp",
+   "in_composite": false,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 10.629895,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 764.14,
+    "hedged": 775.64
+   },
+   "surprise_variance_removed": -0.0303,
+   "correlation_of_moves_with_index": 0.0242,
+   "verdict": "hedge makes it worse"
+  },
+  {
+   "provider": "lambda",
+   "in_composite": true,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 3.502091,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 136.15,
+    "hedged": 210.99
+   },
+   "surprise_variance_removed": -1.4013,
+   "correlation_of_moves_with_index": 0.0581,
+   "verdict": "hedge makes it worse"
+  },
+  {
+   "provider": "lium",
+   "in_composite": true,
+   "weeks": 1,
+   "enough_history": false
+  },
+  {
+   "provider": "nebius",
+   "in_composite": true,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 3.276398,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 234.21,
+    "hedged": 193.75
+   },
+   "surprise_variance_removed": 0.3157,
+   "correlation_of_moves_with_index": 0.6433,
+   "verdict": "hedge helps partly"
+  },
+  {
+   "provider": "oci",
+   "in_composite": false,
+   "weeks": 20,
+   "enough_history": true,
+   "first_week": "2026-06-08",
+   "last_week": "2026-11-02",
+   "mean_price": 10,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 0,
+    "hedged": 194.63
+   },
+   "surprise_variance_removed": null,
+   "correlation_of_moves_with_index": null,
+   "verdict": "provider price never moved; the hedge only adds index risk"
+  },
+  {
+   "provider": "runpod",
+   "in_composite": true,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 2.98647,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 183.46,
+    "hedged": 156.66
+   },
+   "surprise_variance_removed": 0.2708,
+   "correlation_of_moves_with_index": 0.5831,
+   "verdict": "hedge helps partly"
+  },
+  {
+   "provider": "vast",
+   "in_composite": true,
+   "weeks": 13,
+   "enough_history": false
+  },
+  {
+   "provider": "verda",
+   "in_composite": true,
+   "weeks": 69,
+   "enough_history": true,
+   "first_week": "2025-04-14",
+   "last_week": "2026-11-02",
+   "mean_price": 2.59281,
+   "sd_weekly_cost_surprise": {
+    "unhedged": 255.56,
+    "hedged": 209.98
+   },
+   "surprise_variance_removed": 0.3249,
+   "correlation_of_moves_with_index": 0.6376,
+   "verdict": "hedge helps partly"
+  }
+ ],
+ "regimes": {
+  "rule": "split at the week with the lowest centred 5-week mean fixing; falling = up to and including that week, rising = after it",
+  "trough_week": "2026-01-12",
+  "falling": {
+   "first_week": "2025-04-14",
+   "last_week": "2026-01-12",
+   "weeks": 33,
+   "mean_fixing": 2.802195,
+   "move": {
+    "weeks": 33,
+    "mean": -0.006536,
+    "sd": 0.023643,
+    "min": -0.075517,
+    "max": 0.041423,
+    "percentiles": {
+     "p1": -0.067011,
+     "p5": -0.040547,
+     "p10": -0.032489,
+     "p25": -0.019757,
+     "p50": 0,
+     "p75": 0.007517,
+     "p90": 0.019878,
+     "p95": 0.02581,
+     "p99": 0.038874
+    },
+    "abs_percentiles": {
+     "p50": 0.016542,
+     "p90": 0.034655,
+     "p95": 0.044428,
+     "p99": 0.067011
+    },
+    "largest_rises": [
+     {
+      "week": "2025-09-22",
+      "move": 0.041423
+     },
+     {
+      "week": "2025-11-24",
+      "move": 0.033457
+     },
+     {
+      "week": "2025-08-18",
+      "move": 0.020712
+     },
+     {
+      "week": "2025-10-27",
+      "move": 0.020712
+     },
+     {
+      "week": "2025-12-01",
+      "move": 0.016542
+     }
+    ],
+    "largest_falls": [
+     {
+      "week": "2025-07-14",
+      "move": -0.075517
+     },
+     {
+      "week": "2025-12-22",
+      "move": -0.048936
+     },
+     {
+      "week": "2025-12-08",
+      "move": -0.034955
+     },
+     {
+      "week": "2025-07-21",
+      "move": -0.032928
+     },
+     {
+      "week": "2025-08-04",
+      "move": -0.030733
+     }
+    ]
+   },
+   "coverage": [
+    {
+     "band_bps": 1000,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    },
+    {
+     "band_bps": 1500,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    },
+    {
+     "band_bps": 2000,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    },
+    {
+     "band_bps": 2500,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    },
+    {
+     "band_bps": 3000,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    },
+    {
+     "band_bps": 4000,
+     "weeks": 33,
+     "inside": 33,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.8957,
+      1
+     ]
+    }
+   ],
+   "hedge_neutral": {
+    "forward_shift": 0,
+    "weeks": 33,
+    "long_price_clamped_weeks": 0,
+    "mean_forward_usd_per_gpu_hour": 2.821515,
+    "buyer": {
+     "unhedged_weekly_cost": {
+      "mean": 3766.15,
+      "sd": 157.9,
+      "min": 3546.24,
+      "max": 3991.68,
+      "total": 124282.96
+     },
+     "hedged_weekly_cost": {
+      "mean": 3792.12,
+      "sd": 161.39,
+      "min": 3588.48,
+      "max": 3991.68,
+      "total": 125139.84
+     },
+     "sd_of_surprise": {
+      "unhedged": 89.67,
+      "hedged": 0
+     },
+     "variance_removed": -0.0446,
+     "surprise_variance_removed": 1,
+     "largest_week_on_week_increase": {
+      "unhedged": {
+       "from_week": "2025-10-13",
+       "to_week": "2025-10-20",
+       "change": 70.72
+      },
+      "hedged": {
+       "from_week": "2025-12-01",
+       "to_week": "2025-12-08",
+       "change": 201.6
+      }
+     },
+     "hedge_cost_total": 856.88,
+     "locked_per_week": {
+      "mean": 568.35,
+      "sd": 24.21,
+      "min": 537.6,
+      "max": 598.08,
+      "total": 18755.52
+     }
+    },
+    "seller": {
+     "unhedged_weekly_revenue": {
+      "mean": 3766.15,
+      "sd": 157.9,
+      "min": 3546.24,
+      "max": 3991.68,
+      "total": 124282.96
+     },
+     "hedged_weekly_revenue": {
+      "mean": 3792.12,
+      "sd": 161.39,
+      "min": 3588.48,
+      "max": 3991.68,
+      "total": 125139.84
+     },
+     "sd_of_surprise": {
+      "unhedged": 89.67,
+      "hedged": 0
+     },
+     "variance_removed": -0.0446,
+     "surprise_variance_removed": 1,
+     "largest_week_on_week_decrease": {
+      "unhedged": {
+       "from_week": "2025-09-01",
+       "to_week": "2025-09-08",
+       "change": -96.1
+      },
+      "hedged": {
+       "from_week": "2025-07-14",
+       "to_week": "2025-07-21",
+       "change": -201.6
+      }
+     },
+     "hedge_gain_total": 856.88,
+     "locked_per_week": {
+      "mean": 568.35,
+      "sd": 24.21,
+      "min": 537.6,
+      "max": 598.08,
+      "total": 18755.52
+     }
+    }
+   },
+   "capped_weeks": []
+  },
+  "rising": {
+   "first_week": "2026-01-19",
+   "last_week": "2026-11-02",
+   "weeks": 36,
+   "mean_fixing": 3.21553,
+   "move": {
+    "weeks": 36,
+    "mean": 0.025692,
+    "sd": 0.057277,
+    "min": -0.094234,
+    "max": 0.225028,
+    "percentiles": {
+     "p1": -0.08142,
+     "p5": -0.048482,
+     "p10": -0.016585,
+     "p25": -0.003978,
+     "p50": 0.017684,
+     "p75": 0.039212,
+     "p90": 0.104317,
+     "p95": 0.119909,
+     "p99": 0.196275
+    },
+    "abs_percentiles": {
+     "p50": 0.02232,
+     "p90": 0.104317,
+     "p95": 0.119909,
+     "p99": 0.196275
+    },
+    "largest_rises": [
+     {
+      "week": "2026-06-01",
+      "move": 0.225028
+     },
+     {
+      "week": "2026-10-05",
+      "move": 0.142877
+     },
+     {
+      "week": "2026-02-02",
+      "move": 0.112253
+     },
+     {
+      "week": "2026-06-08",
+      "move": 0.1046
+     },
+     {
+      "week": "2026-05-25",
+      "move": 0.104033
+     }
+    ],
+    "largest_falls": [
+     {
+      "week": "2026-05-04",
+      "move": -0.094234
+     },
+     {
+      "week": "2026-08-24",
+      "move": -0.057623
+     },
+     {
+      "week": "2026-05-18",
+      "move": -0.045435
+     },
+     {
+      "week": "2026-07-27",
+      "move": -0.017803
+     },
+     {
+      "week": "2026-03-30",
+      "move": -0.015367
+     }
+    ]
+   },
+   "coverage": [
+    {
+     "band_bps": 1000,
+     "weeks": 36,
+     "inside": 31,
+     "above_cap": 5,
+     "below_floor": 0,
+     "share_inside": 0.8611,
+     "share_inside_wilson95": [
+      0.7134,
+      0.9392
+     ]
+    },
+    {
+     "band_bps": 1500,
+     "weeks": 36,
+     "inside": 35,
+     "above_cap": 1,
+     "below_floor": 0,
+     "share_inside": 0.9722,
+     "share_inside_wilson95": [
+      0.8583,
+      0.9951
+     ]
+    },
+    {
+     "band_bps": 2000,
+     "weeks": 36,
+     "inside": 35,
+     "above_cap": 1,
+     "below_floor": 0,
+     "share_inside": 0.9722,
+     "share_inside_wilson95": [
+      0.8583,
+      0.9951
+     ]
+    },
+    {
+     "band_bps": 2500,
+     "weeks": 36,
+     "inside": 36,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.9036,
+      1
+     ]
+    },
+    {
+     "band_bps": 3000,
+     "weeks": 36,
+     "inside": 36,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.9036,
+      1
+     ]
+    },
+    {
+     "band_bps": 4000,
+     "weeks": 36,
+     "inside": 36,
+     "above_cap": 0,
+     "below_floor": 0,
+     "share_inside": 1,
+     "share_inside_wilson95": [
+      0.9036,
+      1
+     ]
+    }
+   ],
+   "hedge_neutral": {
+    "forward_shift": 0,
+    "weeks": 36,
+    "long_price_clamped_weeks": 0,
+    "mean_forward_usd_per_gpu_hour": 3.138028,
+    "buyer": {
+     "unhedged_weekly_cost": {
+      "mean": 4321.67,
+      "sd": 650.89,
+      "min": 3540,
+      "max": 5723.52,
+      "total": 155580.2
+     },
+     "hedged_weekly_cost": {
+      "mean": 4224.98,
+      "sd": 611.85,
+      "min": 3212.16,
+      "max": 5635.39,
+      "total": 152099.14
+     },
+     "sd_of_surprise": {
+      "unhedged": 224.99,
+      "hedged": 44.82
+     },
+     "variance_removed": 0.1164,
+     "surprise_variance_removed": 0.9603,
+     "largest_week_on_week_increase": {
+      "unhedged": {
+       "from_week": "2026-09-28",
+       "to_week": "2026-10-05",
+       "change": 500.45
+      },
+      "hedged": {
+       "from_week": "2026-10-05",
+       "to_week": "2026-10-12",
+       "change": 528.19
+      }
+     },
+     "hedge_cost_total": -3481.07,
+     "locked_per_week": {
+      "mean": 631.98,
+      "sd": 92.82,
+      "min": 481.15,
+      "max": 844.03,
+      "total": 22751.23
+     }
+    },
+    "seller": {
+     "unhedged_weekly_revenue": {
+      "mean": 4321.67,
+      "sd": 650.89,
+      "min": 3540,
+      "max": 5723.52,
+      "total": 155580.2
+     },
+     "hedged_weekly_revenue": {
+      "mean": 4224.98,
+      "sd": 611.85,
+      "min": 3212.16,
+      "max": 5635.39,
+      "total": 152099.14
+     },
+     "sd_of_surprise": {
+      "unhedged": 224.99,
+      "hedged": 44.82
+     },
+     "variance_removed": 0.1164,
+     "surprise_variance_removed": 0.9603,
+     "largest_week_on_week_decrease": {
+      "unhedged": {
+       "from_week": "2026-10-26",
+       "to_week": "2026-11-02",
+       "change": -108.48
+      },
+      "hedged": {
+       "from_week": "2026-08-24",
+       "to_week": "2026-08-31",
+       "change": -376.32
+      }
+     },
+     "hedge_gain_total": -3481.07,
+     "locked_per_week": {
+      "mean": 631.98,
+      "sd": 92.82,
+      "min": 481.15,
+      "max": 844.03,
+      "total": 22751.23
+     }
+    }
+   },
+   "capped_weeks": [
+    "2026-06-01"
+   ]
+  }
+ },
+ "robustness_fixed_panel": {
+  "rule": "providers with a value on >= 95% of composite index days; median on days when all are present",
+  "providers": [
+   "lambda",
+   "nebius",
+   "runpod",
+   "verda"
+  ],
+  "days_with_value": 536,
+  "weeks": 69,
+  "move": {
+   "weeks": 69,
+   "mean": 0.011413,
+   "sd": 0.035095,
+   "min": -0.050505,
+   "max": 0.20202,
+   "percentiles": {
+    "p1": -0.03683,
+    "p5": -0.019757,
+    "p10": -0.008207,
+    "p25": 0,
+    "p50": 0,
+    "p75": 0.004829,
+    "p90": 0.053615,
+    "p95": 0.072644,
+    "p99": 0.128427
+   },
+   "abs_percentiles": {
+    "p50": 0,
+    "p90": 0.053615,
+    "p95": 0.072644,
+    "p99": 0.128427
+   },
+   "largest_rises": [
+    {
+     "week": "2026-06-01",
+     "move": 0.20202
+    },
+    {
+     "week": "2026-05-25",
+     "move": 0.093795
+    },
+    {
+     "week": "2026-06-08",
+     "move": 0.091743
+    },
+    {
+     "week": "2026-10-05",
+     "move": 0.083621
+    },
+    {
+     "week": "2026-01-12",
+     "move": 0.05618
+    }
+   ],
+   "largest_falls": [
+    {
+     "week": "2025-07-14",
+     "move": -0.050505
+    },
+    {
+     "week": "2025-11-17",
+     "move": -0.030395
+    },
+    {
+     "week": "2025-12-29",
+     "move": -0.026596
+    },
+    {
+     "week": "2026-01-05",
+     "move": -0.022796
+    },
+    {
+     "week": "2026-01-26",
+     "move": -0.015198
+    }
+   ]
+  },
+  "coverage": [
+   {
+    "band_bps": 1000,
+    "weeks": 69,
+    "inside": 68,
+    "above_cap": 1,
+    "below_floor": 0,
+    "share_inside": 0.9855,
+    "share_inside_wilson95": [
+     0.9224,
+     0.9974
+    ]
+   },
+   {
+    "band_bps": 1500,
+    "weeks": 69,
+    "inside": 68,
+    "above_cap": 1,
+    "below_floor": 0,
+    "share_inside": 0.9855,
+    "share_inside_wilson95": [
+     0.9224,
+     0.9974
+    ]
+   },
+   {
+    "band_bps": 2000,
+    "weeks": 69,
+    "inside": 68,
+    "above_cap": 1,
+    "below_floor": 0,
+    "share_inside": 0.9855,
+    "share_inside_wilson95": [
+     0.9224,
+     0.9974
+    ]
+   },
+   {
+    "band_bps": 2500,
+    "weeks": 69,
+    "inside": 69,
+    "above_cap": 0,
+    "below_floor": 0,
+    "share_inside": 1,
+    "share_inside_wilson95": [
+     0.9473,
+     1
+    ]
+   },
+   {
+    "band_bps": 3000,
+    "weeks": 69,
+    "inside": 69,
+    "above_cap": 0,
+    "below_floor": 0,
+    "share_inside": 1,
+    "share_inside_wilson95": [
+     0.9473,
+     1
+    ]
+   },
+   {
+    "band_bps": 4000,
+    "weeks": 69,
+    "inside": 69,
+    "above_cap": 0,
+    "below_floor": 0,
+    "share_inside": 1,
+    "share_inside_wilson95": [
+     0.9473,
+     1
+    ]
+   }
+  ],
+  "composition_changes": 243
+ }
+}

@@ -1,0 +1,182 @@
+{
+ "note": "pct_gap = ours / theirs - 1, in percent. Weekly comparisons use the mean of our daily index over Monday..Sunday when at least 4 days have a value.",
+ "henryzhangpku_weekly_value": {
+  "what": "GIX-H100 'value' column (their normalised rate-card index, unaudited, MIT)",
+  "overlap": 38,
+  "first": "2025-04-14",
+  "last": "2026-09-28",
+  "mean_abs_pct_gap": 9.4,
+  "max_abs_pct_gap": 27.78,
+  "mean_signed_pct_gap": -8.18,
+  "worst": [
+   {
+    "date": "2026-04-06",
+    "ours": "2.881429",
+    "theirs": "3.990000",
+    "pct_gap": -27.78
+   },
+   {
+    "date": "2025-08-04",
+    "ours": "2.733333",
+    "theirs": "3.746800",
+    "pct_gap": -27.05
+   },
+   {
+    "date": "2026-05-18",
+    "ours": "2.674214",
+    "theirs": "3.653700",
+    "pct_gap": -26.81
+   },
+   {
+    "date": "2025-12-29",
+    "ours": "2.638571",
+    "theirs": "3.588000",
+    "pct_gap": -26.46
+   },
+   {
+    "date": "2025-09-29",
+    "ours": "2.764286",
+    "theirs": "3.588000",
+    "pct_gap": -22.96
+   }
+  ],
+  "mean_ours": "2.951735",
+  "mean_theirs": "3.239008"
+ },
+ "henryzhangpku_weekly_raw_on_demand_median": {
+  "what": "GIX-H100 'raw_on_demand_median' column (median of raw on-demand rate cards)",
+  "overlap": 38,
+  "first": "2025-04-14",
+  "last": "2026-09-28",
+  "mean_abs_pct_gap": 12.93,
+  "max_abs_pct_gap": 48.75,
+  "mean_signed_pct_gap": -3.26,
+  "worst": [
+   {
+    "date": "2025-08-04",
+    "ours": "2.733333",
+    "theirs": "1.837500",
+    "pct_gap": 48.75
+   },
+   {
+    "date": "2025-04-14",
+    "ours": "2.970000",
+    "theirs": "2.190000",
+    "pct_gap": 35.62
+   },
+   {
+    "date": "2026-04-06",
+    "ours": "2.881429",
+    "theirs": "4.040000",
+    "pct_gap": -28.68
+   },
+   {
+    "date": "2026-05-18",
+    "ours": "2.674214",
+    "theirs": "3.640000",
+    "pct_gap": -26.53
+   },
+   {
+    "date": "2025-09-29",
+    "ours": "2.764286",
+    "theirs": "3.645000",
+    "pct_gap": -24.16
+   }
+  ],
+  "mean_ours": "2.951735",
+  "mean_theirs": "3.126645"
+ },
+ "ornn_ocpi_h100_daily": {
+  "what": "Ornn OCPI-H100 SXM daily index (transaction-based by its own description). Only gap statistics are published here; Ornn's values are not redistributed.",
+  "overlap": 91,
+  "first": "2026-08-12",
+  "last": "2026-11-10",
+  "mean_abs_pct_gap": 28.14,
+  "max_abs_pct_gap": 59.09,
+  "mean_signed_pct_gap": 28.14,
+  "worst": [
+   {
+    "date": "2026-10-04",
+    "ours": "3.913500",
+    "pct_gap": 59.09
+   },
+   {
+    "date": "2026-10-10",
+    "ours": "4.040000",
+    "pct_gap": 52.45
+   },
+   {
+    "date": "2026-10-17",
+    "ours": "4.253000",
+    "pct_gap": 51.89
+   },
+   {
+    "date": "2026-10-11",
+    "ours": "4.048500",
+    "pct_gap": 51.63
+   },
+   {
+    "date": "2026-10-18",
+    "ours": "4.193000",
+    "pct_gap": 49.22
+   }
+  ],
+  "mean_ours": "3.729272"
+ },
+ "source_consistency_gpuhunt_vs_afhubbard": {
+  "what": "Same provider, same day: gpuhunt catalog median vs afhubbard snapshot median (both come from gpuhunt; differences come from snapshot time and filters)",
+  "overlap": 1207,
+  "first": "2026-01-12 aws",
+  "last": "2026-11-08 verda",
+  "mean_abs_pct_gap": 0.14,
+  "max_abs_pct_gap": 29.54,
+  "mean_signed_pct_gap": -0.03,
+  "worst": [
+   {
+    "date": "2026-05-25 verda",
+    "ours": "2.290000",
+    "theirs": "3.250000",
+    "pct_gap": -29.54
+   },
+   {
+    "date": "2026-10-01 nebius",
+    "ours": "4.500000",
+    "theirs": "3.850000",
+    "pct_gap": 16.88
+   },
+   {
+    "date": "2026-10-20 runpod",
+    "ours": "3.990000",
+    "theirs": "4.788000",
+    "pct_gap": -16.67
+   },
+   {
+    "date": "2026-11-08 runpod",
+    "ours": "3.990000",
+    "theirs": "4.788000",
+    "pct_gap": -16.67
+   },
+   {
+    "date": "2026-01-22 runpod",
+    "ours": "2.690000",
+    "theirs": "2.390000",
+    "pct_gap": 12.55
+   }
+  ],
+  "identical": 998
+ },
+ "providers_seen": [
+  "akash",
+  "aws",
+  "cudo",
+  "daytona",
+  "gcp",
+  "lambda",
+  "lium",
+  "nebius",
+  "oci",
+  "runpod",
+  "vast",
+  "verda"
+ ]
+}

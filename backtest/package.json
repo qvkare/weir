@@ -1,0 +1,22 @@
+{
+  "name": "@weir/backtest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Daily H100 on-demand price history and a historical backtest of Weir's week-ahead band.",
+  "type": "module",
+  "scripts": {
+    "fetch": "node --disable-warning=ExperimentalWarning src/fetch/main.ts",
+    "derive": "node --disable-warning=ExperimentalWarning src/derive/main.ts",
+    "backtest": "node --disable-warning=ExperimentalWarning src/backtest/main.ts",
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "hyparquet": "1.31.5"
+  },
+  "devDependencies": {
+    "@weir/engine": "workspace:*",
+    "@types/node": "22.18.0",
+    "typescript": "^5.9.3"
+  }
+}
