@@ -8,7 +8,7 @@ import { deliveryEnd, roundEnd, roundCount } from "@weir/engine";
 import { PRIORITY_ORDER } from "../src/budget.ts";
 import { cadence, runTick, type KeeperEntry, type StoredStatus, type TickReport } from "../src/keeper.ts";
 import { KEYS } from "../src/store.ts";
-import { AGENTS, FAST, IDS, PARAMS, paramsOf, REPORTERS, START, TOTAL_DEPOSIT, tpOf, TP, world, type World } from "./harness.ts";
+import { AGENTS, FAST, IDS, PARAMS, paramsOf, REPORTERS, START, totalDeposit, tpOf, TP, world, type World } from "./harness.ts";
 
 const HOUR = 3600;
 
@@ -23,7 +23,7 @@ const all = (reports: TickReport[]): KeeperEntry[] => reports.flatMap((r) => r.e
 async function totalsBalance(w: World, id: MarketId): Promise<void> {
   const t = await w.models[id].get_totals({});
   const sum = BigInt(t.free) + BigInt(t.locked) + BigInt(t.sets_backing) + BigInt(t.unredeemed) + BigInt(t.burned);
-  assert.equal(sum, TOTAL_DEPOSIT, `${id}: get_totals ${JSON.stringify(t)} must add up to the deposits`);
+  assert.equal(sum, totalDeposit(id), `${id}: get_totals ${JSON.stringify(t)} must add up to the deposits`);
 }
 
 const status = async (w: World) => JSON.parse((await w.store.get(KEYS.status))!) as StoredStatus;
@@ -220,14 +220,19 @@ test("fairness: weekly markets act on their own minutes, everyone is first in li
     lastFirst.set(head, r.now);
     for (const id of r.acting) if (!lastFirst.has(id)) lastFirst.set(id, r.now - 60);
   }
-  // And it shows in the trading: every fast round of the hour had commits, and every agent
-  // got its order into round 0 of each weekly market.
+  // And it shows in the trading. Participation is partly random now (an order below 50 commit
+  // fees is placed with a probability), so the bounds are what the rule guarantees in practice:
+  // every fast round of the hour had commits, at least four agents a round on average, and at
+  // least half the agents in round 0 of each weekly market.
   for (const id of IDS) {
     const m = w.models[id].market;
     const committers = (s: number, r: number) => new Set(m.events.filter((e) => e.event === "commit" && e.data.series === s && e.data.round === r).map((e) => (e.event === "commit" ? e.data.accountId : ""))).size;
     // (Round 2 is the start-up minute, spent reading four markets' parameters and reporting.)
-    if (id === FAST) for (let r = 3; r < roundCount(TP, 0); r++) assert.ok(committers(0, r) >= 6, `fast round ${r}: ${committers(0, r)} agents`);
-    else assert.equal(committers(0, 0), 8, `${id} round 0: all eight agents`);
+    if (id === FAST) {
+      const counts = Array.from({ length: roundCount(TP, 0) - 3 }, (_, i) => committers(0, i + 3));
+      assert.ok(counts.every((n) => n >= 1), `fast rounds 3 to 11: ${counts.join(" ")}`);
+      assert.ok(counts.reduce((a, b) => a + b, 0) >= 4 * counts.length, `fast rounds 3 to 11: ${counts.join(" ")}`);
+    } else assert.ok(committers(0, 0) >= 4, `${id} round 0: ${committers(0, 0)} agents`);
   }
   assert.deepEqual(all(reports).filter((e) => e.status === "failed" || e.action === "forfeit"), []);
 });

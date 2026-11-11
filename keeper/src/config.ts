@@ -144,8 +144,13 @@ export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_S
     else if (!ROLES.has(String((x as AgentSpec).role))) problems.push(`AGENTS[${i}] (${(x as AgentSpec).account_id}): role must be buyer, seller, maker or noise`);
     else agents.push(x as AgentSpec);
   }
-  const ids = [...reporters, ...agents, ...(keeper ? [keeper] : [])].map((s) => s.account_id);
+  // An agent appears once per market it trades (the deploy tool writes one entry per agent and
+  // market); any other repetition, or one account in two roles, is a mistake.
+  const agentIds = [...new Set(agents.map((a) => a.account_id))];
+  const ids = [...reporters.map((s) => s.account_id), ...agentIds, ...(keeper ? [keeper.account_id] : [])];
   for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) problems.push(`${id} appears more than once`);
+  const slots = agents.flatMap((a) => (a.market ? [a.market] : a.markets ? a.markets : ["*"]).map((m) => `${a.account_id} on ${m}`));
+  for (const slot of new Set(slots.filter((x, i) => slots.indexOf(x) !== i))) problems.push(`agent ${slot} appears more than once`);
   const swarmSecret = vars.SWARM_SECRET && vars.SWARM_SECRET.length > 0 ? vars.SWARM_SECRET : null;
   if (agents.length > 0 && swarmSecret === null) problems.push("SWARM_SECRET is not set: the agents will not trade");
   return { reporters, keeper, agents, swarmSecret, problems };

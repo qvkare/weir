@@ -10,7 +10,7 @@ import { FAULT_SECS } from "../src/keys.ts";
 import type { KeeperEntry, StoredStatus, TickReport } from "../src/keeper.ts";
 import type { ModelKey } from "../src/model.ts";
 import { KEYS } from "../src/store.ts";
-import { AGENTS, contractOf, KEEPER_ACCOUNT, REPORTERS, START, SWARM_SECRET, world, type World } from "./harness.ts";
+import { AGENTS, agentsFor, contractOf, KEEPER_ACCOUNT, REPORTERS, START, SWARM_SECRET, world, type World } from "./harness.ts";
 
 const MARKETS: MarketId[] = ["h100-fast", "h200-weekly"];
 const HOUR = 3600;
@@ -34,7 +34,9 @@ function keyedWorld(setup: Setup): World {
     Object.fromEntries(MARKETS.map((m) => [contractOf(m), issue(account, contractOf(m), methods)]));
   const vars = {
     REPORTERS: JSON.stringify(REPORTERS.map((id) => ({ account_id: id, keys: perContract(id, REPORTER_KEY_METHODS) }))),
-    AGENTS: JSON.stringify(AGENTS.map(({ deposit: _d, secret_key: _k, ...a }) => ({ ...a, keys: perContract(a.account_id, AGENT_KEY_METHODS) }))),
+    AGENTS: JSON.stringify(
+      MARKETS.flatMap((m) => agentsFor(m, true).map(({ deposit: _d, secret_key: _k, ...a }) => ({ ...a, keys: { [contractOf(m)]: issue(a.account_id, contractOf(m), AGENT_KEY_METHODS) } }))),
+    ),
     SWARM_SECRET,
     KEEPER: JSON.stringify({
       account_id: KEEPER_ACCOUNT,

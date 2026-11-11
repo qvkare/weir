@@ -47,23 +47,49 @@ export const deploymentsFor = (ids: readonly MarketId[]): Deployments => ({
 export const fakeKey = (who: string) => `ed25519:FAKESECRETKEY${who.replace(/[^a-z0-9]/gi, "")}ZZZZZZZZZZZZZZZZ`;
 export const SWARM_SECRET = "FAKESWARMSECRET-do-not-leak-0123456789";
 
-export const AGENTS: (AgentSpec & { deposit: bigint })[] = [
-  { account_id: "buyer-1.test", role: "buyer", need: 40, premium_bps: 400, deposit: 60_000_000n },
-  { account_id: "buyer-2.test", role: "buyer", need: 30, premium_bps: 600, deposit: 60_000_000n },
-  { account_id: "buyer-3.test", role: "buyer", need: 50, premium_bps: 300, deposit: 60_000_000n },
-  { account_id: "seller-1.test", role: "seller", capacity: 150, premium_bps: 300, deposit: 200_000_000n },
-  { account_id: "seller-2.test", role: "seller", capacity: 120, premium_bps: 500, deposit: 200_000_000n },
-  { account_id: "maker-1.test", role: "maker", spread_bps: 500, share_bps: 1000, max_size: 30, deposit: 400_000_000n },
-  { account_id: "noise-1.test", role: "noise", deposit: 30_000_000n },
-  { account_id: "noise-2.test", role: "noise", deposit: 30_000_000n },
-].map((a) => ({ ...a, secret_key: fakeKey(a.account_id) }) as AgentSpec & { deposit: bigint });
+/** The eight agents, sized as the agents package's simulation sizes them (`makeAgents` in
+ * `agents/src/sim.ts`): needs and capacities in GPU-hours per delivery period, 8.4 times larger
+ * on a weekly market, deposits scaled with that and with the chip's price level. */
+const BASE = [
+  { account_id: "buyer-1.test", role: "buyer", need: 40, premium_bps: 400, deposit: 60 },
+  { account_id: "buyer-2.test", role: "buyer", need: 30, premium_bps: 600, deposit: 60 },
+  { account_id: "buyer-3.test", role: "buyer", need: 50, premium_bps: 300, deposit: 60 },
+  { account_id: "seller-1.test", role: "seller", capacity: 150, premium_bps: 300, deposit: 200 },
+  { account_id: "seller-2.test", role: "seller", capacity: 120, premium_bps: 500, deposit: 200 },
+  { account_id: "maker-1.test", role: "maker", spread_bps: 500, share_bps: 1000, max_size: 40, deposit: 400 },
+  { account_id: "noise-1.test", role: "noise", deposit: 30 },
+  { account_id: "noise-2.test", role: "noise", deposit: 30 },
+] as const;
 
-/** Deposited on each market. */
-export const TOTAL_DEPOSIT = AGENTS.reduce((s, a) => s + a.deposit, 0n);
+const scaleOf = (id: MarketId, fast?: boolean) => (fast || MARKETS[id].preset === "fast" ? 1 : 8.4);
+const priceOf = (id: MarketId) => Math.max(1, MARKETS[id].startPrice / 2_900_000);
 
-export const secretVars = (opts: { reporters?: readonly string[]; keeper?: boolean } = {}) => ({
+/** The agents of one market, as `AGENTS` entries (one per agent and market) with their deposit. */
+export function agentsFor(id: MarketId, fast = false): (AgentSpec & { deposit: bigint })[] {
+  const k = scaleOf(id, fast);
+  return BASE.map((b) => {
+    const a: AgentSpec & { deposit: bigint } = {
+      ...b,
+      market: id,
+      secret_key: fakeKey(b.account_id),
+      deposit: BigInt(Math.ceil(b.deposit * k * priceOf(id))) * 1_000_000n,
+    } as AgentSpec & { deposit: bigint };
+    if ("need" in b) a.need = Math.round(b.need * k);
+    if ("capacity" in b) a.capacity = Math.round(b.capacity * k);
+    if ("max_size" in b) a.max_size = Math.round(b.max_size * k);
+    return a;
+  });
+}
+
+/** Every agent account (the same eight on every market). */
+export const AGENTS = agentsFor("h100-fast");
+
+/** Deposited on one market. */
+export const totalDeposit = (id: MarketId, fast = false): bigint => agentsFor(id, fast).reduce((s, a) => s + a.deposit, 0n);
+
+export const secretVars = (opts: { reporters?: readonly string[]; keeper?: boolean; markets?: readonly MarketId[]; fast?: readonly MarketId[] } = {}) => ({
   REPORTERS: JSON.stringify((opts.reporters ?? REPORTERS).map((id) => ({ account_id: id, secret_key: fakeKey(id) }))),
-  AGENTS: JSON.stringify(AGENTS.map(({ deposit: _d, ...a }) => a)),
+  AGENTS: JSON.stringify((opts.markets ?? IDS).flatMap((m) => agentsFor(m, opts.fast?.includes(m)).map(({ deposit: _d, ...a }) => a))),
   SWARM_SECRET,
   ...(opts.keeper === false ? {} : { KEEPER: JSON.stringify({ account_id: KEEPER_ACCOUNT, secret_key: fakeKey(KEEPER_ACCOUNT) }) }),
 });
@@ -130,7 +156,7 @@ export function world(opts: WorldOptions = {}): World {
   const models = {} as Record<MarketId, ModelWeir>;
   for (const id of ids) {
     const model = new ModelWeir(new Market(paramsFromWire(paramsOf(id, opts.fast?.includes(id) ? "fast" : undefined)), start), "keeper-viewer");
-    for (const a of AGENTS) {
+    for (const a of agentsFor(id, opts.fast?.includes(id))) {
       model.as(a.account_id).sync.change("register", {});
       model.as(a.account_id).sync.change("deposit", { amount: a.deposit.toString() });
     }
@@ -138,7 +164,7 @@ export function world(opts: WorldOptions = {}): World {
   }
   const store = new MemoryStore();
   const sources = new FakeSources();
-  const secrets = readSecrets(opts.vars ?? secretVars(opts));
+  const secrets = readSecrets(opts.vars ?? secretVars({ ...opts, markets: ids }));
   const deployments = deploymentsFor(ids);
   const chain = modelChain(Object.fromEntries(ids.map((id) => [contractOf(id), models[id]])), opts.keys ?? {});
   let wall = start;

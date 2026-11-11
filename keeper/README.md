@@ -49,8 +49,8 @@ every step the markets taking part are served in an order that rotates by one ea
 a market with work is first in line at least once every k of its turns, k being the number of
 markets acting in the same minute: with the four markets, every 2 minutes for the fast one and
 every 10 for a weekly one. `test/run.test.ts` checks who acts, that nobody spends out of turn,
-the head-of-line bound, and that over an hour every fast round got commits and every agent got
-an order into round 0 of each weekly market.
+the head-of-line bound, and that over an hour every fast round got commits (at least four agents
+a round on average) and at least half the agents got an order into round 0 of each weekly market.
 
 **The cost of the swarm.** For every round this keeper clears, it adds up its agents' commit
 fees and the forfeits of their unrevealed commits, from the round's book as read on chain just
@@ -227,6 +227,20 @@ real tick runs on its own CPU. On this machine (Node 22.23, Apple silicon):
 Estimated keeper CPU for a tick on chain, warm: about 1 ms for a tick with 5 transactions,
 about 7 ms for an index tick with 16. A cold isolate adds tens of milliseconds.
 
+**What the swarm burns.** At the ten-cent commit fee, the default swarm of eight agents
+(sized like the agents package's simulation: weekly needs and capacities 8.4 times the fast
+ones, deposits scaled with the chip's price) burned, in test dollars, measured over 24 hours on
+the model:
+
+| Market | Burned per day |
+|---|---|
+| `h100-fast` | $141 (about 1,400 commits) |
+| `h100-weekly` | $15 |
+| `h200-weekly` | $18 |
+
+All of it was commit fees: there were no forfeits. In every run the keeper's cost report
+(fees plus forfeits) equalled the contract's `burned`.
+
 **Store writes: 8.0 per tick, about 11,600 a day** (status and log, lease, sealed orders,
 progress marks, the cost record, and every five minutes three bundles, the latest map and the
 attempt).
@@ -246,7 +260,7 @@ pnpm --filter @weir/keeper bench
 
 All on `ModelWeir` with an in-memory store, a fake clock and a fake fetch serving the index
 fixtures for every chip (`test/harness.ts`: the four `MARKETS`, three reporters, eight agents
-on each, the housekeeping account):
+on each sized for its market as the agents package sizes them, the housekeeping account):
 
 - `run.test.ts`:
   - **Three hours, four markets:** every bucket printed (fast buckets two hours old pruned),
@@ -262,7 +276,9 @@ on each, the housekeeping account):
   - **A reporter missing:** with two agreeing, the bucket stays open, then `finalize_print`
     gives the print after the window. With two 5% apart, there is no print, the log gives the
     500 bps against `max_spread_bps` 200, and there is no last print.
-  - **The fairness rule** (as above).
+  - **The fairness rule** (as above). An order below 50 commit fees is now placed with a
+    probability, so participation is checked with bounds: every fast round had commits, at
+    least four agents a round on average, and at least half the agents in each weekly round 0.
   - **A budget of 10:** never an 11th request, requests in priority order, everything printed,
     settled and redeemed, the one reveal that cannot fit logged as a forfeit.
   - **No housekeeping account:** pruning off and said so.
