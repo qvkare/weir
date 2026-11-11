@@ -20,9 +20,9 @@ test("DirStore: one file per key, any key, and the keeper runs on it", async () 
     await store.delete("never-written");
     assert.equal(await store.get("orders/weir|0|1|a.test|0"), null);
 
-    const w = world();
+    const w = world({ markets: ["h100-fast"] });
     for (let t = START; t <= START + 300; t += 60) await w.at(t, { store });
-    const latest = JSON.parse((await store.get(KEYS.latest))!) as { hash: string };
+    const latest = (JSON.parse((await store.get(KEYS.latest))!) as Record<string, { hash: string }>).h100!;
     const res = await handle(new Request(`http://localhost/bundles/${latest.hash}.json`), store);
     assert.equal(res.status, 200);
     assert.ok(readdirSync(dir).every((f) => !f.endsWith(".tmp")), "no temporary file left behind");

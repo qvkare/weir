@@ -3,9 +3,9 @@
 // request is refused before it is made, so a tick can never make one more.
 
 /** What a request was for, in the order the budget is spent. */
-export type Priority = "plan" | "urgent-reveal" | "report" | "reveal-clear" | "commit" | "settle-redeem";
+export type Priority = "plan" | "urgent-reveal" | "report" | "reveal-clear" | "commit" | "settle-redeem" | "prune";
 
-export const PRIORITY_ORDER: readonly Priority[] = ["plan", "urgent-reveal", "report", "reveal-clear", "commit", "settle-redeem"];
+export const PRIORITY_ORDER: readonly Priority[] = ["plan", "urgent-reveal", "report", "reveal-clear", "commit", "settle-redeem", "prune"];
 
 export const BUDGET_MARK = "request budget used up";
 
@@ -19,6 +19,8 @@ export class BudgetExhausted extends Error {
 
 export interface SpentRequest {
   priority: Priority;
+  /** The market the request was for; absent for the index fetch, which serves them all. */
+  market?: string;
   what: string;
 }
 
@@ -28,6 +30,8 @@ export class Budget {
   readonly spent: SpentRequest[] = [];
   /** What the requests made now are for. Set by the keeper before each step. */
   priority: Priority = "plan";
+  /** The market the requests made now are for. Set by the keeper before each market's turn. */
+  market: string | undefined = undefined;
 
   constructor(limit: number) {
     if (!Number.isInteger(limit) || limit < 1) throw new Error("the request budget must be a positive integer");
@@ -45,7 +49,7 @@ export class Budget {
   /** Spends `n` requests, or throws without spending any. */
   spend(n: number, what: string): void {
     if (this.spent.length + n > this.limit) throw new BudgetExhausted(this.limit, what);
-    for (let i = 0; i < n; i++) this.spent.push({ priority: this.priority, what });
+    for (let i = 0; i < n; i++) this.spent.push({ priority: this.priority, ...(this.market ? { market: this.market } : {}), what });
   }
 
   /** Throws unless `n` requests are left. Spends nothing. */

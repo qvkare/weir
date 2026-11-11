@@ -12,7 +12,7 @@
     // PLACEHOLDER: replace with the id printed by `pnpm --filter @weir/keeper exec wrangler kv namespace create STORE`.
     { "binding": "STORE", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
   ],
-  // Secrets, set with `wrangler secret put <NAME>`, never in this file: REPORTERS, AGENTS, SWARM_SECRET.
+  // Secrets, set with `wrangler secret put <NAME>`, never in this file: REPORTERS, AGENTS, SWARM_SECRET, and optionally KEEPER.
   "vars": { "BUDGET": "40" },
   "observability": { "enabled": true }
 }

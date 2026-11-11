@@ -36,6 +36,7 @@ export const KEYS = {
   bundle: (hash: string) => `bundles/${hash}.json`,
   params: (contract: string) => `params/${contract}`,
   marks: (contract: string) => `marks/${contract}`,
+  costs: (contract: string) => `costs/${contract}`,
   order: (key: string) => `orders/${key}`,
 } as const;
 

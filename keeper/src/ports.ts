@@ -13,7 +13,7 @@ import {
   type PortChange,
   type WeirPort,
 } from "@weir/chain";
-import type { WireParams, WireStatus } from "@weir/engine";
+import type { WireParams, WireRound, WireStatus } from "@weir/engine";
 import { Budget, BudgetExhausted } from "./budget.ts";
 import type { MarketDeployment, Signer } from "./config.ts";
 
@@ -95,6 +95,9 @@ export class Meter {
   /** Read once per tick: phases come from the clock, and a tick is short. */
   status: WireStatus | null = null;
   readonly txs: TxRecord[] = [];
+  /** The last book read of each round (`series/round`), so the keeper can see what a round
+   * it cleared held: who committed, their fees, and which commits were never revealed. */
+  readonly books = new Map<string, WireRound>();
   readonly #cache = new Map<string, string>();
   #outcome: { tx_hash: string } | null = null;
 
@@ -125,6 +128,10 @@ export class Meter {
       if (hit !== undefined) return JSON.parse(hit);
       this.#charge(COST.view, `view ${method}`);
       const result = await inner.view(method as never, args as never);
+      if (method === "get_round" && result) {
+        const a = args as { series: number; round: number };
+        this.books.set(`${a.series}/${a.round}`, clone(result as WireRound));
+      }
       if (method === "get_params") this.params = clone(result as WireParams);
       else if (method === "get_status") this.status = clone(result as WireStatus);
       else this.#cache.set(key, JSON.stringify(result ?? null));

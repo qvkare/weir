@@ -75,8 +75,8 @@ async function main(): Promise<void> {
   }
   const store = new DirStore(values.store);
   const deployments = JSON.parse(readFileSync(values.deployments, "utf8")) as Deployments;
-  const { REPORTERS, AGENTS, SWARM_SECRET } = process.env;
-  const secrets = readSecrets({ REPORTERS, AGENTS, SWARM_SECRET });
+  const { REPORTERS, AGENTS, SWARM_SECRET, KEEPER } = process.env;
+  const secrets = readSecrets({ REPORTERS, AGENTS, SWARM_SECRET, KEEPER });
   const tickAt = (now: number) => runTick({ deployments, store, secrets, fetch: (url, init) => fetch(url, init), budget: Number(values.budget), leaseConfirmMs: 200 }, now);
 
   if (values.port) {

@@ -1,4 +1,5 @@
-// What one tick costs in time. Runs the keeper on the model (ModelWeir) with the index
+// What one tick costs in time. Runs the keeper on the model (ModelWeir): four markets (the
+// agents package's MARKETS), three chips, eight agents and three reporters, with the index
 // package's saved source responses, then measures separately the three things a real tick
 // does on its own CPU that the model skips or hides: parsing the source payloads, hashing,
 // and signing transactions.
@@ -6,7 +7,8 @@
 //   node keeper/scripts/bench.ts
 import { performance } from "node:perf_hooks";
 import { base58Encode, KeyPair, signTransaction, utf8Encode } from "@weir/chain";
-import { bundleHash, makeBundle, sha256Hex, SOURCES, type Outcome } from "@weir/index";
+import { bundleHash, CHIP_IDS, CHIPS, makeBundle, sha256Hex, sourcesFor, type Outcome } from "@weir/index";
+import { requestKey } from "@weir/index/fetch";
 import { START, fixtureBody, world } from "../test/harness.ts";
 
 const cpuMs = (f: () => void | Promise<void>) => async (): Promise<{ cpu: number; wall: number }> => {
@@ -26,21 +28,27 @@ async function repeat(n: number, f: () => Promise<{ cpu: number; wall: number }>
   return { cpu: median(runs.map((r) => r.cpu)), wall: median(runs.map((r) => r.wall)) };
 }
 
+// The three chips' outcomes, as one fetch of 8 distinct requests gives them.
+const perChip = CHIP_IDS.map((chip) => ({ chip, bodies: sourcesFor(CHIPS[chip]).map((s) => ({ source: s, body: fixtureBody(s.id, chip) })) }));
+const distinct = new Map(perChip.flatMap((c) => c.bodies.map((b) => [requestKey(b.source), b.body] as const)));
+const buildAll = async () => {
+  const hashes = new Map<string, string>();
+  for (const [k, body] of distinct) hashes.set(k, await sha256Hex(body));
+  for (const c of perChip) {
+    const outs: Outcome[] = c.bodies.map((b) => ({ ...b, raw_sha256: hashes.get(requestKey(b.source))! }));
+    await bundleHash(makeBundle(0, 0, outs, CHIPS[c.chip]));
+  }
+};
+
 // 0. Cold: the first time each piece runs in this process, as in a fresh isolate.
-const coldBodies = SOURCES.map((s) => ({ source: s, body: fixtureBody(s.id) }));
 const cold = {
-  parse: (
-    await cpuMs(async () => {
-      const outs = await Promise.all(coldBodies.map(async (b) => ({ ...b, raw_sha256: await sha256Hex(b.body) })));
-      await bundleHash(makeBundle(0, 0, outs));
-    })()
-  ).cpu,
+  parse: (await cpuMs(buildAll)()).cpu,
   key: 0,
   sign: 0,
   tick: 0,
 };
 
-// 1. Whole ticks on the model: an hour of the fast market, eight agents, three reporters.
+// 1. Whole ticks on the model: an hour of four markets, eight agents, three reporters.
 const w = world();
 cold.tick = (await cpuMs(async () => void (await w.at(START)))()).cpu;
 for (let t = START + 60; t < START + 600; t += 60) await w.at(t); // open the series
@@ -58,17 +66,16 @@ const busiest = [...ticks].sort((a, b) => b.cpu - a.cpu)[0]!;
 const indexTicks = ticks.filter((t) => t.index);
 const otherTicks = ticks.filter((t) => !t.index);
 
-// 2. Parsing: JSON.parse and the six parsers over the saved payloads, as makeBundle does.
-const bodies = SOURCES.map((s) => ({ source: s, body: fixtureBody(s.id) }));
-const bytes = bodies.reduce((n, b) => n + b.body.length, 0);
-const outcomes: Outcome[] = await Promise.all(bodies.map(async (b) => ({ ...b, raw_sha256: await sha256Hex(b.body) })));
-const parse = await repeat(30, cpuMs(() => void makeBundle(0, 0, outcomes)));
+// 2. Parsing: JSON.parse and the parsers over the saved payloads, as makeBundle does, per chip.
+const bytes = [...distinct.values()].reduce((n, b) => n + b.length, 0);
+const outcomes = await Promise.all(perChip.map(async (c) => ({ chip: c.chip, outs: await Promise.all(c.bodies.map(async (b): Promise<Outcome> => ({ ...b, raw_sha256: await sha256Hex(b.body) }))) })));
+const parse = await repeat(30, cpuMs(() => void outcomes.forEach((c) => makeBundle(0, 0, c.outs, CHIPS[c.chip]))));
 
-// 3. Hashing: sha256 of every raw body (Web Crypto) and the bundle hash (canonical JSON + sha256).
-const bundle = makeBundle(0, 0, outcomes);
+// 3. Hashing: sha256 of every distinct raw body (Web Crypto) and the three bundle hashes.
+const bundles = outcomes.map((c) => makeBundle(0, 0, c.outs, CHIPS[c.chip]));
 const hash = await repeat(30, cpuMs(async () => {
-  for (const b of bodies) await sha256Hex(utf8Encode(b.body));
-  await bundleHash(bundle);
+  for (const body of distinct.values()) await sha256Hex(utf8Encode(body));
+  for (const b of bundles) await bundleHash(b);
 }));
 
 // 4. Signing: one function-call transaction, as NearAccount signs it (borsh, sha256, ed25519).
@@ -90,7 +97,7 @@ const maxTxs = Math.max(...ticks.map((t) => t.txs));
 const meanTxs = ticks.reduce((s, t) => s + t.txs, 0) / ticks.length;
 const chainIndexTick = parse.cpu + hash.cpu + maxTxs * sign.cpu;
 
-console.log(`Keeper tick cost (Node ${process.version}, ${ticks.length} ticks of the fast market, 8 agents, 3 reporters)
+console.log(`Keeper tick cost (Node ${process.version}, ${ticks.length} ticks of four markets and three chips, 8 agents, 3 reporters)
 
 Model ticks (keeper + swarm + the engine executing every call; no network):
   median tick           cpu ${fmt(median(ticks.map((t) => t.cpu)))}   wall ${fmt(median(ticks.map((t) => t.wall)))}
@@ -100,8 +107,8 @@ Model ticks (keeper + swarm + the engine executing every call; no network):
   transactions per tick mean ${meanTxs.toFixed(1)}, max ${maxTxs}
 
 What a real tick adds on its own CPU:
-  parse 6 payloads      cpu ${fmt(parse.cpu)}   (${(bytes / 1024).toFixed(0)} KiB of JSON, makeBundle with all six parsers)
-  hash bodies + bundle  cpu ${fmt(hash.cpu)}   (Web Crypto sha256 of each body, canonical JSON + sha256 of the bundle)
+  parse 3 chips         cpu ${fmt(parse.cpu)}   (${distinct.size} bodies, ${(bytes / 1024).toFixed(0)} KiB of JSON, makeBundle per chip)
+  hash bodies + bundle  cpu ${fmt(hash.cpu)}   (Web Crypto sha256 of each body, canonical JSON + sha256 of 3 bundles)
   sign one transaction  cpu ${fmt(sign.cpu)}   (borsh + sha256 + ed25519 with @noble/ed25519)
 
 Cold (first call in a fresh process):

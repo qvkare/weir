@@ -1,5 +1,5 @@
 // Cloudflare Worker adapter: the cron trigger runs one tick, and `fetch` serves the GET routes.
-// Bindings: `STORE` (a KV namespace). Secrets: `REPORTERS`, `AGENTS`, `SWARM_SECRET`.
+// Bindings: `STORE` (a KV namespace). Secrets: `REPORTERS`, `AGENTS`, `SWARM_SECRET`, optional `KEEPER`.
 // Optional variable: `BUDGET` (outbound requests per tick, default 40).
 import deployments from "../../deployments.json" with { type: "json" };
 import type { Deployments } from "./config.ts";
@@ -13,6 +13,8 @@ export interface Env {
   REPORTERS?: string;
   AGENTS?: string;
   SWARM_SECRET?: string;
+  /** Optional housekeeping account, `{ account_id, secret_key }`. */
+  KEEPER?: string;
   BUDGET?: string;
 }
 

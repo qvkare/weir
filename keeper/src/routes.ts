@@ -1,7 +1,8 @@
 // The keeper's public read-only HTTP face, shared by the Worker and the Node loop:
 // GET /bundles/<hash>.json, /latest.json, /status and /health, with permissive CORS.
 // Nothing served here comes from the secrets; the stored log was redacted before it was saved.
-import type { LatestBundle } from "./indexer.ts";
+import { chipById } from "@weir/index";
+import { readLatest } from "./indexer.ts";
 import type { StoredStatus } from "./keeper.ts";
 import { KEYS, readJson, type KeeperStore } from "./store.ts";
 
@@ -30,11 +31,12 @@ export async function handle(request: Request, store: KeeperStore, now: number =
   const method = request.method.toUpperCase();
   if (method === "OPTIONS") return reply(204, null);
   if (method !== "GET" && method !== "HEAD") return reply(405, "only GET\n", { allow: "GET, HEAD, OPTIONS", "content-type": "text/plain" });
-  const res = await route(new URL(request.url).pathname, store, now);
+  const url = new URL(request.url);
+  const res = await route(url.pathname, url.searchParams, store, now);
   return method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 }
 
-async function route(path: string, store: KeeperStore, now: number): Promise<Response> {
+async function route(path: string, query: URLSearchParams, store: KeeperStore, now: number): Promise<Response> {
   const bundle = BUNDLE.exec(path);
   if (bundle) {
     const text = await store.get(KEYS.bundle(bundle[1]!));
@@ -43,10 +45,12 @@ async function route(path: string, store: KeeperStore, now: number): Promise<Res
     return reply(200, text, { "content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" });
   }
   if (path === "/latest.json") {
-    const latest = await readJson<LatestBundle>(store, KEYS.latest);
+    const chip = query.get("chip") ?? "h100";
+    if (!chipById(chip)) return json(404, { error: `unknown chip ${JSON.stringify(chip.slice(0, 32))}` });
+    const latest = (await readLatest(store))[chip as keyof Awaited<ReturnType<typeof readLatest>>];
     const text = latest ? await store.get(KEYS.bundle(latest.hash)) : null;
-    if (!latest || text === null) return json(404, { error: "no bundle yet" });
-    return reply(200, `{"hash":${JSON.stringify(latest.hash)},"bundle":${text}}`, {
+    if (!latest || text === null) return json(404, { error: `no ${chip} bundle yet` });
+    return reply(200, `{"chip":${JSON.stringify(chip)},"hash":${JSON.stringify(latest.hash)},"bundle":${text}}`, {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "public, max-age=30",
     });

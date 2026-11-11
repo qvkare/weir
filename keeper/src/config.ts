@@ -1,12 +1,16 @@
 // What the keeper runs on: the public deployment file and the secrets. Secrets come only
 // from the environment and are never echoed, not even in a parse error.
-import { buyer, maker, noise, seller, type Strategy } from "@weir/agents";
+import { buyer, maker, noise, seller, type MarketId, type Strategy } from "@weir/agents";
+import type { ChipId } from "@weir/index";
 
-export type MarketId = "weekly" | "fast";
+export type { MarketId } from "@weir/agents";
 
 export interface MarketDeployment {
+  /** One of the agents package's `MARKETS`: `h100-fast`, `h100-weekly`, `h200-weekly`, `a100-80-weekly`. */
   id: MarketId;
   label: string;
+  /** The index package's chip id: the bundle this market's reporters report from. */
+  chip: ChipId;
   /** The Weir contract account. */
   contract: string;
   usdc: string;
@@ -51,6 +55,10 @@ export interface AgentSpec extends Signer {
 
 export interface Secrets {
   reporters: Signer[];
+  /** Optional housekeeping account, holding a key for `KEEPER_KEY_METHODS`. It signs clear,
+   * settle, finalize_print and the prunes; without it the first agent signs clear and settle,
+   * the first reporter finalize_print, and nothing is pruned. */
+  keeper: Signer | null;
   agents: AgentSpec[];
   /** Salts and random streams come from it. Null: the swarm does not run. */
   swarmSecret: string | null;
@@ -84,8 +92,22 @@ function parseList(name: string, text: string | undefined, problems: string[]): 
 }
 
 /** Reads `REPORTERS`, `AGENTS` and `SWARM_SECRET`. Bad entries are dropped and named. */
-export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_SECRET?: string }): Secrets {
+export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_SECRET?: string; KEEPER?: string }): Secrets {
   const problems: string[] = [];
+  let keeper: Signer | null = null;
+  if (vars.KEEPER !== undefined && vars.KEEPER.trim() !== "") {
+    let v: unknown = null;
+    try {
+      v = JSON.parse(vars.KEEPER);
+    } catch {
+      problems.push("KEEPER is not valid JSON");
+    }
+    if (v !== null) {
+      const p = signerProblem("KEEPER", 0, v);
+      if (p) problems.push(p.replace("KEEPER[0]", "KEEPER"));
+      else keeper = { account_id: (v as Signer).account_id, secret_key: (v as Signer).secret_key };
+    }
+  }
   const reporters: Signer[] = [];
   for (const [i, x] of parseList("REPORTERS", vars.REPORTERS, problems).entries()) {
     const p = signerProblem("REPORTERS", i, x);
@@ -99,11 +121,11 @@ export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_S
     else if (!ROLES.has(String((x as AgentSpec).role))) problems.push(`AGENTS[${i}] (${(x as AgentSpec).account_id}): role must be buyer, seller, maker or noise`);
     else agents.push(x as AgentSpec);
   }
-  const ids = [...reporters, ...agents].map((s) => s.account_id);
+  const ids = [...reporters, ...agents, ...(keeper ? [keeper] : [])].map((s) => s.account_id);
   for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) problems.push(`${id} appears more than once`);
   const swarmSecret = vars.SWARM_SECRET && vars.SWARM_SECRET.length > 0 ? vars.SWARM_SECRET : null;
   if (agents.length > 0 && swarmSecret === null) problems.push("SWARM_SECRET is not set: the agents will not trade");
-  return { reporters, agents, swarmSecret, problems };
+  return { reporters, keeper, agents, swarmSecret, problems };
 }
 
 /** The agents package's strategy for one agent, with the simulation's defaults. */
@@ -122,8 +144,8 @@ export function strategyOf(a: AgentSpec): Strategy {
 }
 
 /** Replaces every secret in a value that is about to be stored or served. */
-export function redactor(secrets: Pick<Secrets, "reporters" | "agents" | "swarmSecret">): <T>(v: T) => T {
-  const needles = [...secrets.reporters, ...secrets.agents]
+export function redactor(secrets: Pick<Secrets, "reporters" | "agents" | "swarmSecret" | "keeper">): <T>(v: T) => T {
+  const needles = [...secrets.reporters, ...secrets.agents, ...(secrets.keeper ? [secrets.keeper] : [])]
     .flatMap((s) => [s.secret_key, s.secret_key.slice("ed25519:".length)])
     .concat(secrets.swarmSecret ?? [])
     .filter((s) => s.length >= 8)

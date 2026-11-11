@@ -7,13 +7,13 @@ import { readSecrets } from "../src/config.ts";
 import { handle } from "../src/routes.ts";
 import { KEYS, MemoryStore } from "../src/store.ts";
 import worker, { tickOnce, type Env } from "../src/worker.ts";
-import { DEPLOYMENTS, fakeKey, REPORTERS, secretVars, START, SWARM_SECRET, world } from "./harness.ts";
+import { deploymentsFor, fakeKey, IDS, KEEPER_ACCOUNT, REPORTERS, secretVars, START, SWARM_SECRET, world } from "./harness.ts";
 
 const BASE = "https://weir-keeper.example.workers.dev";
 const get = (path: string, env: Env, method = "GET") => worker.fetch(new Request(`${BASE}${path}`, { method }), env);
 
 /** Every secret a leak test looks for: whole keys, their base58 bodies, and the swarm secret. */
-const SECRETS = [...REPORTERS, "buyer-1.test", "seller-2.test", "noise-2.test"].flatMap((id) => [fakeKey(id), fakeKey(id).slice(8)]).concat(SWARM_SECRET, "FAKESECRETKEY");
+const SECRETS = [...REPORTERS, KEEPER_ACCOUNT, "buyer-1.test", "seller-2.test", "noise-2.test"].flatMap((id) => [fakeKey(id), fakeKey(id).slice(8)]).concat(SWARM_SECRET, "FAKESECRETKEY");
 
 function assertNoSecret(text: string, where: string): void {
   for (const s of SECRETS) assert.ok(!text.includes(s), `${where} contains a secret (${s.slice(0, 16)}...)`);
@@ -27,7 +27,7 @@ async function ranWorld() {
 
 test("GET /bundles/<hash>.json: the stored canonical bundle, immutable, its sha256 is its name", async () => {
   const { w, env } = await ranWorld();
-  const latest = JSON.parse((await w.store.get(KEYS.latest))!) as { hash: string };
+  const latest = (JSON.parse((await w.store.get(KEYS.latest))!) as Record<string, { hash: string }>).h200!;
   const res = await get(`/bundles/${latest.hash}.json`, env);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("cache-control"), "public, max-age=31536000, immutable");
@@ -35,7 +35,8 @@ test("GET /bundles/<hash>.json: the stored canonical bundle, immutable, its sha2
   assert.match(res.headers.get("content-type")!, /^application\/json/);
   const body = await res.text();
   assert.equal(await sha256Hex(body), latest.hash);
-  assert.equal(JSON.parse(body).index, 2_760_000);
+  assert.equal(JSON.parse(body).index, 4_250_000);
+  assert.equal(JSON.parse(body).chip, "h200");
 
   const missing = await get(`/bundles/${"0".repeat(64)}.json`, env);
   assert.equal(missing.status, 404);
@@ -49,9 +50,14 @@ test("GET /latest.json, /status, /health, unknown paths, OPTIONS and other metho
   const latest = await get("/latest.json", env);
   assert.equal(latest.status, 200);
   assert.equal(latest.headers.get("cache-control"), "public, max-age=30");
-  const body = (await latest.json()) as { hash: string; bundle: { index: number } };
-  assert.equal(body.hash, JSON.parse((await w.store.get(KEYS.latest))!).hash);
-  assert.equal(body.bundle.index, 2_760_000);
+  const stored = JSON.parse((await w.store.get(KEYS.latest))!) as Record<string, { hash: string }>;
+  const body = (await latest.json()) as { chip: string; hash: string; bundle: { index: number; chip: string } };
+  assert.deepEqual([body.chip, body.hash, body.bundle.index, body.bundle.chip], ["h100", stored.h100!.hash, 2_900_000, "h100"]);
+  for (const [chip, index] of [["h200", 4_250_000], ["a100-80", 1_590_000]] as const) {
+    const r = (await (await get(`/latest.json?chip=${chip}`, env)).json()) as { hash: string; bundle: { index: number } };
+    assert.deepEqual([r.hash, r.bundle.index], [stored[chip]!.hash, index]);
+  }
+  assert.equal((await get("/latest.json?chip=b200", env)).status, 404);
 
   const status = await get("/status", env);
   assert.equal(status.status, 200);
@@ -61,7 +67,9 @@ test("GET /latest.json, /status, /health, unknown paths, OPTIONS and other metho
   assert.equal(s.last_tick, START + 15 * 60);
   assert.match(s.operator_note, /run by this one keeper, from the same fetch/);
   assert.equal(s.log.length, 50);
-  assert.equal(s.markets.fast?.contract, "weir-fast.test");
+  assert.deepEqual(Object.keys(s.markets).sort(), [...IDS].sort());
+  assert.equal(s.markets["h100-fast"]?.contract, "weir-h100-fast.test");
+  assert.ok(BigInt((s.markets["h100-fast"] as unknown as { costs: { fees: string } }).costs.fees) > 0n, "fees shown");
 
   // The model's clock is in January 2026, so against the real clock the keeper looks stale.
   assert.equal((await get("/health", env)).status, 503);
@@ -105,7 +113,7 @@ test("no secret ever reaches /status or the store, even when keys are bad and th
     await Promise.all(promises);
     // That run holds the lease for 55 s of real time; this test does not wait for it.
     await env.STORE.delete(KEYS.lease);
-    const report = await tickOnce(env, START + 3660, { deployments: DEPLOYMENTS });
+    const report = await tickOnce(env, START + 3660, { deployments: deploymentsFor(IDS) });
     assert.ok(report.budget.used <= 40);
     assert.ok(report.entries.some((e) => e.action === "config" && e.status === "failed"), "bad keys are reported");
     assert.ok(report.entries.some((e) => /market not run this tick/.test(e.text)), "the unreachable chain is reported");

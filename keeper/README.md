@@ -1,63 +1,115 @@
 # @weir/keeper
 
-The scheduled job that keeps a live Weir market running. Once a minute it fetches the
-H100 index (at most once per five minutes), has the reporters post it on chain, runs the
-trading agents, clears rounds, settles series and redeems the agents' positions.
+The scheduled job that keeps live Weir markets running, one market per chip (SPEC 0.4). Once a
+minute it fetches the GPU-hour indexes (at most once per five minutes, every chip in one fetch),
+has the reporters post each market's chip on chain, finalizes buckets a reporter missed, runs
+the trading agents, clears rounds, settles series, redeems the agents' positions and prunes
+what the contract no longer needs to store.
 
 It is one platform-neutral function, `runTick(env, now)` in `src/keeper.ts`, with two thin
 adapters: a Cloudflare Worker (`src/worker.ts`) and a Node loop (`src/node.ts`). It imports
 `@weir/index`, `@weir/agents`, `@weir/chain` and `@weir/engine` and copies none of their code.
 
 **One operator.** Every reporter configured here is run by this one keeper, from the same
-fetch of the same sources. The quorum of reporters therefore protects against a failed
-transaction, not against a wrong price. `/status` says so in `operator_note`.
+fetch of the same sources. The quorum therefore protects against a failed transaction, not
+against a wrong price. `/status` says so in `operator_note`.
+
+## Markets
+
+`deployments.json` lists the markets: `{ id, label, chip, contract, usdc }`, with `id` one of
+the agents package's `MARKETS` (`h100-fast`, `h100-weekly`, `h200-weekly`, `a100-80-weekly`)
+and `chip` one of the index package's chips (`h100`, `h200`, `a100-80`). Each market's
+reporters report from the bundle of its own chip.
 
 ## Each minute
 
-For every market in `deployments.json`, in this order of priority (the order in which the
-request budget is spent; each step runs across all markets before the next starts):
+Steps, in the order the request budget is spent. Each step runs across the markets before the
+next starts.
 
 | Step | What it does |
 |---|---|
-| plan | `get_status` (and `get_params` once per contract, then kept in the store). Moves the "settled" mark over series that have been settled. |
+| plan | `get_status` per market (and `get_params` once per contract, then kept in the store). Moves the "settled" mark over series that have been settled. |
 | urgent reveals | If a reveal phase ends within 90 s (before the next tick), the swarm reveals now. |
-| index and reports | If no fetch was made in this five-minute window: one request to each of the six sources, `makeBundle`, and, if an index formed, the canonical bundle stored under `bundles/<hash>.json` and remembered as the latest. Then for the market's bucket `floor(now / print_interval_secs) * print_interval_secs`, each configured reporter that has not reported (read with `get_print`) sends `report(bucket, index, hash)`, but only if the latest bundle was fetched inside that bucket. Reporting stops once a report makes the print final. |
+| index, reports, finalize | If no fetch was made in this five-minute window: `fetchChips` for the markets' chips, with the keeper's metered fetch and no retry (8 requests for all three chips: identical requests are made once), and one bundle per chip stored under `bundles/<hash>.json`. Then, for each market's bucket `floor(now / print_interval_secs) * print_interval_secs`, each configured reporter that has not reported (read with `get_print`) sends `report(bucket, index, hash)` from its chip's latest bundle, only if that bundle was fetched inside the bucket. With every reporter of the contract reporting, the bucket is decided at once (SPEC section 9). If some are missing, the bucket is remembered and, once its report window has closed, decided with `finalize_print`; once per bucket the keeper also reads `get_pending_prints` to catch buckets reported by others. A bucket decided with no print is logged with the reason (fewer reports than `quorum`, or the two middle reports further apart than `max_spread_bps`). |
 | reveals and clears | The other reveals, and `clear` for every round that is over. |
-| commits | New sealed orders from the agents (`tick` from `@weir/agents` with its `OrderStore` in the store). Not started with fewer than 9 requests left: one commit cannot cost less. |
+| commits | New sealed orders (`tick` from `@weir/agents`; it sizes orders for the commit fee). Not started with fewer than 9 requests left: one commit cannot cost less. |
 | settle and redeem | `settle` for series whose delivery and report window are over, then `redeem` for every agent with a position, remembering per series who is done. |
+| prune | At most 3 prune transactions per market per turn: `prune_print` for buckets with stored reports once `now >= bucket + 2 * period_secs` (two hours on the fast market, two weeks on the weekly ones), and `prune_result` for every result of a settled series, oldest first. The last print and the accumulators are kept by the contract and are not affected. Then `get_totals` after any clear, for the cost report. Needs the housekeeping account (below). |
 
-The index is never fabricated, carried forward or interpolated: if the sources do not form
-an index, nothing is stored, the reason is logged, and no reporter reports for that bucket,
-even though an older bundle exists.
+A chip whose sources form no index gets nothing stored, the reason is logged, and no market
+on that chip reports for that bucket, even though an older bundle exists. A price is never
+fabricated, carried forward or interpolated.
+
+**Fairness.** Urgent reveals, the index, reports and finalize run for every market every tick.
+The other steps run for a market on its turn: every `cadence` minutes, the largest whole number
+of minutes that still gives the market at least 6 turns per commit phase and 3 per reveal
+phase. That is 1 minute for the fast preset and 5 for the weekly one, and markets with the same
+cadence take different minutes (weekly market *i* acts when `minute mod 5 = i mod 5`). Within
+every step the markets taking part are served in an order that rotates by one each tick, so
+a market with work is first in line at least once every k of its turns, k being the number of
+markets acting in the same minute: with the four markets, every 2 minutes for the fast one and
+every 10 for a weekly one. `test/run.test.ts` checks who acts, that nobody spends out of turn,
+the head-of-line bound, and that over an hour every fast round got commits and every agent got
+an order into round 0 of each weekly market.
+
+**The cost of the swarm.** For every round this keeper clears, it adds up its agents' commit
+fees and the forfeits of their unrevealed commits, from the round's book as read on chain just
+before clearing. `/status` shows them per market and per agent (`costs`), with the market's
+`get_totals().burned` at the first tick and now. The tick log gets a `costs` line whenever a
+round was cleared. Rounds cleared by someone else are not counted in the agents' figures; they
+are in the burned total.
 
 `runTick` returns a `TickReport`: every entry (done, skipped and why, failed and why), every
-transaction with its hash, every request made and the step it was spent on, and what was left
-undone. The last 200 entries are kept in the store.
+transaction with its hash, every request made with its step and market, the order markets were
+served in, and what was left undone. The last 200 entries are kept in the store.
 
-**Safe to repeat and to miss.** Every decision is read from chain state: who has reported,
-which commits are still unrevealed, which rounds are over, which series are settled. Sealed
-orders are written to the store before they are committed. A missed reveal window is logged
-as a forfeit when the round is cleared, and the keeper carries on. A run first takes a lease
-in the store (write, wait 1 s on the Worker and 0.2 s in the Node loop, read back); a second run that finds it held does
-nothing. On Cloudflare KV, which is eventually consistent, the lease is best effort; without
-it the contract still refuses a second report and a second reveal (tested), but two runs
-could in principle both commit for the same agent and round.
+**Safe to repeat and to miss.** Every decision is read from chain state. Sealed orders are
+written to the store before they are committed. A missed reveal window is logged as a forfeit
+when the round is cleared, and the keeper carries on. A run first takes a lease in the store
+(write, wait 1 s on the Worker and 0.2 s in the Node loop, read back); a second run that finds
+it held does nothing. On Cloudflare KV, which is eventually consistent, the lease is best
+effort; without it the contract still refuses a second report and a second reveal (tested), but
+two runs could in principle both commit for the same agent and round. Refusals are recognised
+by the engine's `ERR` texts (SPEC section 16): `ERR.ALREADY_REVEALED`, `ERR.CLEARED` and
+`ERR.SETTLED` from another caller count as "done by another caller first";
+`ERR.DUPLICATE_REPORT`, `ERR.DECIDED`, `ERR.NO_REPORTS`, `ERR.NO_POSITION` and
+`ERR.NOT_DECIDED` are handled where they can occur.
 
-**Failures stay local.** A market whose status cannot be read is skipped; a failed
-transaction is logged and the step goes on; an agent with a bad key is left out.
+**Failures stay local.** A market whose status cannot be read is skipped; a failed transaction
+is logged and the step goes on; an agent with a bad key is left out.
 
-**Request budget.** At most `BUDGET` outbound requests per tick (default 40; the free
-Workers plan allows 50 subrequests per invocation). Every request is charged before it is
-made and refused once the budget is spent, so a tick never makes one more: a view costs 1, a
-transaction 2 (access key, then `send_tx`), each index source 1, and RPC failover or polling
-is charged as it happens. Reads are cached within a tick until the next state change.
+**Request budget.** At most `BUDGET` outbound requests per tick (default 40; the free Workers
+plan allows 50 subrequests per invocation). Every request is charged before it is made and
+refused once the budget is spent, so a tick never makes one more: a view costs 1, a
+transaction 2 (access key, then `send_tx`), each distinct index request 1, and RPC failover or
+polling is charged as it happens. Reads are cached within a tick until the next state change.
 When the budget runs out, the remaining steps are skipped and named in `undone`.
 
-Measured on the model: over three hours of the fast market (8 agents, 3 reporters) the
-keeper averaged 20 requests a tick, peaked at 40 in ticks that start a round (index fetch,
-reports and 8 commits), and spread what did not fit over the next minute. At a budget of 10 it
-still prints every bucket, clears every round and settles and redeems, but cannot commit, and
-can reveal at most 8 orders per fast round (2 ticks of 10 requests).
+Measured on the model with all four markets for three hours: a mean of 28 requests a tick, 40
+at most (ticks with an index fetch and reports for every market), what did not fit done in the
+next minutes. The sandbox run of the earlier version (`integration/RESULTS.md`, one market) had
+a median of 17. At a budget of 10 on the fast market alone the keeper still prints every bucket,
+clears every round, settles and redeems, but cannot commit, and reveals at most 8 orders per
+fast round. With four markets a budget below the index fetch plus the four status reads (12)
+cannot fetch the index at all.
+
+## Keys
+
+The chain package's function-call key lists:
+
+| List | Methods | Used by |
+|---|---|---|
+| `REPORTER_KEY_METHODS` | `report`, `finalize_print` | each reporter |
+| `AGENT_KEY_METHODS` | `commit`, `reveal`, `clear`, `mint`, `merge`, `settle`, `redeem` | each agent |
+| `KEEPER_KEY_METHODS` | the agent list plus `finalize_print`, `prune_print`, `prune_result` | the optional housekeeping account |
+
+**The housekeeping account** (`KEEPER` secret, optional) holds a function-call key for
+`KEEPER_KEY_METHODS` on each market's contract and nothing else. When it is set it signs
+`clear`, `settle`, `finalize_print`, `prune_print` and `prune_result`, and the agents' keys need
+nothing beyond `AGENT_KEY_METHODS`. It needs no registration and no USDC, only NEAR for gas.
+Without it the first agent signs `clear` and `settle` (allowed by the agent list), the first
+reporter signs `finalize_print`, and nothing is pruned (`/status` says
+`pruning: off: no KEEPER account`).
 
 ## Run it
 
@@ -70,21 +122,22 @@ pnpm --filter @weir/keeper exec wrangler kv namespace create STORE
 pnpm --filter @weir/keeper exec wrangler secret put REPORTERS
 pnpm --filter @weir/keeper exec wrangler secret put AGENTS
 pnpm --filter @weir/keeper exec wrangler secret put SWARM_SECRET
+pnpm --filter @weir/keeper exec wrangler secret put KEEPER        # optional
 pnpm --filter @weir/keeper exec wrangler deploy
 ```
 
 None of these have been run. The cron trigger is `* * * * *`. `deployments.json` is bundled
-into the Worker at build time, so a new market means a new deploy. Routes, all GET (and
-HEAD), with `Access-Control-Allow-Origin: *`:
+into the Worker at build time, so a new market means a new deploy. Routes, all GET (and HEAD),
+with `Access-Control-Allow-Origin: *`:
 
 | Route | Answer |
 |---|---|
-| `/bundles/<hash>.json` | The canonical bundle; its sha256 is `<hash>`, the `bundle` argument of the reports. `Cache-Control: public, max-age=31536000, immutable`. 404 if unknown. |
-| `/latest.json` | `{ "hash", "bundle" }` of the latest bundle that formed an index. `max-age=30`. |
-| `/status` | Last tick, the operator note, the budget used per step, what was left undone, the last index attempt (with per-source errors), a summary per market, the last 50 log entries. No secrets: everything is passed through a redactor that replaces every configured key and the swarm secret before it is stored. |
+| `/bundles/<hash>.json` | The canonical bundle of any chip; its sha256 is `<hash>`, the `bundle` argument of the reports. `Cache-Control: public, max-age=31536000, immutable`. 404 if unknown. |
+| `/latest.json?chip=h100` | `{ chip, hash, bundle }` of that chip's latest bundle with an index (`chip` defaults to `h100`; 404 for an unknown chip or none yet). `max-age=30`. |
+| `/status` | Last tick, the operator note, the budget used per step, the order markets were served in, what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
 | `/health` | 200 if the last tick is at most 5 minutes old, else 503. |
 
-`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 101.6 KiB, 30.2 KiB gzipped.
+`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 127.2 KiB, 37.8 KiB gzipped.
 
 ### Option 2: Node loop
 
@@ -95,13 +148,12 @@ node --env-file=keeper/.env keeper/src/node.ts --loop --port 8787
 ```
 
 Same `runTick`, same routes on `--port`, the store in `keeper/store/` (one file per key,
-`--store` to change it), `--deployments` and `--budget` to override. `--loop` ticks at the
-start of each minute, one tick at a time.
+`--store` to change it), `--deployments` and `--budget` to override.
 
 ## Secrets
 
-All three are JSON or plain strings in environment variables (Worker secrets or `.env`).
-They never appear in `deployments.json`, the log or the routes.
+JSON or plain strings in environment variables (Worker secrets or `.env`). They never appear
+in `deployments.json`, the log or the routes.
 
 ```jsonc
 // REPORTERS: accounts in the contract's `reporters`; others are ignored for that market.
@@ -111,104 +163,121 @@ They never appear in `deployments.json`, the log or the routes.
 //   buyer:  need 40, premium_bps 500         seller: capacity 180, premium_bps 500
 //   maker:  spread_bps 600, share_bps 1000, max_size 40
 //   noise:  view_bps 1000, min_size 3, max_size 10
-//   markets: ["fast"] to trade only some markets (default: all)
+//   markets: ["h100-fast"] to trade only some markets (default: all)
 [{ "account_id": "buyer-1.example.testnet", "secret_key": "ed25519:<base58>", "role": "buyer", "need": 40 }]
 
 // SWARM_SECRET: any long random string. Salts of sealed orders derive from it.
+
+// KEEPER (optional): the housekeeping account.
+{ "account_id": "keeper.example.testnet", "secret_key": "ed25519:<base58>" }
 ```
 
-The first agent also signs `clear` and `settle` (anyone may call them). SPEC section 15 lists
-an agent's function-call key as limited to `commit`, `reveal`, `clear`, `mint`, `merge` and
-`redeem`; the first agent's key must also allow `settle`, or settlement will fail on chain.
-Agents must already be registered on each contract and funded; the keeper does neither.
+Agents must already be registered on each market's contract and funded; the keeper does
+neither.
 
 ## Cost per tick
 
-`node keeper/scripts/bench.ts` runs an hour of the fast market on `ModelWeir` with the index
-package's saved source responses (321 KiB of JSON), then times the pieces a real tick runs on
-its own CPU. On this machine (Node 22.23, Apple silicon):
+`node keeper/scripts/bench.ts` runs an hour of the four markets on `ModelWeir` with the index
+package's saved responses for all three chips (8 bodies, 443 KiB), then times the pieces a
+real tick runs on its own CPU. On this machine (Node 22.23, Apple silicon):
 
 | | CPU |
 |---|---|
-| Median model tick (keeper, swarm and the engine executing every call) | 0.7 ms |
-| Median model tick with an index fetch | 4.1 ms |
-| Busiest model tick (index fetch, 7 transactions, 40 requests) | 9 to 11 ms |
-| Parse the six payloads (`makeBundle`), warm | 0.8 ms |
-| Hash the bodies and the bundle, warm | 0.4 ms |
-| Sign one transaction (borsh, sha256, ed25519), warm | 0.25 ms |
-| First tick in a fresh process (JIT, first index fetch) | 43 to 48 ms |
-| First key derivation (`@noble/ed25519` tables) | 16 to 19 ms |
+| Median model tick (keeper, swarm and the engine executing every call) | 1.1 ms |
+| Median model tick with an index fetch (three bundles, reports on four markets) | 11.5 ms |
+| Busiest model tick | about 20 ms |
+| Parse the 8 bodies for 3 chips (`makeBundle` per chip), warm | 2.9 ms |
+| Hash the bodies and 3 bundles, warm | 0.7 ms |
+| Sign one transaction (borsh, sha256, ed25519), warm | 0.23 ms |
+| First tick in a fresh process (JIT, first index fetch) | about 35 ms |
+| First parse and hash, cold | about 15 ms |
+| First key derivation (`@noble/ed25519` tables) | about 13 ms |
 
-Estimated keeper CPU for a tick on chain: about 1 ms for a tick with 4 transactions, about
-3.5 ms for an index tick with 9 transactions, warm. A cold isolate adds tens of milliseconds.
-Store writes: 6.2 per tick, about 8,900 a day.
+Estimated keeper CPU for a tick on chain, warm: about 1 ms for a tick with 5 transactions,
+about 7 ms for an index tick with 16. A cold isolate adds tens of milliseconds.
 
-**Recommendation: the Node loop, or the Workers Paid plan.** Not the free plan, for two
-reasons. Its 10 ms CPU limit is met by warm ticks but exceeded by any cold start (about 45 ms
-measured) and approached by busy index ticks. And its KV allows 1,000 writes a day, against
-about 8,900 needed. (Both limits as Cloudflare publishes them; neither was tried against an
-account.) The Node loop costs nothing on any always-on machine and has neither limit; the paid
-Worker needs no machine.
+**Store writes: 8.0 per tick, about 11,600 a day** (status and log, lease, sealed orders,
+progress marks, the cost record, and every five minutes three bundles, the latest map and the
+attempt).
+
+**Recommendation: the Node loop, or the Workers Paid plan.** Not the free plan: its 10 ms CPU
+limit is exceeded by every index tick of the four markets and by any cold start, and its KV
+allows 1,000 writes a day against about 11,600 needed. (Both limits as Cloudflare publishes
+them; neither was tried against an account.)
 
 ## Tests
 
 ```sh
-pnpm --filter @weir/keeper test        # node --test, offline
+pnpm --filter @weir/keeper test        # node --test, offline, 15 tests
 pnpm --filter @weir/keeper typecheck   # tsc --noEmit
 pnpm --filter @weir/keeper bench
 ```
 
 All on `ModelWeir` with an in-memory store, a fake clock and a fake fetch serving the index
-fixtures (`test/harness.ts`: fast preset, three reporters with quorum 2, eight agents):
+fixtures for every chip (`test/harness.ts`: the four `MARKETS`, three reporters, eight agents
+on each, the housekeeping account):
 
-- `run.test.ts`: three hours ticked every minute (all 37 buckets printed, every round with
-  commits cleared, every commit revealed, zero forfeits, series 0 and 1 settled, every
-  position redeemed, `get_totals` adds up to the deposits, never over 40 requests, every
-  transaction logged with its hash); ticks missed across a reveal window (each forfeit logged
-  with its amount, the bonus pool matches, later rounds trade normally); three sources failing
-  for a bucket (one fetch per window, no report, the reason in every tick's log, the last good
-  bundle not reused, reporting resumes); a budget of 10 (never an 11th request, requests in
-  priority order, reveals spread over two ticks with urgent ones first, everything printed,
-  settled and redeemed, the one forfeit that cannot fit logged); two overlapping runs per
-  minute (one works, one stands aside, the same events as a single run); overlapping runs
-  without the lease (the contract refuses duplicates, nothing stops).
-- `worker.test.ts`: the routes (status codes, CORS, cache headers, 404 for an unknown or
-  malformed hash, the bundle's sha256 is its name), the cron handler with bad keys and the
-  network down, no secret anywhere in `/status`, `/latest.json`, `/health` or the store
-  (recognisable fake keys, plus malformed JSON in a secret), `src/` free of Node imports
-  except `node.ts`.
+- `run.test.ts`:
+  - **Three hours, four markets:** every bucket printed (fast buckets two hours old pruned),
+    every round with commits cleared, every commit revealed, zero forfeits, fast series 0 and 1
+    settled and redeemed, series 0's results pruned, `get_totals` adds up to the deposits on
+    every market, the agents' fees plus forfeits equal the market's `burned`, never over 40
+    requests, nothing failed.
+  - **Missed minutes:** each forfeit logged with its amount and counted in `/status`; later
+    rounds trade normally.
+  - **Sources failing:** every chip without an index, one fetch per window, every market's log
+    saying why, then recovery.
+  - **A chip without a bundle:** only its market goes without a report, and says so.
+  - **A reporter missing:** with two agreeing, the bucket stays open, then `finalize_print`
+    gives the print after the window. With two 5% apart, there is no print, the log gives the
+    500 bps against `max_spread_bps` 200, and there is no last print.
+  - **The fairness rule** (as above).
+  - **A budget of 10:** never an 11th request, requests in priority order, everything printed,
+    settled and redeemed, the one reveal that cannot fit logged as a forfeit.
+  - **No housekeeping account:** pruning off and said so.
+  - **Two overlapping runs:** with the lease, one works and one stands aside, with the same
+    events as a single run. Without the lease, the only failures are the contract's refusals of
+    the second copies.
+- `worker.test.ts`: the routes (status codes, CORS, cache headers, `?chip=` for each chip, 404
+  for an unknown chip or hash), the cron handler with bad keys and the network down, no secret
+  anywhere in `/status`, `/latest.json`, `/health` or the store (recognisable fake keys,
+  including the housekeeping account's, plus malformed JSON in a secret), and `src/` free of
+  Node imports except `node.ts`.
 - `node.test.ts`: the directory store under real ticks.
 
 ## Not built
 
-- **Independent or staggered reporters.** All reporters report from one fetch by one
-  operator in the same minute.
+- **Independent or staggered reporters.** All reporters report from one fetch by one operator
+  in the same minute.
 - **Raw source bodies are not published.** Bundles carry each body's sha256 and the parsed
-  offers, so anyone can recompute the index, but not check the hashes against the bodies.
-- **A retry within the five-minute window** when the index fetch fails, and any source retry
-  (each source gets one request; the next window tries again).
-- **Registration, funding, guards and withdrawals** of agents, and `prune_result`.
+  offers, so anyone can recompute an index, but not check the hashes against the bodies.
+- **A retry within the five-minute window** when the index fetch fails, and any source retry.
+- **Registration, funding, guards, round lock limits and withdrawals** of agents.
 - **A strict lock.** The lease is best effort on KV; Durable Objects would give a real one.
 - **Alerts.** `/health` returns 503 when stale, but nothing pages anyone.
+- **Cost figures for rounds cleared by someone else** (only the market-wide burned total has
+  them), and for anything before the keeper's first tick.
 - **Agents added later** are not redeemed on series the keeper has already marked done.
 
 ## What the other packages lack (worked around, not patched)
 
-- `@weir/index`: `fetchAll` uses the global `fetch` with a retry after 2 s, so it cannot be
-  metered or faked; the keeper has its own 20-line fetcher (`src/indexer.ts`) and uses
-  `makeBundle`, `bundleHash`, `canonical`, `sha256Hex`, `SOURCES` and `USER_AGENT` as they are.
-- `@weir/agents`: `tick` cannot be told to do only some of its work (only reveals, only
-  clears) or to skip series. The keeper runs it several times per tick with ports that defer
-  the state changes a step may not make, and drops those entries from the log; repeated reads
-  are served from the per-tick cache. `SIM_T0` is not exported from the package root.
+- `@weir/agents`: `tick` cannot be told to do only some of its work (only reveals, only clears)
+  or to skip series. The keeper runs it several times per tick with ports that defer the state
+  changes a step may not make, and drops those entries from the log; repeated reads are served
+  from the per-tick cache. `tick` does not report what a cleared round cost, so the keeper reads
+  it from the book its port saw.
 
 ## Not proven
 
-The keeper has never run against a real contract, a real RPC node or a real Cloudflare
-account. Proven offline: the step order, the budget ceiling, idempotence under repeated and
-missed ticks, the lease in one process, the index pipeline on saved responses, the routes and
-the redaction. Not proven: that `ChainWeir` transactions land as the model's calls do (see
-`chain/README.md`), real RPC latency and its effect on how much fits in a tick, request counts
-under failover and `send_tx` polling, real Worker CPU time and cold starts, KV consistency
-for the lease, KV and subrequest limits as enforced, the cron trigger's timing, and live
-source responses beyond the saved ones.
+The earlier, single-market version ran against the real contract on a local sandbox node
+(`integration/RESULTS.md`: 78 ticks, every print final, zero forfeits, settled and redeemed).
+This version, with SPEC 0.4, four markets, three chips, `finalize_print`, pruning and the
+housekeeping account, has only run on `ModelWeir`. Not proven:
+- the 0.4 contract's behaviour for these calls through `ChainWeir`, including its refusal texts
+  matching the engine's `ERR`;
+- function-call keys limited to the three lists, real RPC latency and how much of four markets
+  fits in a tick;
+- request counts under failover and `send_tx` polling;
+- real Worker CPU time and cold starts, KV consistency for the lease, KV and subrequest limits
+  as enforced, the cron trigger's timing;
+- live source responses beyond the saved ones.
