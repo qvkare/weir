@@ -13,7 +13,9 @@ const common = {
   usdc: "usdc.sim",
   underlying: "H100-USD-HR",
   t0: SIM_T0,
-  band_bps: 2000,
+  // 15%: the smallest band holding the fixing in at least 95% of 69 historical delivery
+  // weeks (68 of 69). See backtest/results/summary.md.
+  band_bps: 1500,
   tick: 1000,
   max_move_bps: 1500,
   forfeit_bps: 100,

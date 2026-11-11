@@ -20,20 +20,20 @@ redeemed, and prints (56 lines; excerpt):
 ```
 Weir sim, fast preset: each hour of delivery is auctioned the hour before, in 3+2 min rounds. Seed 7: 20 buyers, 5 sellers, 2 makers, 3 noise. Prices per H100-hour.
 series round  commits revealed  LONG price  forward  volume  forfeits
-     0     0       32       32      $0.423   $2.047      81     $0.00
-     0     1       32       32      $0.414   $2.038      75     $0.00
-     0     2       32       32      $0.427   $2.051      83     $0.00
+     0     0       32       32      $0.320   $2.046      84     $0.00
+     0     1       32       32      $0.312   $2.038      78     $0.00
+     0     2       32       32      $0.329   $2.055      84     $0.00
      ...
-     1     7       27       27      $0.370   $1.995      62     $0.00
-20 of 20 rounds traded. Series 0 fixed at $1.981, LONG paid $0.357. Series 1 fixed at $2.055, LONG paid $0.430.
+     1     7       24       24      $0.272   $1.999      65     $0.00
+20 of 20 rounds traded. Series 0 fixed at $1.981, LONG paid $0.255. Series 1 fixed at $2.055, LONG paid $0.328.
 Money check: deposits $3090.00 = free $3090.00 + locked $0.00 + sets $0.00 + pools $0.00 + unredeemed $0.00.
 agent       role    LONG  SHORT      paid  received   result
-buyer-01    buyer     36      0    $14.30    $14.16   -$0.14
-buyer-02    buyer    105      0    $40.57    $40.77   +$0.20
+buyer-01    buyer     37      0    $10.98    $10.82   -$0.16
+buyer-02    buyer    105      0    $30.11    $30.06   -$0.05
 ...
-seller-05   seller     0    359   $152.72   $152.12   -$0.61
-maker-01    maker     51      5    $18.65    $20.48   +$1.83
-noise-01    noise     32     34    $29.57    $27.84   -$1.72
+seller-05   seller     0    359   $115.26   $115.50   +$0.24
+maker-01    maker     86     26    $27.58    $30.16   +$2.58
+noise-01    noise     46     41    $29.08    $27.51   -$1.56
 paid: cost of auction fills; received: payout at settlement; result: free balance now minus deposit (forfeits included).
 ```
 
@@ -43,8 +43,8 @@ before its delivery starts. A buyer gains when the index ends above where it hed
 loses when below, and the sellers mirror it. That is the hedge working, not a profit or a
 loss on compute: both sides fixed their price in the auction.
 
-Headline numbers with the defaults: 20 of 20 rounds traded, 71.6 GPU-hours per round on
-average, 29.6 commits per round, no forfeits, both series settled, every dollar accounted for.
+Headline numbers with the defaults: 20 of 20 rounds traded, 75.2 GPU-hours per round on
+average, 28.4 commits per round, no forfeits, both series settled, every dollar accounted for.
 
 ## Files
 
@@ -151,7 +151,7 @@ Both are exported as `PRESETS` in the contract's `new(params)` JSON. Deployment 
 | `min_prints` | 126 of 168 | 9 of 12 |
 | `void_after_secs` | 172800 | 1800 |
 | `max_anchor_age_secs` | 10800 | 900 |
-| `band_bps` | 2000 | 2000 |
+| `band_bps` | 1500 (from `backtest/results/summary.md`) | 1500 |
 | `tick` | 1000 ($0.001) | 1000 |
 | `max_move_bps` | 1500 | 1500 |
 | `forfeit_bps` | 100 | 100 |
@@ -188,7 +188,7 @@ pnpm --filter @weir/agents typecheck   # tsc --noEmit
 - `sim.test.ts`: two runs with one seed give identical logs (and another seed does not); at
   every step deposits equal the five terms of `get_totals`, and after settlement every
   agent's free balance sums to `free` with nothing locked; 20 buyers and 5 sellers alone
-  trade in 24 of 24 rounds with seed 7 (asserted: at least 20), volumes 28 to 73 per round;
+  trade in 24 of 24 rounds with seed 7 (asserted: at least 20), volumes 14 to 73 per round;
   price replay including the 15% move rule; the weekly preset.
 - `portable.test.ts`.
 
