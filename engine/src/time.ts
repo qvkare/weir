@@ -23,7 +23,8 @@ export const deliveryEnd = (p: TimeParams, series: number): number => deliverySt
 export const auctionOpen = (p: TimeParams, series: number): number =>
   Math.max(0, deliveryStart(p, series) - p.leadSecs);
 
-export const auctionClose = (p: TimeParams, series: number): number => deliveryEnd(p, series) - p.cutoffSecs;
+export const auctionClose = (p: TimeParams, series: number): number =>
+  Math.max(0, deliveryStart(p, series) - p.cutoffSecs);
 
 export const roundSecs = (p: TimeParams): number => p.commitSecs + p.revealSecs;
 
@@ -63,12 +64,12 @@ export const seriesOf = (p: TimeParams, t: number): number | null =>
 
 /** Every series whose auction window contains `now`, in ascending order. */
 export function liveSeries(p: TimeParams, now: number): number[] {
-  // auction_close(s) > now  <=>  s >= floor((now + cutoff - t0) / period), and it grows with s,
-  // so start there and walk up until auctions have not opened yet.
-  const first = Math.max(0, Math.floor((now + p.cutoffSecs - p.t0) / p.periodSecs));
+  // auction_close(s) > now  <=>  s * period > now + cutoff - t0, and it grows with s,
+  // so start at the smallest such s and walk up until auctions have not opened yet.
+  const first = Math.max(0, Math.floor((now + p.cutoffSecs - p.t0) / p.periodSecs) + 1);
   const live: number[] = [];
   for (let s = first; s <= MAX_SERIES && auctionOpen(p, s) <= now; s++) {
-    if (auctionClose(p, s) > now) live.push(s);
+    live.push(s);
   }
   return live;
 }

@@ -5,6 +5,9 @@ import { BUNDLE, PARAMS, SALT } from "./fixtures.ts";
 
 const USDC = PARAMS.usdc;
 
+const hashOf = (owner: string, side: Side, size: number, price: number) =>
+  commitHash({ series: 0, round: 0, accountId: owner, side, size, price, salt: SALT });
+
 /** Commits through the wire and returns the seq. */
 function commit(m: Market, owner: string, side: Side, size: number, price: number, lock: string): number {
   const hash = callView(m, "commit_hash", { series: 0, round: 0, account_id: owner, side, size, price, salt: SALT });
@@ -52,7 +55,7 @@ test("a scripted market through callChange, checked view by view", () => {
         delivery_start: 100_000,
         delivery_end: 103_600,
         auction_open: 96_400,
-        auction_close: 103_000,
+        auction_close: 100_000,
         round: 0,
         phase: "Commit",
         phase_ends_at: 96_520,
@@ -65,9 +68,9 @@ test("a scripted market through callChange, checked view by view", () => {
   assert.deepEqual(view(m, "get_round", { series: 0, round: 0 }), {
     next_seq: 3,
     commits: [
-      { seq: 0, owner: "alice", lock: "2500000", state: "Committed", order: null },
-      { seq: 1, owner: "bob", lock: "2500000", state: "Committed", order: null },
-      { seq: 2, owner: "bob", lock: "1000000", state: "Committed", order: null },
+      { seq: 0, owner: "alice", hash: hashOf("alice", "Long", 10, 250_000), lock: "2500000", state: "Committed", order: null },
+      { seq: 1, owner: "bob", hash: hashOf("bob", "Short", 10, 150_000), lock: "2500000", state: "Committed", order: null },
+      { seq: 2, owner: "bob", hash: hashOf("bob", "Long", 1, 1000), lock: "1000000", state: "Committed", order: null },
     ],
   });
 
@@ -77,6 +80,7 @@ test("a scripted market through callChange, checked view by view", () => {
   assert.deepEqual((view(m, "get_round", { series: 0, round: 0 }) as { commits: unknown[] }).commits[1], {
     seq: 1,
     owner: "bob",
+    hash: hashOf("bob", "Short", 10, 150_000),
     lock: "2500000",
     state: "Revealed",
     order: { side: "Short", size: 10, price: 150_000 },
@@ -186,7 +190,7 @@ test("a scripted market through callChange, checked view by view", () => {
     t0: 100_000,
     period_secs: 3600,
     lead_secs: 3600,
-    cutoff_secs: 600,
+    cutoff_secs: 0,
     commit_secs: 120,
     reveal_secs: 60,
     band_bps: 1000,
@@ -235,7 +239,7 @@ test("events in their NEP-297 form", () => {
     `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"register","data":{"account_id":"alice"}}`,
     `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"deposit","data":{"account_id":"alice","amount":"5000000"}}`,
     `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"series_opened","data":{"series":0,"anchor":2000000,"floor":1800000,"band":400000}}`,
-    `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"commit","data":{"series":0,"round":0,"seq":0,"account_id":"alice","lock":"1000"}}`,
+    `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"commit","data":{"series":0,"round":0,"seq":0,"account_id":"alice","hash":"${hashOf("alice", "Long", 1, 1000)}","lock":"1000"}}`,
     `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"reveal","data":{"series":0,"round":0,"seq":0,"account_id":"alice","side":"Long","size":1,"price":1000,"void":false}}`,
     `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":"clear","data":{"series":0,"round":0,"price":null,"volume":0,"forfeited":"0"}}`,
   ]);

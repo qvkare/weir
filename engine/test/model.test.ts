@@ -8,11 +8,12 @@ import { BUNDLE, PARAMS as BASE, revealSecret, sealedCommit, type Secret } from 
 import { Rng } from "./prng.ts";
 
 // A compressed calendar so a few hundred steps cover auctions, delivery and settlement:
-// series 0 auctions over [98_800, 101_000) in 90 s rounds and delivers over [100_000, 101_200).
+// series 0 auctions over [98_600, 99_800) in 90 s rounds and delivers over [100_000, 101_200);
+// series 1 auctions over [99_800, 101_000). lead = period + cutoff, so they follow each other.
 const PARAMS: Params = {
   ...BASE,
   periodSecs: 1200,
-  leadSecs: 1200,
+  leadSecs: 1400,
   cutoffSecs: 200,
   commitSecs: 60,
   revealSecs: 30,
@@ -21,7 +22,7 @@ const PARAMS: Params = {
   voidAfterSecs: 600,
   maxAnchorAgeSecs: 1200,
 };
-const START = 98_700;
+const START = 98_500;
 const RUNS = 300;
 const STEPS = 450;
 const TRADERS = ["t0", "t1", "t2", "t3", "t4"];

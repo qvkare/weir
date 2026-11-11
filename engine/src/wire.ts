@@ -104,6 +104,7 @@ export interface WireOrder {
 export interface WireCommit {
   seq: number;
   owner: string;
+  hash: string;
   lock: U128;
   state: CommitState;
   order: WireOrder | null;
@@ -196,8 +197,9 @@ export type ViewMethod = keyof ViewMethods;
 
 // Change methods, sections 5 to 10 and 14
 
-/** Every state-changing method: its JSON arguments and what it returns. Methods the spec
- * gives no return value return null. */
+/** Every state-changing method: its JSON arguments and what it returns (section 12):
+ * `commit` the seq, `report` a boolean, `deposit` what `ft_on_transfer` returns (section 5),
+ * and null for every method that returns nothing. */
 export interface ChangeMethods {
   /** Section 5. Registers `account_id`, or the caller. */
   register: { args: { account_id?: string }; result: null };
@@ -244,7 +246,7 @@ export interface WireEventData {
   withdraw: { account_id: string; amount: U128 };
   withdraw_failed: { account_id: string; amount: U128 };
   series_opened: { series: number; anchor: number; floor: number; band: number };
-  commit: { series: number; round: number; seq: number; account_id: string; lock: U128 };
+  commit: { series: number; round: number; seq: number; account_id: string; hash: string; lock: U128 };
   evict: { series: number; round: number; seq: number; account_id: string; lock: U128 };
   reveal: {
     series: number;
@@ -383,7 +385,14 @@ const views: Handlers<ViewMethods, []> = {
     return (
       r && {
         next_seq: r.nextSeq,
-        commits: r.commits.map((c) => ({ seq: c.seq, owner: c.owner, lock: u128(c.lock), state: c.state, order: c.order })),
+        commits: r.commits.map((c) => ({
+          seq: c.seq,
+          owner: c.owner,
+          hash: c.hash,
+          lock: u128(c.lock),
+          state: c.state,
+          order: c.order,
+        })),
       }
     );
   },
@@ -503,7 +512,10 @@ export function wireEvent(e: WeirEvent): WireEvent {
     case "report":
     case "print":
       return event(e.event, e.data);
-    case "commit":
+    case "commit": {
+      const { series, round, seq, accountId, hash, lock } = e.data;
+      return event(e.event, { series, round, seq, account_id: accountId, hash, lock: u128(lock) });
+    }
     case "evict": {
       const { series, round, seq, accountId, lock } = e.data;
       return event(e.event, { series, round, seq, account_id: accountId, lock: u128(lock) });

@@ -54,6 +54,7 @@ export interface OrderTerms {
 export interface CommitView {
   seq: number;
   owner: string;
+  hash: string;
   lock: bigint;
   state: CommitState;
   order: OrderTerms | null;
@@ -174,7 +175,7 @@ export type WeirEvent =
   | { event: "withdraw"; data: { accountId: string; amount: bigint } }
   | { event: "withdraw_failed"; data: { accountId: string; amount: bigint } }
   | { event: "series_opened"; data: { series: number; anchor: number; floor: number; band: number } }
-  | { event: "commit"; data: { series: number; round: number; seq: number; accountId: string; lock: bigint } }
+  | { event: "commit"; data: { series: number; round: number; seq: number; accountId: string; hash: string; lock: bigint } }
   | { event: "evict"; data: { series: number; round: number; seq: number; accountId: string; lock: bigint } }
   | {
       event: "reveal";
@@ -337,7 +338,7 @@ export class Market {
     account.balance -= lock;
     const seq = target.nextSeq++;
     target.commits.push({ seq, owner: caller, lock, hash, state: "Committed", order: null });
-    this.#emit({ event: "commit", data: { series, round, seq, accountId: caller, lock } });
+    this.#emit({ event: "commit", data: { series, round, seq, accountId: caller, hash, lock } });
     return seq;
   }
 
@@ -670,6 +671,7 @@ export class Market {
       commits: book.commits.map((c) => ({
         seq: c.seq,
         owner: c.owner,
+        hash: c.hash,
         lock: c.lock,
         state: c.state,
         order: c.order && { ...c.order },
@@ -806,10 +808,11 @@ export class Market {
 }
 
 function validateParams(p: Params): void {
+  // cutoff_secs is the one duration that may be zero: auctions may run up to delivery.
+  uint("cutoffSecs", p.cutoffSecs);
   const durations = [
     "periodSecs",
     "leadSecs",
-    "cutoffSecs",
     "commitSecs",
     "revealSecs",
     "printIntervalSecs",
@@ -829,7 +832,7 @@ function validateParams(p: Params): void {
   if (p.forfeitBps > 10_000) throw new Error("forfeit_bps must be at most 10000");
   if (p.maxCommits < 1 || p.maxCommits > 128) throw new Error("max_commits must be 1 to 128");
   if (p.maxOrderSize < 1) throw new Error("max_order_size must be at least 1");
-  if (p.cutoffSecs >= p.periodSecs) throw new Error("cutoff_secs must be below period_secs");
+  if (p.cutoffSecs >= p.leadSecs) throw new Error("cutoff_secs must be below lead_secs");
   if (p.minPrints < 1) throw new Error("min_prints must be at least 1");
   if (p.minLock < 0n) throw new Error("min_lock must not be negative");
   if (p.usdc.length === 0) throw new Error("usdc must be an account id");

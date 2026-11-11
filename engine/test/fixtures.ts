@@ -1,14 +1,15 @@
 import { commitHash, Market, type Params, type Side } from "../src/mod.ts";
 
-// Series 0 delivers over [100_000, 103_600); its auctions run over [96_400, 103_000) in
-// 180 s rounds: commit for 120 s, reveal for 60 s. Prints every 100 s, accepted 120 s late.
+// Series 0 delivers over [100_000, 103_600); its auctions run over [96_400, 100_000) in
+// 20 rounds of 180 s: commit for 120 s, reveal for 60 s. With lead = period + cutoff,
+// series s + 1 starts its auctions the second series s stops. Prints every 100 s, accepted 120 s late.
 export const PARAMS: Params = {
   usdc: "usdc.near",
   underlying: "H100-USD-HR",
   t0: 100_000,
   periodSecs: 3600,
   leadSecs: 3600,
-  cutoffSecs: 600,
+  cutoffSecs: 0,
   commitSecs: 120,
   revealSecs: 60,
   bandBps: 1000,

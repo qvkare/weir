@@ -386,7 +386,8 @@ Details:
 - `get_accumulator`: `sum` is a decimal string, `count` a number.
 
 Return values of the state-changing methods: `commit` returns the commit's `seq`
-(a number) and `report` returns a boolean. Every other method returns nothing.
+(a number), `report` returns a boolean, and `ft_on_transfer` returns the amount to send
+back, as the token standard requires. Every other method returns nothing.
 
 ## 13. Events
 

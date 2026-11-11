@@ -356,16 +356,20 @@ test("status lists every live series and its phase", () => {
       deliveryStart: 100_000,
       deliveryEnd: 103_600,
       auctionOpen: 96_400,
-      auctionClose: 103_000,
+      auctionClose: 100_000,
       round: 0,
       phase: "Commit",
       phaseEndsAt: 96_520,
     },
   ]);
+  const brief = () => m.getStatus().live.map((l) => [l.series, l.round, l.phase, l.phaseEndsAt]);
+  // Series 0's last round, 19, runs until 100_000, the second series 1's auctions open.
+  m.setTime(99_999);
+  assert.deepEqual(brief(), [[0, 19, "Reveal", 100_000]]);
+  m.setTime(100_000);
+  assert.deepEqual(brief(), [[1, 0, "Commit", 100_120]]);
   m.setTime(102_900);
-  const status = m.getStatus().live.map((l) => [l.series, l.round, l.phase, l.phaseEndsAt]);
-  // Series 0's last round ended at 102_880; series 1's round 16 started at 102_880.
-  assert.deepEqual(status, [[0, null, "Closed", null], [1, 16, "Commit", 103_000]]);
+  assert.deepEqual(brief(), [[1, 16, "Commit", 103_000]]);
 });
 
 test("params are validated", () => {
