@@ -1,6 +1,10 @@
-//! Second audit pass (spec 0.4). Each test drives the contract through its public API
-//! in near-sdk's mocked VM, one call per "transaction" (a panic rolls state back), and
-//! prints what it reaches. Run with `--nocapture --test-threads=1` to see the numbers.
+//! The audit's second pass (against spec 0.4), as of spec 0.5. Tests named `audit2_*`
+//! assert that a finding is closed by a rule; tests named `limit_*` keep demonstrating
+//! exactly what is still possible, because spec 0.5 states it as a known limit rather
+//! than a fix. The numbers each limit shows are in its comment, for the README and the
+//! audit record. Each test drives the contract through its public API in near-sdk's
+//! mocked VM, one call per "transaction" (a panic rolls state back). Run with
+//! `--nocapture --test-threads=1` to see the numbers.
 //! Economic numbers follow the `weekly` preset (agents/src/presets.ts): 2 of 3
 //! reporters, max_spread 2%, forfeit 1%, commit fee 0.02 $, 64 commits a round.
 
@@ -177,14 +181,16 @@ impl H {
 
 // ---------------------------------------------------------------------------------
 
-/// Findings 1/2 (index), residual: with one honest reporter absent, the other
+/// LIMIT (spec 15). With one honest reporter absent, the other
 /// honest reporter and one dishonest reporter decide every bucket together. The
 /// dishonest one cannot move a print by more than max_spread/2, but it chooses WHICH
 /// buckets get a print (agree, or disagree by more than the spread), and the fixing
 /// is the average of the printed buckets only. Spec 9 and 15 say a single reporter
-/// "cannot steer" a print; it steers the fixing.
+/// "cannot steer" a print; it can choose which buckets print, and so moves the fixing.
+/// Shown: true average 2.000000, fixing 2.121000 from the 10 high buckets (the 10 low
+/// ones get no print): +0.121000 a unit, about 6% of the price.
 #[test]
-fn audit2_one_reporter_selects_which_buckets_print() {
+fn limit_one_reporter_selects_which_buckets_print() {
     let mut h = H::with(params());
     h.open_series();
     h.fund("a.near", 100 * DOLLAR);
@@ -214,15 +220,27 @@ fn audit2_one_reporter_selects_which_buckets_print() {
     assert!(!s.void);
 }
 
-/// Same situation, other branch: the dishonest reporter disagrees in every bucket,
-/// so the series has no prints and settles void at mid-band, whatever the true price
-/// did. With the true price at the top of the band, that moves band/2 per set.
+/// CLOSED (spec 10). Same situation, other branch: the dishonest reporter disagrees in
+/// every bucket, so the series has no prints and goes void. Under 0.4 a void series
+/// settled at mid-band, so a reporter holding SHORT bought cheaply could force 0.20 a
+/// unit for a hedge the true price (band top) says is worth 0. Under 0.5 a void
+/// series unwinds at its traded average: the reporter gets back what it paid.
 #[test]
-fn audit2_one_reporter_forces_the_void_fixing() {
+fn audit2_forcing_the_void_fixing_no_longer_pays_the_reporter() {
     let mut h = H::with(params());
     h.open_series();
     h.fund("a.near", 100 * DOLLAR);
+    h.fund(R1, 100 * DOLLAR); // the dishonest reporter trades too
     h.ok("a.near", |w| w.mint(0, 10));
+    // The auction: a buys 10 LONG at 0.30, the reporter 10 SHORT at 0.10.
+    let a = h.commit(0, "a.near", Side::Long, 10, 300_000, 3 * DOLLAR + DOLLAR / 10).unwrap();
+    let r = h.commit(0, R1, Side::Short, 10, 300_000, DOLLAR + DOLLAR / 10).unwrap();
+    h.at(reveal_start(0));
+    h.reveal(0, a, "a.near", Side::Long, 10, 300_000).unwrap();
+    h.reveal(0, r, R1, Side::Short, 10, 300_000).unwrap();
+    h.at(round_end(0));
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    let paid = 100 * DOLLAR - FEE - h.balance(R1);
     for k in 0..20u64 {
         let b = T0 + 10 * k;
         h.at(b);
@@ -234,16 +252,27 @@ fn audit2_one_reporter_forces_the_void_fixing() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.view(|w| w.get_series(0)).unwrap().settlement.unwrap();
-    println!("settle at end+grace: {early:?}; at end+void_after: fixing {} void {} long_payout {} (true would pay 400000)", s.fixing, s.void, s.long_payout);
+    let before = h.balance(R1);
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(R1))));
+    let got = h.balance(R1) - before;
+    let under_0_4 = 10 * 200_000u128; // mid-band SHORT payout
+    let truthful = 0u128; // the band top pays SHORT nothing
+    println!(
+        "settle at end+grace: {early:?}; void {} at long_payout {}; reporter paid {paid} for 10 SHORT, gets {got} (0.4 rule: {under_0_4}, true price: {truthful})",
+        s.void, s.long_payout
+    );
     assert!(s.void);
-    assert_eq!(s.long_payout, 200_000);
+    assert_eq!((s.long_payout, s.short_payout), (300_000, 100_000), "the traded average");
+    assert_eq!(got, paid, "the reporter's position is worth what it paid: no gain");
+    assert!(got < under_0_4);
 }
 
-/// Finding 5, residual: blocking a round now costs max_commits * commit_fee. With
-/// the preset numbers that is 64 * 0.02 = 1.28 $ a round, about 215 $ a week to
-/// keep every honest bidder whose lock is below the attacker's out of every round.
+/// LIMIT (spec 15, "Blocking a round"). Blocking a round costs max_commits *
+/// commit_fee. Shown: 64 * 0.02 = 1.28 $ a round (and 640 $ of capital tied up for
+/// one round), about 215 $ a week at 168 rounds, to keep every honest bidder whose lock
+/// is below the attacker's out of every round.
 #[test]
-fn audit2_blocking_a_round_costs_1_28_dollars() {
+fn limit_blocking_a_round_costs_1_28_dollars() {
     let mut h = H::with(params());
     for who in ["a.near", "b.near"] {
         h.fund(who, 100 * DOLLAR);
@@ -272,11 +301,12 @@ fn audit2_blocking_a_round_costs_1_28_dollars() {
     assert_eq!(cost, 64 * FEE);
 }
 
-/// Finding 4, residual: forfeits are burned, so nobody profits, but an account that
-/// sets a guard and leaves `max_round_lock` unset (the default) can still have its
-/// balance destroyed by a function-call agent at forfeit_bps + fee per round.
+/// LIMIT (spec 15, "Agents"). Forfeits are burned, so nobody profits, but an account
+/// that leaves `max_round_lock` unset (the default) can still have its balance burned
+/// by a function-call agent at forfeit_bps of everything plus the fee, every round.
+/// Shown: 100 $ falls to about 90.25 $ after 10 rounds at the preset's 1% forfeit.
 #[test]
-fn audit2_agent_still_burns_an_account_without_a_round_limit() {
+fn limit_an_account_without_a_round_lock_limit_can_be_burned() {
     let mut h = H::with(params());
     h.fund("victim.near", 100 * DOLLAR);
     h.run("victim.near", 1, |w| w.set_guard(Some(0), None)).unwrap();
@@ -294,12 +324,13 @@ fn audit2_agent_still_burns_an_account_without_a_round_limit() {
     assert!(left < 91 * DOLLAR);
 }
 
-/// Invariant 6 as written ("no account's balance can rise because another account's
-/// commit was not revealed") does not hold for clearing effects: whether Bob reveals
-/// decides whether Charlie trades and at what price. If Bob and Charlie are the same
-/// person, not revealing is a last look that costs 1% of the lock plus the fee.
+/// LIMIT (spec 11, invariant 6 now reads "forfeits and fees are never credited to any
+/// account"). Whether Bob reveals still decides whether Charlie trades and at what
+/// price: if Bob and Charlie are one person, not revealing is a last look. Shown: with
+/// Bob's reveal the round clears at 0.150 and Charlie gets nothing; without it, at 0.225
+/// and Charlie sells 10. The look costs 1% of Bob's 5 $ lock plus the 0.02 $ fee: 0.07 $.
 #[test]
-fn audit2_a_non_reveal_changes_another_accounts_fill() {
+fn limit_last_look_a_non_reveal_changes_another_accounts_fill() {
     let outcome = |bob_reveals: bool| {
         let mut h = H::with(params());
         for who in ["alice.near", "bob.near", "charlie.near"] {
@@ -329,39 +360,59 @@ fn audit2_a_non_reveal_changes_another_accounts_fill() {
     assert_eq!((without.0, without.1), (Some(225_000), 10));
 }
 
-/// Parameter combinations `new` still accepts that undo the index fixes.
+/// CLOSED (spec 3). A quorum of one out of three let a lone reporter make any print.
+/// `new` now requires a majority.
 #[test]
-fn audit2_dangerous_parameters_are_accepted() {
+fn audit2_a_quorum_of_one_in_three_is_refused() {
     let mut p = params();
     p.quorum = 1;
-    assert_eq!(check_params(&p), Ok(()), "1 of 3: one reporter alone makes a print");
-    let mut p = params();
-    p.max_spread_bps = 10_000;
-    assert_eq!(check_params(&p), Ok(()), "100% spread: one of two moves a print by 50%");
+    assert_eq!(check_params(&p), Err("quorum must be a majority of the reporters"));
+    let refused = catch_unwind(|| {
+        install(STRANGER, OPEN, 0, HashMap::new());
+        Weir::new(p)
+    });
+    assert_eq!(message(refused.err().unwrap()), "quorum must be a majority of the reporters");
     let mut p = params();
     p.reporters = vec![id(R1), id(R2)];
-    assert_eq!(check_params(&p), Ok(()), "2 reporters: every print is a two-report mean");
+    p.quorum = 1;
+    assert_eq!(check_params(&p), Err("quorum must be a majority of the reporters"));
+}
+
+/// LIMIT (spec 3, 15). Parameter combinations `new` still accepts that weaken the
+/// index or the blocking cost. Shown: a 100% spread lets one of two reporters move a
+/// print by up to 50%; with two reporters every print is a two-report mean; with no fee
+/// and no forfeit blocking a round is free again; grace = period keeps a whole period
+/// of buckets open at once. Choosing parameters is the deployer's job.
+#[test]
+fn limit_unwise_parameters_are_still_accepted() {
+    let mut p = params();
+    p.max_spread_bps = 10_000;
+    assert_eq!(check_params(&p), Ok(()), "100% spread");
+    let mut p = params();
+    p.reporters = vec![id(R1), id(R2)];
+    assert_eq!(check_params(&p), Ok(()), "2 reporters, quorum 2");
     let mut p = params();
     p.commit_fee = U128(0);
     p.forfeit_bps = 0;
-    assert_eq!(check_params(&p), Ok(()), "no fee, no forfeit: blocking a round is free again");
+    assert_eq!(check_params(&p), Ok(()), "no fee, no forfeit");
     let mut p = params();
     p.report_grace_secs = p.period_secs;
     p.void_after_secs = p.period_secs;
-    assert_eq!(check_params(&p), Ok(()), "grace = period: a whole period of buckets open at once");
+    assert_eq!(check_params(&p), Ok(()), "grace = period");
 
-    // Quorum 1: R1 alone, with the others silent, sets any price.
+    // A 100% spread: R1 and R2 disagree by 2x, the print is their mean.
     let mut p = params();
-    p.quorum = 1;
+    p.max_spread_bps = 10_000;
     let mut h = H::with(p);
     let b = OPEN - 200;
     h.at(b);
-    h.ok(R1, |w| w.report(b, 100 * PRICE, BUNDLE.into()));
+    h.ok(R1, |w| w.report(b, 2 * PRICE, BUNDLE.into()));
+    h.ok(R2, |w| w.report(b, PRICE, BUNDLE.into()));
     h.at(b + 30);
-    let made = h.ok(STRANGER, |w| w.finalize_print(b));
-    let last = h.view(|w| w.get_last_print());
-    println!("quorum 1: lone report at 100x made final: {made}; last print {last:?}");
-    assert!(made);
+    assert!(h.ok(STRANGER, |w| w.finalize_print(b)));
+    let last = h.view(|w| w.get_last_print()).unwrap();
+    println!("100% spread: one honest 2.0 and one dishonest 4.0 print {}", last.price);
+    assert_eq!(last.price, 3 * PRICE / 2);
 }
 
 /// Pruning, checked for soundness: a pruned bucket cannot come back, and pruning
@@ -388,11 +439,11 @@ fn audit2_a_pruned_bucket_cannot_come_back() {
     assert!(h.view(|w| w.get_print(b)).is_none());
 }
 
-/// Finding 3, residual (testnet faucet): the cap protects `clear`, but one account
-/// can mint the whole cap, after which nobody else can mint in that series. Auctions
-/// still clear.
+/// LIMIT (spec 8). The cap protects `clear`, but one account with enough dollars (on
+/// testnet, the open faucet) can mint the whole cap, after which nobody else can mint
+/// in that series. Shown: the second minter gets `too many sets`; auctions still clear.
 #[test]
-fn audit2_one_account_can_take_the_whole_mint_cap() {
+fn limit_one_account_can_take_the_whole_mint_cap() {
     let p = params();
     let cap = (1u128 << 53) - 1 - p.auction_capacity();
     let mut h = H::with(p);

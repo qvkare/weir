@@ -584,6 +584,7 @@ proptest! {
         for action in &actions {
             let dollars_before = dollars(&world);
             let positions_before = positions();
+            let totals_before = view(|w| w.get_totals());
             let allowed = apply(&mut world, action);
             check_books(&world)?;
 
@@ -596,9 +597,16 @@ proptest! {
                     "{} lost {} on {:?}, allowed {}", TRADERS[i], dollars_before[i] - dollars_after[i], action, allowed[i]
                 );
             }
-            // Invariant 6: clearing never raises anyone's dollars. Forfeits are burned,
-            // so another account's unrevealed commit is worth nothing to anybody.
+            // Invariant 6: forfeits and fees are never credited to any account. Burned
+            // only grows; at a clear, what the accounts own (free balances, locks, set
+            // backing and unredeemed payouts) falls by exactly what was burned, and no
+            // single account's dollars rise.
+            let totals_after = view(|w| w.get_totals());
+            prop_assert!(totals_after.burned.0 >= totals_before.burned.0, "burned fell on {:?}", action);
             if matches!(action, Action::Clear(_)) {
+                let owned = |t: &weir::types::TotalsView| t.free.0 + t.locked.0 + t.sets_backing.0 + t.unredeemed.0;
+                let burned = totals_after.burned.0 - totals_before.burned.0;
+                prop_assert_eq!(owned(&totals_before) - owned(&totals_after), burned);
                 for i in 0..TRADERS.len() {
                     prop_assert!(dollars_after[i] <= dollars_before[i], "{} gained on a clear", TRADERS[i]);
                 }

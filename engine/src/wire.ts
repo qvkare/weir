@@ -77,6 +77,9 @@ export interface WireSeries {
   band: number;
   opened_at: number;
   open_sets: number;
+  /** What the series' auctions traded (section 7.3); a void series unwinds at their average. */
+  traded_units: number;
+  traded_value: U128;
   /** Rounds, ascending, that hold commits and have not been cleared. */
   pending_rounds: number[];
   settlement: WireSettlement | null;
@@ -395,6 +398,8 @@ const views: Handlers<ViewMethods, []> = {
         band: s.band,
         opened_at: s.openedAt,
         open_sets: s.openSets,
+        traded_units: s.tradedUnits,
+        traded_value: u128(s.tradedValue),
         pending_rounds: s.pendingRounds,
         settlement: s.settlement && wireSettlement(s.settlement),
       }

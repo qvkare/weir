@@ -336,9 +336,13 @@ fn settlement_vectors() {
         band: 400_000,
         sum: 0,
         count: 0,
+        traded_units: 0,
+        traded_value: 0,
         void_allowed: false,
         min_prints: 3,
     };
+    // 5 units at 0.21 and 15 at 0.25: a void series unwinds at 0.24.
+    let traded = SettleInput { traded_units: 20, traded_value: 5 * 210_000 + 15 * 250_000, ..base };
     let mut inputs = vec![
         // At min_prints, and one short of it, with and without the void window.
         SettleInput { sum: 6_000_000, count: 3, ..base },
@@ -351,6 +355,15 @@ fn settlement_vectors() {
         SettleInput { sum: 9_000_000, count: 3, ..base },
         // The fixing rounds down.
         SettleInput { sum: 6_100_001, count: 3, ..base },
+        // Void after trading: the traded average, whatever the partial prints say.
+        SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..traded },
+        SettleInput { void_allowed: true, ..traded },
+        // Not yet void: trades change nothing.
+        SettleInput { sum: 4_100_001, count: 2, ..traded },
+        // Enough prints: trades are ignored.
+        SettleInput { sum: 6_000_000, count: 3, void_allowed: true, ..traded },
+        // The traded average rounds down.
+        SettleInput { traded_units: 3, traded_value: 600_001, void_allowed: true, ..base },
     ];
     while inputs.len() < 500 {
         let half = rng.range(1, 5_000) * rng.pick(&[1u64, 10, 1_000]);
@@ -364,11 +377,20 @@ fn settlement_vectors() {
         let sum: u128 = (0..count)
             .map(|_| u128::from(rng.range(around.saturating_sub(3 * half).max(1), around + 3 * half)))
             .sum();
+        let traded_units = if rng.chance(30) { 0 } else { rng.range(1, 1_000_000) };
+        // Every round's price is below band, so the average is too.
+        let traded_value = if traded_units == 0 {
+            0
+        } else {
+            u128::from(traded_units) * u128::from(rng.range(1, 2 * half - 1)) + u128::from(rng.range(0, traded_units - 1))
+        };
         inputs.push(SettleInput {
             floor,
             band: 2 * half,
             sum,
             count,
+            traded_units,
+            traded_value,
             void_allowed: rng.chance(40),
             min_prints: rng.range(1, 2_016) as u32,
         });
@@ -385,6 +407,7 @@ fn settlement_vectors() {
             };
             json!({
                 "floor": i.floor, "band": i.band, "sum": i.sum.to_string(), "count": i.count,
+                "traded_units": i.traded_units, "traded_value": i.traded_value.to_string(),
                 "void_allowed": i.void_allowed, "min_prints": i.min_prints, "expect": expect,
             })
         })

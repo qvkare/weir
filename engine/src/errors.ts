@@ -15,6 +15,7 @@ export const ERR = {
   MIN_PRINTS: "min_prints must be at least 1",
   REPORTERS: "reporters must be 1 to 9 accounts with no duplicates",
   QUORUM: "quorum must be 1 to the number of reporters",
+  QUORUM_MAJORITY: "quorum must be a majority of the reporters",
   REGISTERED: "account is already registered",
   NOT_REGISTERED: "account is not registered",
   WRONG_TOKEN: "only the usdc token can be deposited",

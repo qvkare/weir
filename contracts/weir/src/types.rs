@@ -164,6 +164,9 @@ pub struct Series {
     pub band: u64,
     pub opened_at: u64,
     pub open_sets: u64,
+    /// `V*` and `V* * p*` summed over every round that traded (section 7.3).
+    pub traded_units: u64,
+    pub traded_value: u128,
     /// Rounds that hold commits and have not been cleared, ascending: a round gets
     /// its first commit only during its own commit phase, so they arrive in order.
     pub pending_rounds: Vec<u64>,
@@ -287,6 +290,8 @@ pub struct SeriesView {
     pub band: u64,
     pub opened_at: u64,
     pub open_sets: u64,
+    pub traded_units: u64,
+    pub traded_value: U128,
     pub pending_rounds: Vec<u64>,
     pub settlement: Option<SettlementView>,
 }

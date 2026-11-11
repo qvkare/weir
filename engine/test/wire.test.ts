@@ -90,6 +90,8 @@ test("a scripted market through callChange, checked view by view", () => {
     band: 400_000,
     opened_at: 96_400,
     open_sets: 0,
+    traded_units: 0,
+    traded_value: "0",
     pending_rounds: [0],
     settlement: null,
   });
@@ -176,6 +178,8 @@ test("a scripted market through callChange, checked view by view", () => {
     band: 400_000,
     opened_at: 96_400,
     open_sets: 10,
+    traded_units: 10,
+    traded_value: "2000000",
     pending_rounds: [],
     settlement: { fixing: 2_100_000, long_payout: 300_000, short_payout: 100_000, prints: 3, void: false, settled_at: 103_720 },
   });

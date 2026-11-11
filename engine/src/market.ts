@@ -113,6 +113,9 @@ export interface SeriesView {
   band: number;
   openedAt: number;
   openSets: number;
+  /** Units the series' auctions traded, and their total price (section 7.3). */
+  tradedUnits: number;
+  tradedValue: bigint;
   /** Rounds, ascending, that hold commits and have not been cleared. */
   pendingRounds: number[];
   settlement: SettlementView | null;
@@ -230,6 +233,8 @@ interface SeriesRecord {
   band: number;
   openedAt: number;
   openSets: number;
+  tradedUnits: number;
+  tradedValue: bigint;
   settlement: SettlementView | null;
   /** What redeem still owes on a settled series. */
   unredeemed: bigint;
@@ -463,6 +468,10 @@ export class Market {
     }
     this.#burned += forfeited + fees;
     record.openSets += volume;
+    if (price !== null) {
+      record.tradedUnits += volume;
+      record.tradedValue += BigInt(volume) * BigInt(price);
+    }
 
     const result: ResultView = {
       price,
@@ -619,6 +628,8 @@ export class Market {
       band: record.band,
       sum: acc.sum,
       count: acc.count,
+      tradedUnits: record.tradedUnits,
+      tradedValue: record.tradedValue,
       voidAllowed: this.#now >= end + this.params.voidAfterSecs,
       minPrints: this.params.minPrints,
     });
@@ -709,6 +720,8 @@ export class Market {
       band: r.band,
       openedAt: r.openedAt,
       openSets: r.openSets,
+      tradedUnits: r.tradedUnits,
+      tradedValue: r.tradedValue,
       pendingRounds: this.#pendingRounds(series),
       settlement: r.settlement && { ...r.settlement },
     };
@@ -833,7 +846,7 @@ export class Market {
     const last = this.#lastPrint;
     if (last === null || this.#now - last.bucket > this.params.maxAnchorAgeSecs) throw new Error(ERR.STALE);
     const { floor, band } = computeBand(last.price, this.params.tick, this.params.bandBps);
-    return { series, anchor: last.price, floor, band, openSets: 0, settlement: null, unredeemed: 0n };
+    return { series, anchor: last.price, floor, band, openSets: 0, tradedUnits: 0, tradedValue: 0n, settlement: null, unredeemed: 0n };
   }
 
   #open(opening: Omit<SeriesRecord, "openedAt">): void {
@@ -949,6 +962,7 @@ function validateParams(p: Params): void {
   const r = p.reporters;
   if (r.length < 1 || r.length > 9 || new Set(r).size !== r.length || !r.every(isAccountId)) throw new Error(ERR.REPORTERS);
   if (p.quorum < 1 || p.quorum > r.length) throw new Error(ERR.QUORUM);
+  if (p.quorum * 2 <= r.length) throw new Error(ERR.QUORUM_MAJORITY);
 }
 
 function uint(name: string, v: number): void {

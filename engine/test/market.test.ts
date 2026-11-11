@@ -402,7 +402,7 @@ test("settle decides the delivery window's open buckets, and a refused settle de
   }
 });
 
-test("void settlement with no prints and with some prints", () => {
+test("a void series that never traded splits the band, whatever prints it had", () => {
   for (const prints of [0, 2]) {
     const m = setup();
     m.mint("alice", 0, 2);
@@ -414,15 +414,37 @@ test("void settlement with no prints and with some prints", () => {
     assert.throws(() => m.settle(0), refused(ERR.NOT_ENOUGH_PRINTS));
     m.setTime(106_000);
     const s = m.settle(0);
-    // No prints: floor + band / 2 = 2_000_000. Two: (2_050_001 + 2_050_002) / 2 = 2_050_001.
-    const fixing = prints === 0 ? 2_000_000 : 2_050_001;
-    assert.deepEqual(
-      [s.void, s.fixing, s.prints, s.longPayout, s.shortPayout],
-      [true, fixing, prints, fixing - 1_800_000, 2_200_000 - fixing],
-    );
+    assert.deepEqual([s.void, s.fixing, s.prints, s.longPayout, s.shortPayout], [true, 2_000_000, prints, 200_000, 200_000]);
     assert.equal(m.redeem(0, "alice"), 800_000n);
     assert.equal(m.redeem(0, "bob"), 400_000n);
   }
+});
+
+test("a void series unwinds at the average price its auctions traded at", () => {
+  const m = setup();
+  const trade = (round: number, size: number, long: number, short: number, buyer: number) => {
+    m.setTime(96_400 + 180 * round);
+    const a = sealedCommit(m, "alice", 0, round, "Long", size, long, BigInt(size * long));
+    const b = sealedCommit(m, "bob", 0, round, "Short", size, short, BigInt(size * (400_000 - short)));
+    m.setTime(96_520 + 180 * round);
+    revealSecret(m, a);
+    revealSecret(m, b);
+    m.setTime(96_580 + 180 * round);
+    assert.equal(m.clear(0, round).price, buyer);
+  };
+  trade(0, 10, 250_000, 150_000, 200_000);
+  trade(1, 5, 300_000, 300_000, 300_000);
+  m.mint("carol", 0, 1);
+  assert.deepEqual([m.getSeries(0)!.tradedUnits, m.getSeries(0)!.tradedValue], [15, 3_500_000n]);
+  // Two prints are not enough; the void rule ignores them.
+  for (const bucket of [100_000, 100_100]) print(m, bucket, 3_000_000);
+  m.setTime(106_000);
+  const s = m.settle(0);
+  // 3_500_000 / 15 = 233_333.33, rounded down.
+  assert.deepEqual([s.void, s.fixing, s.longPayout, s.shortPayout], [true, 2_033_333, 233_333, 166_667]);
+  // Alice paid 3_500_000 for 15 LONG and gets 15 * 233_333 back.
+  assert.equal(m.redeem(0, "alice"), 3_499_995n);
+  assert.equal(m.redeem(0, "carol"), 400_000n);
 });
 
 test("settle waits for pending rounds, and a forfeit pays nobody", () => {
@@ -560,6 +582,8 @@ test("params are validated with the contract's texts", () => {
     [{ reporters: [], quorum: 1 }, ERR.REPORTERS],
     [{ quorum: 4 }, ERR.QUORUM],
     [{ quorum: 0 }, ERR.QUORUM],
+    [{ quorum: 1 }, ERR.QUORUM_MAJORITY],
+    [{ reporters: ["ra", "rb", "rc", "rd"], quorum: 2 }, ERR.QUORUM_MAJORITY],
   ];
   for (const [change, text] of bad) assert.throws(() => new Market({ ...PARAMS, ...change }), refused(text), JSON.stringify(change));
   new Market({ ...PARAMS, reportGraceSecs: 3600, voidAfterSecs: 3600 });

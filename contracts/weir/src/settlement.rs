@@ -36,6 +36,9 @@ pub struct SettleInput {
     /// The series' accumulator.
     pub sum: u128,
     pub count: u32,
+    /// What the series' auctions traded: units, and units times price.
+    pub traded_units: u64,
+    pub traded_value: u128,
     /// `now >= delivery_end + void_after_secs`.
     pub void_allowed: bool,
     pub min_prints: u32,
@@ -58,23 +61,24 @@ pub fn payout(long: u64, short: u64, long_payout: u64, short_payout: u64) -> Res
         .ok_or(ERR_OVERFLOW)
 }
 
+/// Section 10. A void series is unwound at the average LONG price its auctions
+/// traded at, or split evenly if nothing traded.
 pub fn settle(input: SettleInput) -> Result<Settlement, &'static str> {
-    let average = || {
-        u64::try_from(input.sum / u128::from(input.count)).map_err(|_| ERR_OVERFLOW)
-    };
-    let (fixing, void) = if input.count >= input.min_prints {
-        (average()?, false)
+    let (long_payout, fixing, void) = if input.count >= input.min_prints {
+        let fixing = u64::try_from(input.sum / u128::from(input.count)).map_err(|_| ERR_OVERFLOW)?;
+        (fixing.saturating_sub(input.floor).min(input.band), fixing, false)
     } else if input.void_allowed {
-        let fixing = if input.count >= 1 {
-            average()?
+        let long_payout = if input.traded_units > 0 {
+            // An average of prices below band, so it fits.
+            (input.traded_value / u128::from(input.traded_units)) as u64
         } else {
-            input.floor + input.band / 2
+            input.band / 2
         };
-        (fixing, true)
+        let fixing = input.floor.checked_add(long_payout).ok_or(ERR_OVERFLOW)?;
+        (long_payout, fixing, true)
     } else {
         return Err(ERR_NOT_ENOUGH_PRINTS);
     };
-    let long_payout = fixing.saturating_sub(input.floor).min(input.band);
     Ok(Settlement {
         fixing,
         long_payout,
@@ -92,6 +96,8 @@ mod tests {
         band: 400_000,
         sum: 0,
         count: 0,
+        traded_units: 0,
+        traded_value: 0,
         void_allowed: false,
         min_prints: 3,
     };
@@ -145,14 +151,19 @@ mod tests {
     }
 
     #[test]
-    fn void_with_some_prints_uses_their_average() {
-        let s = settle(SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..INPUT }).unwrap();
-        assert_eq!((s.fixing, s.long_payout, s.void), (2_050_000, 250_000, true));
+    fn void_unwinds_at_the_traded_average_and_ignores_partial_prints() {
+        // 5 units at 0.21 and 15 at 0.25: average 0.24.
+        let traded = SettleInput { traded_units: 20, traded_value: 5 * 210_000 + 15 * 250_000, ..INPUT };
+        let s = settle(SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..traded }).unwrap();
+        assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_040_000, 240_000, 160_000, true));
+        // The average rounds down.
+        let s = settle(SettleInput { traded_units: 3, traded_value: 600_001, void_allowed: true, ..INPUT }).unwrap();
+        assert_eq!(s.long_payout, 200_000);
     }
 
     #[test]
-    fn void_with_no_prints_fixes_mid_band() {
-        let s = settle(SettleInput { void_allowed: true, ..INPUT }).unwrap();
+    fn void_with_nothing_traded_splits_the_band() {
+        let s = settle(SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..INPUT }).unwrap();
         assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_000_000, 200_000, 200_000, true));
     }
 

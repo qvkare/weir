@@ -113,6 +113,8 @@ interface SettlementFile {
     band: number;
     sum: string;
     count: number;
+    traded_units: number;
+    traded_value: string;
     void_allowed: boolean;
     min_prints: number;
     expect: { fixing: number; long_payout: number; short_payout: number; void: boolean } | { error: string };
@@ -130,6 +132,8 @@ vectors<SettlementFile>("settlement.json", ({ cases }) =>
           band: c.band,
           sum: BigInt(c.sum),
           count: c.count,
+          tradedUnits: c.traded_units,
+          tradedValue: BigInt(c.traded_value),
           voidAllowed: c.void_allowed,
           minPrints: c.min_prints,
         });

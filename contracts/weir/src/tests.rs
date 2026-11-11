@@ -326,6 +326,11 @@ fn new_refuses_bad_params() {
         (|p| p.reporters = vec![id(R1), id(R2), id(R1)], ERR_REPORTERS),
         (|p| p.quorum = 0, ERR_QUORUM),
         (|p| p.quorum = 4, ERR_QUORUM),
+        (|p| p.quorum = 1, ERR_QUORUM_MAJORITY),
+        (|p| {
+            p.reporters = vec![id(R1), id(R2)];
+            p.quorum = 1;
+        }, ERR_QUORUM_MAJORITY),
     ];
     for (edit, err) in cases {
         let mut p = params();
@@ -337,7 +342,7 @@ fn new_refuses_bad_params() {
     edges.forfeit_bps = 10_000;
     edges.max_commits = 128;
     edges.cutoff_secs = 1_099;
-    edges.quorum = 3;
+    edges.quorum = 5;
     edges.min_prints = 100;
     edges.void_after_secs = 20;
     edges.max_spread_bps = 10_000;
@@ -1192,7 +1197,8 @@ fn settle_decides_the_undecided_buckets_of_its_window_first() {
 }
 
 #[test]
-fn void_settlement_with_some_prints_averages_them() {
+fn a_void_series_ignores_its_partial_prints_and_unwinds_at_the_traded_price() {
+    // The crossed round traded 8 at 0.21; two prints are not enough.
     let mut h = delivered(&[2_100_000, 2_000_001]);
     h.refused(STRANGER, ERR_NOT_ENOUGH_PRINTS, |w| w.settle(0));
     h.at(END + 499);
@@ -1200,16 +1206,76 @@ fn void_settlement_with_some_prints_averages_them() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_050_000, 250_000, 150_000, 2, true));
+    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_010_000, 210_000, 190_000, 2, true));
+    // Alice bought 8 LONG at 0.21 and Carol 8 SHORT at 0.19: each gets that back.
+    let (alice, carol) = (h.balance(ALICE), h.balance(CAROL));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(CAROL))));
+    assert_eq!(h.balance(ALICE) - alice, 8 * 210_000);
+    assert_eq!(h.balance(CAROL) - carol, 8 * 190_000);
 }
 
 #[test]
-fn void_settlement_with_no_prints_fixes_mid_band() {
-    let mut h = delivered(&[]);
+fn a_void_series_unwinds_at_the_average_of_several_rounds() {
+    let mut params = params();
+    params.max_commits = 8;
+    let mut h = H::with(params);
+    h.funded(&[ALICE, BOB]);
+    h.open_at_round(0);
+    // Round 0: 3 at 0.21. Round 1: 5 at 0.25. Round 2: 4 at 0.20 (mixed: midpoint).
+    for (round, size, long_price, short_price) in [(0, 3, 210_000, 210_000), (1, 5, 250_000, 250_000), (2, 4, 220_000, 180_000)] {
+        h.at(round_start(round));
+        let a = h.commit(ALICE, Side::Long, size, long_price, 5 * DOLLAR);
+        let b = h.commit(BOB, Side::Short, size, short_price, 5 * DOLLAR);
+        h.at(reveal_start(round));
+        h.reveal(ALICE, round, a, Side::Long, size, long_price).unwrap();
+        h.reveal(BOB, round, b, Side::Short, size, short_price).unwrap();
+        h.at(round_end(round));
+        h.ok(STRANGER, |w| w.clear(0, round));
+    }
+    let series = h.series(0);
+    // 3 * 0.21 + 5 * 0.25 + 4 * 0.20 = 2.68 over 12 units: 0.223333.
+    assert_eq!((series.traded_units, series.traded_value), (12, U128(3 * 210_000 + 5 * 250_000 + 4 * 200_000)));
+    let json = serde_json::to_value(&series).unwrap();
+    assert_eq!((json["traded_units"].as_u64(), json["traded_value"].as_str()), (Some(12), Some("2680000")));
+    h.ok(ALICE, |w| w.mint(0, 2));
+    h.at(END + 500);
+    h.ok(STRANGER, |w| w.settle(0));
+    let s = h.series(0).settlement.unwrap();
+    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_023_333, 223_333, 176_667, true));
+    let alice = h.balance(ALICE);
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
+    // 14 LONG (12 bought, 2 minted) and 2 SHORT.
+    assert_eq!(h.balance(ALICE) - alice, 14 * 223_333 + 2 * 176_667);
+}
+
+#[test]
+fn a_void_series_with_only_mints_splits_the_band() {
+    let mut h = H::new();
+    h.funded(&[ALICE]);
+    h.open_at_round(0);
+    h.ok(ALICE, |w| w.mint(0, 5));
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
     assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_000_000, 200_000, 200_000, 0, true));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
+    assert_eq!(h.balance(ALICE), 100 * DOLLAR);
+}
+
+#[test]
+fn a_void_series_with_nothing_at_all_still_settles() {
+    let mut h = H::new();
+    h.funded(&[ALICE]);
+    h.open_at_round(0);
+    h.commit(ALICE, Side::Long, 1, 1_000, 1_000);
+    h.at(round_end(0));
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    h.at(END + 500);
+    h.ok(STRANGER, |w| w.settle(0));
+    let s = h.series(0).settlement.unwrap();
+    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_000_000, 200_000, 200_000, true));
+    assert_eq!(h.series(0).open_sets, 0);
 }
 
 #[test]

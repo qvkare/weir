@@ -36,6 +36,8 @@ const END = deliveryEnd(PARAMS, 1) + PARAMS.voidAfterSecs;
 interface Ledger {
   /** USDC the contract holds: deposits taken minus withdrawals paid. */
   held: bigint;
+  /** The most `burned` has been, which it may never fall below. */
+  burned: bigint;
   netDeposit: Map<string, bigint>;
   /** Everything each account ever locked or paid as a fee in a commit, or paid to mint. */
   outlay: Map<string, bigint>;
@@ -62,6 +64,9 @@ function checkInvariants(m: Market, ledger: Ledger, secrets: readonly Secret[], 
   const totals = m.getTotals();
   // Invariant 1, an equality: what is not owed to anyone is burned.
   assert.equal(total(totals), ledger.held, `${where}: solvency ${JSON.stringify(totals, big)}`);
+  // Invariant 6: nothing burned ever comes back.
+  assert.ok(totals.burned >= ledger.burned, `${where}: burned fell`);
+  ledger.burned = totals.burned;
 
   // Invariant 2.
   for (const s of SERIES) {
@@ -117,7 +122,7 @@ interface Stats {
 function runSequence(seed: number, stats: Stats): void {
   const rng = new Rng(seed);
   const m = new Market(PARAMS, START);
-  const ledger: Ledger = { held: 0n, netDeposit: new Map(), outlay: new Map() };
+  const ledger: Ledger = { held: 0n, burned: 0n, netDeposit: new Map(), outlay: new Map() };
   const secrets: Secret[] = [];
   let level = 2_000_000;
 
@@ -128,19 +133,36 @@ function runSequence(seed: number, stats: Stats): void {
     add(ledger.netDeposit, t, 50_000_000n);
   }
 
-  // Invariant 6 at clearing: each account gets back at most what its own live commits
-  // locked, an account with no commit in the round gets nothing, and the rest is burned.
+  // Invariant 6 at clearing: every account gets back exactly its own locks less its costs
+  // and forfeits, computed here from the round as it stood; forfeits and fees go to
+  // `burned` and to nobody.
   const clear = (series: number, round: number) => {
-    const own = new Map<string, bigint>();
-    for (const c of m.getRound(series, round)?.commits ?? []) add(own, c.owner, c.state === "Void" ? 0n : c.lock);
+    const commits = m.getRound(series, round)?.commits ?? [];
     const before = new Map(TRADERS.map((t) => [t, m.getAccount(t)!.balance]));
     const burned = m.getTotals().burned;
+    const band = m.getSeries(series)?.band ?? 0;
     const result = m.clear(series, round);
+    const expected = new Map<string, bigint>();
+    let forfeits = 0n;
+    let fees = 0n;
+    for (const c of commits) {
+      fees += c.fee;
+      if (c.state === "Committed") {
+        const forfeit = (c.lock * BigInt(PARAMS.forfeitBps)) / 10_000n;
+        forfeits += forfeit;
+        add(expected, c.owner, c.lock - forfeit);
+      } else if (c.state === "Revealed") {
+        const filled = result.fills.find((f) => f.seq === c.seq)?.filled ?? 0;
+        const unit = result.price === null ? 0 : c.order!.side === "Long" ? result.price : band - result.price;
+        add(expected, c.owner, c.lock - BigInt(filled) * BigInt(unit));
+      }
+    }
     for (const t of TRADERS) {
       const gain = m.getAccount(t)!.balance - before.get(t)!;
-      assert.ok(gain >= 0n && gain <= (own.get(t) ?? 0n), `seed ${seed}: ${t} gained ${gain} at clear ${series}/${round}`);
+      assert.equal(gain, expected.get(t) ?? 0n, `seed ${seed}: ${t} credited ${gain} at clear ${series}/${round}`);
     }
-    assert.equal(m.getTotals().burned - burned, result.forfeited + result.fees);
+    assert.deepEqual([result.forfeited, result.fees], [forfeits, fees]);
+    assert.equal(m.getTotals().burned - burned, forfeits + fees);
     stats.cleared++;
     if (result.volume > 0) stats.traded++;
     if (result.forfeited > 0n) stats.forfeits++;

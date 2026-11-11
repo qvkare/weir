@@ -63,6 +63,7 @@ pub const ERR_CAPACITY: &str =
     "max_order_size * max_commits * rounds_per_series must be below 2^52";
 pub const ERR_REPORTERS: &str = "reporters must be 1 to 9 accounts with no duplicates";
 pub const ERR_QUORUM: &str = "quorum must be 1 to the number of reporters";
+pub const ERR_QUORUM_MAJORITY: &str = "quorum must be a majority of the reporters";
 
 pub const ERR_FEE: &str = "attach at least 0.02 NEAR to register";
 pub const ERR_REGISTERED: &str = "account is already registered";
@@ -216,6 +217,9 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
     }
     if params.quorum < 1 || params.quorum as usize > reporters.len() {
         return Err(ERR_QUORUM);
+    }
+    if params.quorum as usize * 2 <= reporters.len() {
+        return Err(ERR_QUORUM_MAJORITY);
     }
     Ok(())
 }
@@ -645,6 +649,11 @@ impl Weir {
 
         let record = self.series_mut(series);
         record.open_sets = add_units(record.open_sets, outcome.volume);
+        if let Some(price) = outcome.price {
+            // What the series' auctions traded, for unwinding it if it goes void.
+            record.traded_units = add_units(record.traded_units, outcome.volume);
+            record.traded_value = add(record.traded_value, mul(outcome.volume, price));
+        }
         record.pending_rounds.retain(|&r| r != round);
 
         let size_of = |side: Side| {
@@ -885,6 +894,8 @@ impl Weir {
             band: record.band,
             sum: acc.sum,
             count: acc.count,
+            traded_units: record.traded_units,
+            traded_value: record.traded_value,
             void_allowed: now >= end.saturating_add(void_after),
             min_prints,
         }));
@@ -997,6 +1008,8 @@ impl Weir {
             band: s.band,
             opened_at: s.opened_at,
             open_sets: s.open_sets,
+            traded_units: s.traded_units,
+            traded_value: U128(s.traded_value),
             pending_rounds: s.pending_rounds.clone(),
             settlement: s.settlement.clone(),
         })
@@ -1199,6 +1212,8 @@ impl Weir {
                 band: b.band,
                 opened_at: now,
                 open_sets: 0,
+                traded_units: 0,
+                traded_value: 0,
                 pending_rounds: Vec::new(),
                 settlement: None,
             },

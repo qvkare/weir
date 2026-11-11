@@ -76,6 +76,10 @@ impl Timing {
     fn round_end(&self, round: u64) -> u64 {
         self.round_start(round) + self.round_secs()
     }
+    /// The same schedule seen from series `s`: every time moves by `s` periods.
+    fn shifted(&self, s: u64) -> Timing {
+        Timing { t0: self.t0 + s * self.period, ..*self }
+    }
     fn end(&self) -> u64 {
         self.t0 + self.period
     }
@@ -216,10 +220,15 @@ fn commit_hash(series: u32, round: u64, account: &str, side: &str, size: u64, pr
 }
 
 async fn commit(account: &Account, weir: &Contract, round: u64, side: &str, size: u64, price: u64, lock: u128) -> anyhow::Result<u32> {
-    let hash = commit_hash(0, round, account.id().as_str(), side, size, price);
+    commit_in(0, account, weir, round, side, size, price, lock).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn commit_in(series: u32, account: &Account, weir: &Contract, round: u64, side: &str, size: u64, price: u64, lock: u128) -> anyhow::Result<u32> {
+    let hash = commit_hash(series, round, account.id().as_str(), side, size, price);
     let seq = account
         .call(weir.id(), "commit")
-        .args_json(json!({ "series": 0, "hash": hash, "lock": lock.to_string() }))
+        .args_json(json!({ "series": series, "hash": hash, "lock": lock.to_string() }))
         .transact()
         .await?
         .into_result()?
@@ -228,9 +237,14 @@ async fn commit(account: &Account, weir: &Contract, round: u64, side: &str, size
 }
 
 async fn reveal(account: &Account, weir: &Contract, round: u64, seq: u32, side: &str, size: u64, price: u64) -> anyhow::Result<ExecutionFinalResult> {
+    reveal_in(0, account, weir, round, seq, side, size, price).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn reveal_in(series: u32, account: &Account, weir: &Contract, round: u64, seq: u32, side: &str, size: u64, price: u64) -> anyhow::Result<ExecutionFinalResult> {
     Ok(account
         .call(weir.id(), "reveal")
-        .args_json(json!({ "series": 0, "round": round, "seq": seq, "side": side, "size": size, "price": price, "salt": SALT }))
+        .args_json(json!({ "series": series, "round": round, "seq": seq, "side": side, "size": size, "price": price, "salt": SALT }))
         .transact()
         .await?)
 }
@@ -410,6 +424,43 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     assert_eq!(free(&weir, &alice).await?, 0);
     assert_eq!(chain.usdc_balance(alice.id()).await?, alice_free);
     assert_eq!(chain.usdc_balance(weir.id()).await?, 1_500 * DOLLAR - alice_free);
+    assert_books_balance(&chain, &weir).await?;
+
+    // A void series that traded. Series 2's auction is open now; Bob buys 5 LONG at
+    // 0.22 from Carol, and then nobody reports during its delivery window.
+    let t2 = t.shifted(2);
+    chain.print(&weir, &t, PRICE).await?;
+    let round = a_fresh_commit_phase(&chain, &t2, 60).await?;
+    let (bob_before, carol_before) = (free(&weir, &bob).await?, free(&weir, &carol).await?);
+    let b = commit_in(2, &bob, &weir, round, "Long", 5, 220_000, 2 * DOLLAR).await?;
+    let c = commit_in(2, &carol, &weir, round, "Short", 5, 220_000, 2 * DOLLAR).await?;
+    chain.warp_to(t2.reveal_start(round)).await?;
+    reveal_in(2, &bob, &weir, round, b, "Long", 5, 220_000).await?.into_result()?;
+    reveal_in(2, &carol, &weir, round, c, "Short", 5, 220_000).await?.into_result()?;
+    chain.warp_to(t2.round_end(round)).await?;
+    bob.call(weir.id(), "clear").args_json(json!({ "series": 2, "round": round })).gas(CALL_GAS).transact().await?.into_result()?;
+    let series = view(&weir, "get_series", json!({ "series": 2 })).await?;
+    assert_eq!((series["traded_units"].as_u64(), series["traded_value"].as_str()), (Some(5), Some("1100000")));
+    assert_eq!(free(&weir, &bob).await?, bob_before - FEE - 5 * 220_000);
+    assert_eq!(free(&weir, &carol).await?, carol_before - FEE - 5 * 180_000);
+
+    chain.warp_to(t2.end() + t.grace).await?;
+    let early = bob.call(weir.id(), "settle").args_json(json!({ "series": 2 })).transact().await?;
+    assert!(format!("{:?}", early.failures()).contains("not enough prints yet"));
+    chain.warp_to(t2.end() + 3_600).await?;
+    bob.call(weir.id(), "settle").args_json(json!({ "series": 2 })).transact().await?.into_result()?;
+    let s = view(&weir, "get_series", json!({ "series": 2 })).await?["settlement"].clone();
+    // Unwound at the traded price: LONG gets 0.22 back, SHORT 0.18.
+    assert_eq!(
+        (s["fixing"].as_u64(), s["long_payout"].as_u64(), s["short_payout"].as_u64(), s["prints"].as_u64(), s["void"].as_bool()),
+        (Some(2_020_000), Some(220_000), Some(180_000), Some(0), Some(true))
+    );
+    for who in [&bob, &carol] {
+        bob.call(weir.id(), "redeem").args_json(json!({ "series": 2, "account_id": who.id() })).transact().await?.into_result()?;
+    }
+    // Each gets back exactly what it paid; only the commit fee is gone.
+    assert_eq!(free(&weir, &bob).await?, bob_before - FEE);
+    assert_eq!(free(&weir, &carol).await?, carol_before - FEE);
     assert_books_balance(&chain, &weir).await?;
     Ok(())
 }
