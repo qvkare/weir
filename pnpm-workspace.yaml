@@ -1,6 +1,8 @@
 packages:
   - engine
   - index
+  - chain
   - agents
+  - keeper
   - backtest
   - web

@@ -130,7 +130,8 @@ floor  = mid - half
 band   = 2 * half
 ```
 
-Opening panics if `half < tick` or `half > mid`. `floor` and `band` never change.
+Opening panics if `half < tick` or `half > mid`. The second cannot happen with valid
+parameters and is kept as a guard. `floor` and `band` never change.
 
 ### 6.2 Commit
 
@@ -166,6 +167,7 @@ only an upper bound on what the order can cost.
 
 - The caller owns commit `seq` of that round, it has not been revealed, and `now` is
   in the round's reveal phase.
+- `salt` is 32 to 64 lowercase hex characters.
 - The hash of the revealed values equals the committed hash.
 - `1 <= size <= max_order_size`. `price` is a multiple of `tick` and
   `0 < price < band`.
@@ -247,13 +249,14 @@ the new sets are fully backed.
 
 ## 8. Mint, merge, transfer
 
-- `mint(series, sets)`: during the auction window. Costs `sets * band` from the free
+- `mint(series, sets)`: during the auction window, `sets >= 1`. Costs `sets * band` from the free
   balance and adds `sets` to both the caller's LONG and SHORT. Adds `sets` to
   `open_sets`. Opens the series if needed.
-- `merge(series, sets)`: before settlement. Burns `sets` LONG and `sets` SHORT of the
+- `merge(series, sets)`: before settlement, `sets >= 1`. Burns `sets` LONG and `sets` SHORT of the
   caller and credits `sets * band`. Subtracts `sets` from `open_sets`.
-- `transfer_position(series, to, long, short)`: moves units to a registered account.
-  Requires exactly 1 yoctoNEAR.
+- `transfer_position(series, to, long, short)`: moves units to another registered
+  account, before or after settlement. `long + short >= 1`. Requires exactly 1
+  yoctoNEAR.
 
 A holder leaves a position by buying the other side in an auction and merging.
 
@@ -265,8 +268,9 @@ A holder leaves a position by buying the other side in an auction and merging.
 - `bucket <= now < bucket + print_interval_secs + report_grace_secs`.
 - `price > 0`. `bundle` is 64 lowercase hex characters: the `sha256` of the raw
   observations the reporter used.
-- A reporter reports once per bucket; a second report panics.
 - If the bucket's print is already final, the call does nothing and returns `false`.
+  This is checked before the next rule.
+- A reporter reports once per bucket; a second report panics.
 
 After a report is stored, with `n` reports for the bucket:
 
@@ -324,7 +328,8 @@ else:
 
 `redeem(series, account_id?)`. Anyone may call it for any account after settlement.
 It credits `long * (long_payout + bonus_long) + short * (short_payout + bonus_short)`
-to that account's free balance and deletes the position.
+to that account's free balance and deletes the position. It panics with
+`nothing to redeem` if the account holds no position in the series.
 
 ## 11. Invariants
 
@@ -364,6 +369,16 @@ All views are free and take JSON.
 Dollar amounts in JSON are decimal strings. Prices, sizes and times are numbers.
 `side` is `"Long"` or `"Short"`.
 
+Details:
+
+- `get_status`: `phase_ends_at` is null when `phase` is `Closed`.
+- `get_result`: `long_size`, `short_size` and `orders` count the revealed orders that
+  are not void. `commits` counts every commit the round held when it was cleared.
+  `price` is null when nothing traded.
+- `get_results`: the range is `from_round` to `from_round + limit - 1`; `limit` is at
+  most 100.
+- `get_print`: `price` is null until the print is final.
+
 ## 13. Events
 
 Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","version":"1.0.0","event":<name>,"data":{...}}`.
@@ -382,7 +397,7 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
 | `mint`, `merge` | `series`, `account_id`, `sets` |
 | `transfer_position` | `series`, `from`, `to`, `long`, `short` |
 | `report` | `bucket`, `reporter`, `price`, `bundle` |
-| `print` | `bucket`, `price`, `reports` |
+| `print` | `bucket`, `price`, `reports` (the number of reports behind it) |
 | `settle` | `series`, `fixing`, `long_payout`, `short_payout`, `void` |
 | `redeem` | `series`, `account_id`, `amount` |
 | `guard` | `account_id`, `guard` |

@@ -1,0 +1,7 @@
+{
+  "network": "testnet",
+  "rpc": ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"],
+  "explorer": "https://testnet.nearblocks.io",
+  "bundles_base": null,
+  "markets": []
+}
