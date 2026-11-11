@@ -1,0 +1,29 @@
+{
+  "name": "@weir/keeper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The scheduled job that keeps a live Weir market running: posts the index, runs the trading agents, clears, settles and redeems.",
+  "type": "module",
+  "exports": {
+    ".": "./src/mod.ts"
+  },
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p .",
+    "bench": "node --disable-warning=ExperimentalWarning scripts/bench.ts",
+    "once": "node --disable-warning=ExperimentalWarning src/node.ts --once",
+    "loop": "node --disable-warning=ExperimentalWarning src/node.ts --loop --port 8787",
+    "dry-run": "wrangler deploy --dry-run --outdir dist"
+  },
+  "dependencies": {
+    "@weir/agents": "workspace:*",
+    "@weir/chain": "workspace:*",
+    "@weir/engine": "workspace:*",
+    "@weir/index": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "^5.9.3",
+    "wrangler": "4.158.0"
+  }
+}

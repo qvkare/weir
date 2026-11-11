@@ -431,6 +431,6 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
 - **No admin.** There is no owner, pause, fee switch or upgrade method. Once the
   contract account's keys are deleted, the code cannot change.
 - **Agents.** An account that holds only a function-call key limited to `commit`,
-  `reveal`, `clear`, `mint`, `merge` and `redeem` can trade with the dollars already
+  `reveal`, `clear`, `mint`, `merge`, `settle` and `redeem` can trade with the dollars already
   deposited for it. It cannot withdraw, cannot move positions and cannot change its
   guard, because those need 1 yoctoNEAR.
