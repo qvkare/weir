@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { bundleHash, canonical, sha256Hex, verifyBundle, verifyRaw } from "../src/bundle.ts";
+import { CHIPS } from "../src/chips.ts";
 import { makeBundle, type Bundle } from "../src/method.ts";
-import { fixtureOutcomes, fixtureText } from "./fixtures.ts";
+import { fixtureOutcomes, fixtureText, v2Outcomes, v2Text } from "./fixtures.ts";
 
 const BUCKET = 1_794_423_600;
 const fresh = async (): Promise<Bundle> => makeBundle(BUCKET, 1_794_425_132, await fixtureOutcomes());
@@ -67,4 +69,92 @@ test("verifyRaw re-derives a source's providers from its raw body", async () => 
   assert.deepEqual((await verifyRaw(b, "shadeform", body)).filter((c) => !c.ok).map((c) => c.name), ["raw shadeform: providers re-parsed"]);
   const other = new TextEncoder().encode(fixtureText("shadeform") + " ");
   assert.equal((await verifyRaw(b, "shadeform", other))[0]!.ok, false);
+});
+
+// ---- Both method versions.
+
+const V1_FILE = new URL("../../evidence/bundles/1794423600-1c0e2cb8b9c8.json", import.meta.url);
+const v1Text = () => readFileSync(V1_FILE, "utf8");
+const enc = (t: string) => new TextEncoder().encode(t);
+
+test("the recorded version-1 bundle still verifies under version 1, raw bodies included", async () => {
+  const text = v1Text();
+  const b = JSON.parse(text) as Bundle;
+  assert.equal(b.method, "weir-h100-od/1");
+  assert.equal(canonical(b), text);
+  assert.equal((await bundleHash(b)).slice(0, 12), "1c0e2cb8b9c8");
+  assert.deepEqual(failures(b), []);
+  for (const id of ["vast", "runpod", "akash", "lium", "verda", "shadeform"]) {
+    const body = readFileSync(new URL(`../../evidence/bundles/1794423600-1c0e2cb8b9c8.raw/${id}.json`, import.meta.url));
+    assert.deepEqual((await verifyRaw(b, id, body)).filter((c) => !c.ok).map((c) => c.name), [], id);
+  }
+});
+
+test("verifyBundle dispatches on method: version-1 checks, unknown method", async () => {
+  const b = JSON.parse(v1Text()) as Bundle;
+  // Relabelled as version 2 it is internally consistent (nothing was below 25%, no fallback),
+  // but it is a different document with a different hash, so it cannot pass for the posted one.
+  const relabelled = { ...b, method: "weir-gpu-od/2", chip: "h100", index_name: "H100-OD" };
+  assert.deepEqual(failures(relabelled), []);
+  assert.notEqual(await bundleHash(relabelled), await bundleHash(b));
+  const withDrop = JSON.parse(v1Text()) as Bundle;
+  withDrop.providers[0]!.dropped = [{ sku: "x", price: 0, reason: "placeholder" }];
+  assert.ok(failures(withDrop).includes("akash: version 1 drops nothing"));
+  assert.ok(failures({ ...b, chip: "h100" }).includes("version 1 has no chip or index_name"));
+  assert.deepEqual(failures({ ...b, method: "weir-h100-od/9" }), ["method"]);
+});
+
+for (const chip of Object.values(CHIPS)) {
+  test(`version-2 ${chip.id} bundle verifies, and every raw body re-parses to it`, async () => {
+    const b = makeBundle(1_794_430_800, 1_794_433_000, await v2Outcomes(chip), chip);
+    assert.deepEqual(failures(b), []);
+    for (const id of ["vast", "runpod", "akash", "lium", "verda", "shadeform"]) {
+      assert.deepEqual((await verifyRaw(b, id, enc(v2Text(id, chip)))).filter((c) => !c.ok).map((c) => c.name), [], id);
+    }
+  });
+}
+
+test("a tampered chip field fails verification", async () => {
+  const b = makeBundle(0, 0, await v2Outcomes(CHIPS.h100), CHIPS.h100);
+  assert.deepEqual(failures({ ...b, chip: "h200" }), ["index_name matches chip"]);
+  assert.deepEqual(failures({ ...b, chip: "b200" }), ["chip is supported"]);
+  // Changing chip and index_name together keeps the bundle self-consistent, so it takes the
+  // raw bodies (or the hash posted on chain) to catch it: re-parsed as H200, nothing matches.
+  const both = { ...b, chip: "h200", index_name: "H200-OD" };
+  assert.notEqual(await bundleHash(both), await bundleHash(b));
+  const raw = await verifyRaw(both, "runpod", enc(v2Text("runpod")));
+  assert.deepEqual(raw.filter((c) => !c.ok).map((c) => c.name), ["raw runpod: providers re-parsed"]);
+});
+
+test("a placeholder moved back into the offers, or a dropped real offer, fails", async () => {
+  const b = makeBundle(0, 0, await v2Outcomes(CHIPS.h200), CHIPS.h200);
+  const rp = b.providers.find((p) => p.id === "runpod")!;
+  const back = structuredClone(b);
+  const r = back.providers.find((p) => p.id === "runpod")!;
+  r.offers = [...rp.offers, { sku: rp.dropped![0]!.sku, price: rp.dropped![0]!.price }].sort((x, y) => (x.sku < y.sku ? -1 : 1));
+  delete r.dropped;
+  assert.deepEqual(failures(back), ["runpod: placeholders"]);
+  const hide = structuredClone(b);
+  const h = hide.providers.find((p) => p.id === "runpod")!;
+  h.dropped = [...h.dropped!, { ...h.offers[2]!, reason: h.dropped![0]!.reason }].sort((x, y) => (x.sku < y.sku ? -1 : 1));
+  h.offers = h.offers.slice(0, 2);
+  h.value = 3_690_000; // (3.59 + 3.79) / 2; the index (4.25) does not move
+  assert.deepEqual(failures(hide), ["runpod: placeholders", "runpod: value"]);
+});
+
+test("the Verda fallback verifies, and cannot be claimed while Verda's fetch worked", async () => {
+  const fell = makeBundle(0, 0, await v2Outcomes(CHIPS.h100, ["verda"]), CHIPS.h100);
+  assert.deepEqual(failures(fell), []);
+  const b = makeBundle(0, 0, await v2Outcomes(CHIPS.h100), CHIPS.h100);
+  const sv = b.providers.find((p) => p.id === "shadeform:verda")!;
+  sv.status = "included";
+  sv.value = 3_310_000;
+  delete sv.reason;
+  assert.deepEqual(failures(b), ["shadeform:verda: value", "index"]);
+  // Faking the failure needs the empty-body hash and no offers: then it is consistent, and only
+  // the raw body (or the on-chain hash) shows that Verda in fact answered.
+  const v = fell.providers.find((p) => p.id === "verda")!;
+  assert.deepEqual([v.offers, v.raw_sha256], [[], await sha256Hex("")]);
+  v.raw_sha256 = "0".repeat(64);
+  assert.deepEqual(failures(fell), ["verda: failed fetch hashes the empty body"]);
 });

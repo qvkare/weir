@@ -1,20 +1,20 @@
+import type { Chip } from "../chips.ts";
 import { toMicro, type Draft, type Source } from "../method.ts";
 import { list, obj, str } from "./shape.ts";
 
 /**
- * The `models[]` entries with model "h100"; each contributes its `price.med` as one offer
- * (today there is exactly one, so the provider value is that median). Availability is
- * kept as a note.
+ * The `models[]` entries with the chip's model (and ram, if the chip names one); each
+ * contributes its `price.med` as one offer. Availability is kept as a note.
  */
-export function parse(json: unknown): Draft {
+export function parse(json: unknown, chip: Chip): Draft {
   const draft: Draft = { id: "akash", offers: [] };
   const notes: string[] = [];
   for (const x of list(obj(json, "response").models, "models")) {
     const m = obj(x, "model");
-    if (m.model !== "h100") continue;
+    if (m.model !== chip.akash.model || (chip.akash.ram !== undefined && m.ram !== chip.akash.ram)) continue;
     const price = obj(m.price, "price");
     if (typeof price.med !== "number") continue;
-    const sku = ["h100", str(m.ram), str(m.interface)].filter(Boolean).join(" ");
+    const sku = [chip.akash.model, str(m.ram), str(m.interface)].filter(Boolean).join(" ");
     draft.offers.push({ sku, price: toMicro(price.med) });
     const a = obj(m.availability, "availability");
     const p = obj(m.providerAvailability, "providerAvailability");
@@ -24,10 +24,13 @@ export function parse(json: unknown): Draft {
   return draft;
 }
 
-export const source: Source = {
-  id: "akash",
-  kind: "open-market",
-  url: "https://console-api.akash.network/v1/gpu-prices",
-  method: "GET",
-  parse: (json) => [parse(json)],
-};
+/** One call returns every model, so all chips share it. */
+export function source(chip: Chip): Source {
+  return {
+    id: "akash",
+    kind: "open-market",
+    url: "https://console-api.akash.network/v1/gpu-prices",
+    method: "GET",
+    parse: (json) => [parse(json, chip)],
+  };
+}

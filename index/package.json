@@ -2,7 +2,7 @@
   "name": "@weir/index",
   "version": "0.1.0",
   "private": true,
-  "description": "H100-OD: the on-demand H100 GPU-hour price index Weir settles on, with recomputable evidence bundles.",
+  "description": "On-demand GPU-hour price indexes (H100-OD, H200-OD, A100-80-OD) Weir settles on, with recomputable evidence bundles.",
   "type": "module",
   "exports": {
     ".": "./src/mod.ts",
