@@ -3,8 +3,9 @@ import { Suspense } from "react";
 import { Lockup } from "./logo.tsx";
 import { MarketSwitch, MarketSwitchFallback, SiteNav, SiteNavFallback } from "./site-nav.tsx";
 import { ThemeToggle } from "./theme-toggle.tsx";
+import type { MarketId } from "@/lib/config.ts";
 
-export function SiteHeader({ network }: { network: string }) {
+export function SiteHeader({ network, markets }: { network: string; markets: readonly MarketId[] }) {
   const net = network.charAt(0).toUpperCase() + network.slice(1);
   return (
     <header className="site-header">
@@ -20,8 +21,8 @@ export function SiteHeader({ network }: { network: string }) {
             <span className="net-dot" aria-hidden="true" />
             {net}
           </span>
-          <Suspense fallback={<MarketSwitchFallback />}>
-            <MarketSwitch />
+          <Suspense fallback={<MarketSwitchFallback markets={markets} />}>
+            <MarketSwitch markets={markets} />
           </Suspense>
           <ThemeToggle />
         </div>

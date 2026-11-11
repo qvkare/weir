@@ -251,6 +251,7 @@ export function SimRunner({ market }: { market: MarketId }) {
                       <th scope="col" className="num">SHORT</th>
                       <th scope="col" className="num collapse-sm">Paid</th>
                       <th scope="col" className="num collapse-sm">Received</th>
+                      <th scope="col" className="num collapse-sm">Fees burned</th>
                       <th scope="col" className="num collapse-sm">Forfeited</th>
                       <th scope="col" className="num">Result</th>
                     </tr>
@@ -263,6 +264,7 @@ export function SimRunner({ market }: { market: MarketId }) {
                         <td className="num">{fmtInt(r.short)}</td>
                         <td className="num collapse-sm">{fmtUsdOrNone(r.paid)}</td>
                         <td className="num collapse-sm">{fmtUsdOrNone(r.received)}</td>
+                        <td className="num collapse-sm">{fmtUsdOrNone(r.fees)}</td>
                         <td className="num collapse-sm">{fmtUsdOrNone(r.forfeited)}</td>
                         <td className="num">{fmtUsdOrNone(r.result)}</td>
                       </tr>

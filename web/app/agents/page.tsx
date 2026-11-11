@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Agents", description: "Give an agent
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
 
-const METHODS = ["commit", "reveal", "clear", "mint", "merge", "redeem"];
+const METHODS = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"];
 
 export default async function AgentsPage({ searchParams }: { searchParams: Search }) {
   const market = marketFromParam((await searchParams).m);
@@ -42,7 +42,14 @@ near account add-key AGENT_ACCOUNT \\
 near contract call-function as-transaction USDC_TOKEN ft_transfer_call \\
   json-args '{"receiver_id":"${c}","amount":"100000000","msg":"AGENT_ACCOUNT"}' \\
   prepaid-gas '100 Tgas' attached-deposit '1 yoctoNEAR' \\
-  sign-as YOUR_ACCOUNT network-config ${net} sign-with-keychain send`;
+  sign-as YOUR_ACCOUNT network-config ${net} sign-with-keychain send
+
+# 3. Bound the agent with your full-access key: a guard (how far from the index, in micro-USD,
+#    its prices may be) and a round lock limit (the most its commits may lock in one round).
+near contract call-function as-transaction ${c} set_guard \
+  json-args '{"guard":150000,"max_round_lock":"20000000"}' \
+  prepaid-gas '30 Tgas' attached-deposit '1 yoctoNEAR' \
+  sign-as AGENT_ACCOUNT network-config ${net} sign-with-keychain send`;
 
   const loop = `// A minimal agent: one sealed LONG per round, revealed on time, round cleared after.
 // Node 22+. Reads ${site}/api/status; signs with the near CLI and the key added above.
@@ -82,7 +89,7 @@ for (;;) {
     <main id="main">
       <div className="wrap">
         <header className="page-head">
-          <span className="eyebrow">Agents · {MARKET_INFO[market].label} market</span>
+          <span className="eyebrow">Agents · {MARKET_INFO[market].name} market</span>
           <h1>A key that bids and stops there</h1>
           <p className="sub">A function-call key can commit, reveal, clear and redeem. Withdrawing needs 1 yoctoNEAR, which that key cannot attach.</p>
         </header>
@@ -93,25 +100,25 @@ for (;;) {
             <Board
               title="Full-access key"
               note="Yours. Keep it off the agent's machine."
-              can={["Deposit USDC (ft_transfer_call on the token)", "Withdraw the free balance", "Set or clear the guard", "Move positions to another account", "Everything a function-call key can do"]}
+              can={["Deposit USDC (ft_transfer_call on the token)", "Withdraw the free balance", "Set or clear the guard and the round lock limit", "Move positions to another account", "Everything a function-call key can do"]}
               cannot={["Change Weir's code or parameters: there is no method for it"]}
             />
             <Board
               title="Function-call key on Weir"
               note={`Limited to ${METHODS.join(", ")}.`}
               can={["Commit and reveal sealed orders with the dollars already deposited", "Clear a finished round, settle and redeem", "Mint and merge sets", "Burn gas up to the key's allowance"]}
-              cannot={["Withdraw: needs 1 yoctoNEAR attached", "Change the guard: needs 1 yoctoNEAR", "Move positions: needs 1 yoctoNEAR", "Call any other contract, or the token"]}
+              cannot={["Withdraw: needs 1 yoctoNEAR attached", "Change the guard or the round lock limit: needs 1 yoctoNEAR", "Move positions: needs 1 yoctoNEAR", "Call any other contract, or the token"]}
             />
           </div>
           <p className="small muted" style={{ marginTop: 16 }}>
-            The budget is what you deposit: an agent can lock at most the account&rsquo;s free balance, and loses at most what it locked or paid (SPEC 11, invariant 5). The guard you set with your own key voids any of its orders priced too far from the index.
+            Three things bound an agent, and it can change none of them. First, the deposit: it can lock at most the account&rsquo;s free balance and loses at most what it locked or paid (SPEC 11, invariant 5). Second, the round lock limit (<code>max_round_lock</code>): its commits in one round may lock no more than you allow, so a faulty or hijacked agent can put at most that much at risk of forfeit per round. Third, the guard: an order priced further than the guard from the reference is void at reveal. The commit records the guard and the reference when it is made, so changing the guard later cannot cancel a bid. Each commit also pays a small fee, burned when the round clears (<a href="/spec#s15">SPEC 15</a>).
           </p>
         </section>
 
         <section className="section" aria-labelledby="steps-h">
           <h2 id="steps-h">Add the key</h2>
           <p className="lead">
-            With near-cli-rs. {contract ? `The ${MARKET_INFO[market].label.toLowerCase()} market's contract is ${contract}.` : "The contract account goes where it says <weir contract> once a market is deployed."} Replace the upper-case names.
+            With near-cli-rs. {contract ? `The ${MARKET_INFO[market].name} market's contract is ${contract}.` : "The contract account goes where it says <weir contract> once a market is deployed."} Replace the upper-case names.
           </p>
           <CopyBlock text={addKey} label="Commands to add an agent key and deposit" title={`Shell · near-cli-rs · ${net}`} />
         </section>

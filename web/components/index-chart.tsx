@@ -64,6 +64,9 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
               </g>
             ))}
             <path className="curve" pathLength={1} d={g.index} fill="none" stroke="var(--ink)" strokeWidth={2} />
+            {g.noPrint.map((x, i) => (
+              <path key={i} d={`M${(x - 3).toFixed(1)},${g.plot.y1 - 9}l6,6m0,-6l-6,6`} stroke="var(--flag)" strokeWidth={1.4} />
+            ))}
             {g.last ? <circle className="fade-in" cx={g.last.x} cy={g.last.y} r={3.5} fill="var(--ink)" /> : null}
             {g.index === "" ? (
               <text x={(g.plot.x0 + g.plot.x1) / 2} y={(g.plot.y0 + g.plot.y1) / 2} textAnchor="middle" className="ink">

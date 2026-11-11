@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { backtestGeometry, caveatsFromMarkdown, coverage, niceStep, readBacktest } from "./backtest.ts";
 import { readCache, valueOf } from "./cache.ts";
-import { marketFromParam, parseDeployments } from "./config.ts";
+import { marketFromParam, mq, parseDeployments } from "./config.ts";
 import { fundingStatus, groupTxs, readTxFile } from "./evidence.ts";
 import { specVersion } from "./build-data.ts";
 
@@ -12,18 +12,25 @@ test("deployments.json: empty markets, defaults, and tolerant entries", () => {
   assert.equal(d.explorer, "https://x.io");
   assert.equal(d.bundlesBase, null);
   assert.equal(d.markets.length, 0);
-  const m = parseDeployments({ markets: [{ id: "fast", contract: "fast.weir.testnet", keeper: "k.testnet", reporters: ["r1.testnet"] }, { id: "fast", contract: "dup" }, { id: "nope", contract: "x" }, { name: "weekly", account_id: "w.testnet" }] });
-  assert.deepEqual(m.markets.map((x) => [x.id, x.contract]), [["fast", "fast.weir.testnet"], ["weekly", "w.testnet"]]);
+  const m = parseDeployments({ markets: [{ id: "fast", contract: "fast.weir.testnet", keeper: "k.testnet", reporters: ["r1.testnet"] }, { id: "h100-fast", contract: "dup" }, { id: "nope", contract: "x" }, { name: "weekly", account_id: "w.testnet" }, { id: "h200-weekly", label: "H200, weekly", chip: "h200", contract: "h200.weir.testnet", usdc: "usdc.testnet" }] });
+  assert.deepEqual(m.markets.map((x) => [x.id, x.contract]), [["h100-fast", "fast.weir.testnet"], ["h100-weekly", "w.testnet"], ["h200-weekly", "h200.weir.testnet"]]);
+  assert.equal(m.markets[2]!.label, "H200, weekly");
+  assert.equal(m.markets[2]!.usdc, "usdc.testnet");
+  assert.deepEqual(m.markets[2]!.accounts, []);
   assert.deepEqual(m.markets[0]!.accounts, [{ role: "keeper", account: "k.testnet" }, { role: "reporters", account: "r1.testnet" }]);
   assert.equal(parseDeployments(null).markets.length, 0);
   assert.equal(parseDeployments({ markets: { weekly: { contract: "w.testnet" } } }).markets[0]!.contract, "w.testnet");
 });
 
 test("market switcher param", () => {
-  assert.equal(marketFromParam("fast"), "fast");
-  assert.equal(marketFromParam(["fast", "weekly"]), "fast");
-  assert.equal(marketFromParam("other"), "weekly");
-  assert.equal(marketFromParam(undefined), "weekly");
+  assert.equal(marketFromParam("fast"), "h100-fast");
+  assert.equal(marketFromParam("weekly"), "h100-weekly");
+  assert.equal(marketFromParam("a100-80-weekly"), "a100-80-weekly");
+  assert.equal(marketFromParam(["h200-weekly", "weekly"]), "h200-weekly");
+  assert.equal(marketFromParam("other"), "h100-weekly");
+  assert.equal(marketFromParam(undefined), "h100-weekly");
+  assert.equal(mq("h100-weekly"), "");
+  assert.equal(mq("h200-weekly", "range=7d"), "?m=h200-weekly&range=7d");
 });
 
 test("the read cache serves fresh values and the last good one after a failure", async () => {

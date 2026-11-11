@@ -1,1 +1,1 @@
-Weir: one price for next week's GPU-hour. The final frame of an example sealed round cleared by the Weir engine: demand steps down, supply steps up, and one clearing price of $0.40 fills both sides.
+Weir: take the heat out of your GPU bill. The heatsink mark, the headline, and a wafer map of one simulated sealed round of 752 orders, cleared by the Weir engine at $2.78 /GPU-h: filled buyers lit in blue, filled sellers in hatched gold.

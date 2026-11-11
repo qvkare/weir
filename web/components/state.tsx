@@ -15,12 +15,16 @@ export function Skeleton({ lines = 3, label = "Loading" }: { lines?: number; lab
   );
 }
 
-/** A flat level line with a gap: "nothing here yet", the mark of an empty state. */
+/** A wafer with no dies on it: "nothing here yet". Not deployed: the wafer's edge is dashed too. */
 function Level({ dashed = false }: { dashed?: boolean }) {
+  const dies: [number, number][] = [];
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) if (Math.hypot(x - 2, y - 2) < 2.3) dies.push([9 + x * 5.4, 9 + y * 5.4]);
   return (
-    <svg className="state-glyph" viewBox="0 0 40 16" aria-hidden="true" focusable="false">
-      <path d="M1 5H11L14.5 13L18 5H22" fill="none" stroke="currentColor" strokeWidth="2" strokeMiterlimit="2" />
-      <path d="M26 5H39" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={dashed ? "3 3" : undefined} />
+    <svg className="state-glyph" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+      <circle cx="22" cy="22" r="19" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray={dashed ? "3 3" : undefined} />
+      {dies.map(([x, y]) => (
+        <rect key={`${x}-${y}`} x={x} y={y} width="4.4" height="4.4" rx="0.6" fill="none" stroke="currentColor" strokeWidth="0.8" />
+      ))}
     </svg>
   );
 }
@@ -31,7 +35,7 @@ export function NotDeployed({ market, what }: { market: MarketId; what?: string 
       <Level dashed />
       <div>
         <p>
-          The {MARKET_INFO[market].label.toLowerCase()} market is not deployed yet{what ? `, so there is no ${what} to show` : ""}.
+          The {MARKET_INFO[market].name} market is not deployed yet{what ? `, so there is no ${what} to show` : ""}.
         </p>
         <p className="tiny muted">
           The <a href="/simulate">simulation</a> and the <a href="/backtest">backtest</a> run without it.

@@ -1,65 +1,15 @@
 "use client";
 import type { CSSProperties } from "react";
-import type { Film } from "@/lib/film.ts";
-import { dollarsOfPrice, fmtInt, shortHash } from "@/lib/format.ts";
+import { dollarsOfPrice, fmtInt } from "@/lib/format.ts";
 import { stepGeometry, type Seg, type StepOrder } from "@/lib/step.ts";
-import { LockIcon } from "./icons.tsx";
-import { MotionFigure } from "./motion-figure.tsx";
 
 const DASH: CSSProperties = { strokeDasharray: 1 };
 const path = (segs: Seg[]) => segs.map((s) => `M${s.x1.toFixed(1)},${s.y1.toFixed(1)}L${s.x2.toFixed(1)},${s.y2.toFixed(1)}`).join("");
 
-/** The hero: sealed bids arrive, open, draw the two staircases, cross, set one price, fill. */
-export function ClearingFilm({ film }: { film: Film }) {
-  return (
-    <>
-      <div className="film-head">
-        <span>
-          <b>One round, start to finish</b> · example orders, cleared by the Weir engine
-        </span>
-        <span>{film.tickets.length} sealed bids · band {dollarsOfPrice(film.band, film.tick)}</span>
-      </div>
-      <MotionFigure
-      mode="film"
-      name="the example round"
-      className="film"
-      score={film.score}
-      summary={film.summary}
-      render={(w) => (
-        <>
-          <ClearingChart orders={film.tickets} band={film.band} price={film.price} volume={film.volume} tick={film.tick} width={w} payLabels />
-          <ol className="tickets">
-            {film.tickets.map((t, i) => (
-              <li key={t.seq} className={`ticket ${t.side === "Long" ? "is-long" : "is-short"} is-${t.state}`} data-track={`t-${i}`} data-enter="">
-                <div className="ticket-in" data-track={`dim-${i}`}>
-                  <span className="ticket-who">
-                    <b>{t.owner}</b> #{t.seq}
-                  </span>
-                  <span className="ticket-face">
-                    <span className="ticket-sealed" data-track={`sealed-${i}`} aria-hidden="true">
-                      <LockIcon /> <span className="mono">{shortHash(t.hash, 4, 2)}</span>
-                    </span>
-                    <span className="ticket-open" data-track={`open-${i}`} data-enter="">
-                      <span className="ticket-side">{t.side === "Long" ? "LONG" : "SHORT"}</span> {fmtInt(t.size)} at {dollarsOfPrice(t.price, film.tick)}
-                    </span>
-                  </span>
-                  <span className="ticket-fill" data-track={`fill-${i}`} data-enter="">
-                    {t.state === "full" ? `filled ${fmtInt(t.filled)}` : t.state === "part" ? `part, ${fmtInt(t.filled)} of ${fmtInt(t.size)}` : "out"}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </>
-      )}
-      />
-    </>
-  );
-}
-
 /**
  * A cleared round drawn for motion: every part that a score animates carries `data-track`.
- * Used by the hero film and by the clearing drawing on /how.
+ * Used by the clearing drawing on /how. Supply is dashed and its paid area hatched, so the two
+ * sides never rest on colour alone.
  */
 export function ClearingChart({
   orders,
@@ -95,7 +45,7 @@ export function ClearingChart({
     <svg className="film-chart" viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
       <g data-track="soft" data-enter="" fillOpacity={0.65}>
         <rect x={c.longRect.x} y={c.longRect.y} width={c.longRect.w} height={c.longRect.h} fill="var(--long-soft)" />
-        <rect x={c.shortRect.x} y={c.shortRect.y} width={c.shortRect.w} height={c.shortRect.h} fill="var(--short-soft)" />
+        <rect x={c.shortRect.x} y={c.shortRect.y} width={c.shortRect.w} height={c.shortRect.h} fill="url(#hatch-short-soft)" />
       </g>
       <g data-track="axes">
         {g.yTicks.map((t) => (
@@ -125,7 +75,7 @@ export function ClearingChart({
         <path data-track="supply" d={path(g.supply)} pathLength={1} style={DASH} stroke="var(--short)" strokeWidth={1.5} strokeOpacity={0.55} />
         <g data-track="lit" data-enter="">
           <path d={lit(g.demand)} stroke="var(--long)" strokeWidth={4} />
-          <path d={lit(g.supply)} stroke="var(--short)" strokeWidth={4} />
+          <path d={lit(g.supply)} stroke="var(--short)" strokeWidth={4} strokeDasharray="7 3" strokeLinecap="butt" />
           {g.steps
             .filter((s) => s.partAt !== null)
             .map((s) => (
@@ -171,7 +121,7 @@ export function ClearingChart({
           LONG pays {dollarsOfPrice(film.price, film.tick)}
         </text>
       </g>
-      <circle data-track="cross" data-enter="" cx={c.x} cy={c.y} r={6} fill="var(--paper)" stroke="var(--ink)" strokeWidth={2.5} />
+      <circle data-track="cross" data-enter="" cx={c.x} cy={c.y} r={6} fill="var(--sheet)" stroke="var(--ink)" strokeWidth={2.5} />
     </svg>
   );
 }

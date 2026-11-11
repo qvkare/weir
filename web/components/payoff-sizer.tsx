@@ -41,7 +41,7 @@ export function PayoffSizer(props: PayoffSizerProps) {
             <span className="swatch thin" style={{ color: "var(--ink)" }} /> Unhedged: the fixing
           </span>
           <span className="key">
-            <span className="swatch" style={{ color: buyer ? "var(--long)" : "var(--short)" }} /> Hedged with {buyer ? "LONG" : "SHORT"}
+            <span className={`swatch${buyer ? "" : " dash"}`} style={{ color: buyer ? "var(--long)" : "var(--short)" }} /> Hedged with {buyer ? "LONG" : "SHORT"}
           </span>
           <span className="key">
             <span className="swatch box" style={{ color: "var(--panel)" }} /> Band
@@ -135,7 +135,7 @@ export function PayoffSizer(props: PayoffSizerProps) {
           </tbody>
         </table>
         <p className="small muted">
-          The band runs from {fmtPrice(floor, tick)} to {fmtPrice(floor + band, tick)}. Beyond it you pay or receive the market price again, shifted by the fixed amount. Position bonuses from forfeits are left out.
+          The band runs from {fmtPrice(floor, tick)} to {fmtPrice(floor + band, tick)}. Beyond it you pay or receive the market price again, shifted by the fixed amount.
         </p>
       </div>
     </div>
@@ -207,7 +207,12 @@ function PayoffSvg(p: PayoffSizerProps & { side: HedgeSide; fixing: number; widt
         Band
       </text>
       <polyline className="curve" pathLength={1} points={g.unhedged} fill="none" stroke="var(--ink)" strokeWidth={1} />
-      <polyline className="curve" pathLength={1} points={g.hedged} fill="none" stroke={colour} strokeWidth={3} strokeLinejoin="round" />
+      {p.side === "Long" ? (
+        <polyline className="curve" pathLength={1} points={g.hedged} fill="none" stroke={colour} strokeWidth={3} strokeLinejoin="round" />
+      ) : (
+        // SHORT is gold and dashed: never colour alone.
+        <polyline className="fade-in" points={g.hedged} fill="none" stroke={colour} strokeWidth={3} strokeLinejoin="round" strokeDasharray="8 4" />
+      )}
       <g
         role="slider"
         tabIndex={0}
@@ -222,8 +227,8 @@ function PayoffSvg(p: PayoffSizerProps & { side: HedgeSide; fixing: number; widt
       >
         <rect x={g.handle.x - 22} y={g.plot.y0} width={44} height={g.plot.y1 - g.plot.y0} fill="transparent" />
         <line x1={g.handle.x} x2={g.handle.x} y1={g.plot.y0} y2={g.plot.y1} stroke="var(--ink)" strokeWidth={1.5} />
-        <circle cx={g.handle.x} cy={g.handle.yUnhedged} r={4} fill="var(--paper)" stroke="var(--ink)" strokeWidth={1.5} />
-        <circle cx={g.handle.x} cy={g.handle.yHedged} r={6} fill={colour} stroke="var(--paper)" strokeWidth={1.5} />
+        <circle cx={g.handle.x} cy={g.handle.yUnhedged} r={4} fill="var(--sheet)" stroke="var(--ink)" strokeWidth={1.5} />
+        <circle cx={g.handle.x} cy={g.handle.yHedged} r={6} fill={colour} stroke="var(--sheet)" strokeWidth={1.5} />
         <rect x={g.handle.x - 9} y={g.plot.y1 - 22} width={18} height={18} rx={3} fill="var(--ink)" />
         <path d={`M${g.handle.x - 3},${g.plot.y1 - 16} l-3,3 l3,3 M${g.handle.x + 3},${g.plot.y1 - 16} l3,3 l-3,3`} stroke="var(--paper)" strokeWidth={1.5} fill="none" />
       </g>

@@ -4,36 +4,35 @@ import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer.tsx";
 import { SiteHeader } from "@/components/site-header.tsx";
 import { THEME_SCRIPT } from "@/components/theme-toggle.tsx";
-import { buildData, deployments, isModel } from "@/lib/build.ts";
+import { buildData, deployments, isModel, liveMarkets } from "@/lib/build.ts";
 import "./globals.css";
 
-// Archivo carries both axes: width 62 to 125 and weight 100 to 900.
+// Geist and Geist Mono, both variable in weight (OFL; licence in app/fonts). Figures to remember
+// are drawn in the dot-matrix face (lib/dotmatrix.ts), which needs no font file.
 const sans = localFont({
-  src: "./fonts/archivo-latin-wdth-wght.woff2",
+  src: "./fonts/geist-latin-wght.woff2",
   weight: "100 900",
   variable: "--font-sans",
   display: "swap",
-  declarations: [{ prop: "font-stretch", value: "62% 125%" }],
 });
 
 const mono = localFont({
-  src: [
-    { path: "./fonts/ibm-plex-mono-latin-400.woff2", weight: "400", style: "normal" },
-    { path: "./fonts/ibm-plex-mono-latin-500.woff2", weight: "500", style: "normal" },
-  ],
+  src: "./fonts/geist-mono-latin-wght.woff2",
+  weight: "100 900",
   variable: "--font-mono",
   display: "swap",
 });
 
+const TITLE = "Weir: take the heat out of your GPU bill";
 const DESCRIPTION =
-  "Weir runs sealed, uniform-price auctions on next week's H100 GPU-hour. Buyers hold LONG, sellers hold SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash. NEAR testnet.";
+  "Weir runs sealed, single-price auctions on next week's GPU-hour, one market per chip: H100, H200 and A100 80 GB. Teams that need compute buy LONG, people who own GPUs buy SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash. NEAR testnet.";
 
 export const metadata: Metadata = {
   // Set WEIR_SITE_URL at build time to the deployed address so link previews resolve.
   metadataBase: new URL(process.env.WEIR_SITE_URL ?? "http://localhost:3000"),
-  title: { default: "Weir: one price for next week's GPU-hour", template: "%s | Weir" },
+  title: { default: TITLE, template: "%s | Weir" },
   description: DESCRIPTION,
-  openGraph: { siteName: "Weir", title: "Weir: one price for next week's GPU-hour", description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The final frame of an example sealed round: demand steps down, supply steps up, one clearing price fills both sides." }] },
+  openGraph: { siteName: "Weir", title: TITLE, description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The heatsink mark, the line Take the heat out of your GPU bill, and a wafer map of one simulated sealed round with the filled orders lit in blue and gold." }] },
   twitter: { card: "summary_large_image", title: "Weir", description: DESCRIPTION, images: ["/opengraph-image.png"] },
   icons: {
     icon: [
@@ -47,10 +46,35 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F7F5EF" },
-    { media: "(prefers-color-scheme: dark)", color: "#13120E" },
+    { media: "(prefers-color-scheme: light)", color: "#ECECE8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B0B0C" },
   ],
 };
+
+/** Patterns every drawing shares: the seller's hatch, a sealed cover, the substrate's dots. */
+function SharedDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" focusable="false">
+      <defs>
+        <pattern id="hatch-short" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="4" height="4" fill="var(--short-soft)" />
+          <line x1="0" y1="0" x2="0" y2="4" stroke="var(--short)" strokeWidth="1.6" />
+        </pattern>
+        <pattern id="hatch-short-soft" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="5" height="5" fill="var(--short-soft)" />
+          <line x1="0" y1="0" x2="0" y2="5" stroke="var(--short)" strokeWidth="0.9" strokeOpacity="0.7" />
+        </pattern>
+        <pattern id="hatch-sealed" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="4" height="4" fill="var(--panel)" />
+          <line x1="0" y1="0" x2="0" y2="4" stroke="var(--rule)" strokeWidth="1.2" />
+        </pattern>
+        <pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse">
+          <circle cx="2.5" cy="2.5" r="0.8" fill="var(--rule)" />
+        </pattern>
+      </defs>
+    </svg>
+  );
+}
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const model = isModel();
@@ -63,12 +87,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skip" href="#main">
           Skip to content
         </a>
+        <SharedDefs />
         {model ? (
           <div className="ribbon" role="note">
-            Model data, not the chain. Market figures here come from the Weir engine running a fixed script on this server.
+            <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script on this server.
           </div>
         ) : null}
-        <SiteHeader network={deployments().network} />
+        <SiteHeader network={deployments().network} markets={liveMarkets()} />
         {children}
         <SiteFooter builtAt={buildData().builtAt} spec={buildData().specVersion} />
       </body>

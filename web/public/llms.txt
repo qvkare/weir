@@ -1,13 +1,15 @@
 # Weir
 
-> Weir runs sealed, uniform-price auctions on next week's price of one NVIDIA H100 GPU-hour, on NEAR testnet. Buyers hold LONG, sellers hold SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data bundles anyone can re-hash.
+> Weir runs sealed, uniform-price auctions on next week's price of one GPU-hour, one market per chip (NVIDIA H100, H200 and A100 80 GB), on NEAR testnet. Buyers hold LONG, sellers hold SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data bundles anyone can re-hash.
 
 Read-only JSON for agents (CORS open, short cache, errors as {"error":{"code","message"}}):
 
-- [/api/status?m=weekly|fast](/api/status): get_status, get_params, the last index print, and each live series with its floor, band and last clearing.
-- [/api/round?m=weekly|fast&series=N&round=R](/api/round): the sealed book of an open round, or the result and fills of a cleared one.
+- [/api/status?m=h100-weekly|h100-fast|h200-weekly|a100-80-weekly](/api/status): get_status, get_params, the last index print, and each live series with its floor, band and last clearing.
+- [/api/round?m=<market>&series=N&round=R](/api/round): the sealed book of an open round, or the result and fills of a cleared one.
 - [/api/quote?from=arbitrum|ethereum|solana|base&amount=20](/api/quote): a dry NEAR Intents quote, USDC on another chain to USDC on NEAR. Nothing is signed.
+
+Markets: h100-weekly (the default), h100-fast (hourly demo), h200-weekly, a100-80-weekly; `weekly` and `fast` still mean the H100 markets. Forfeits and a per-commit fee are burned; get_totals is { free, locked, sets_backing, unredeemed, burned }; prints have state Open, Final or NoPrint ([/spec](/spec)).
 
 Units: prices in micro-USD per GPU-hour (numbers), dollar amounts in micro-USDC (decimal strings), sizes in GPU-hours, times in Unix seconds UTC.
 
-Pages: [/](/) index and series, [/auction](/auction), [/simulate](/simulate), [/backtest](/backtest), [/how](/how) rules and limits, [/proof](/proof) contracts and checks, [/agents](/agents) function-call keys and a minimal agent loop.
+Pages: [/](/) index and series, [/auction](/auction), [/simulate](/simulate), [/backtest](/backtest), [/how](/how) rules and limits, [/proof](/proof) contracts, audit findings and checks, [/spec](/spec) the specification, [/agents](/agents) function-call keys and a minimal agent loop.

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { NO_DATA } from "@/lib/format.ts";
+import { DotText } from "./dot-text.tsx";
 import { LiveValue } from "./live-value.tsx";
 
 /**
@@ -13,6 +14,7 @@ export function Figure({
   source,
   display = false,
   live = false,
+  dots = false,
   className,
 }: {
   label: ReactNode;
@@ -22,14 +24,17 @@ export function Figure({
   display?: boolean;
   /** The value comes from live data: settle in briefly when it changes after a refresh. */
   live?: boolean;
+  /** Draw the value in the dot-matrix face (prices to remember). */
+  dots?: boolean;
   className?: string;
 }) {
   const missing = value === null || value === NO_DATA;
+  const shown = missing ? null : dots ? <DotText text={value} /> : value;
   return (
     <div className={`figure${display ? " display" : ""}${className ? ` ${className}` : ""}`}>
       <span className="label">{label}</span>
       <span className="value">
-        {missing ? <span className="muted">{NO_DATA}</span> : live ? <LiveValue text={value}>{value}</LiveValue> : value}
+        {missing ? <span className="muted">{NO_DATA}</span> : live ? <LiveValue text={value}>{shown}</LiveValue> : shown}
         {!missing && unit ? <span className="unit">{unit}</span> : null}
       </span>
       {source ? <span className="source">{source}</span> : null}

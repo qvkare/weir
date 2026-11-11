@@ -94,17 +94,25 @@ if (!process.argv.includes("--no-build")) {
 }
 
 const PAGES: [string, string[]][] = [
-  ["/", ["One price for next week", "H100, USD per GPU-hour", "Series and phase clock", "Last clearing", "Payoff and hedge size", "Limits", "Model data, not the chain"]],
-  ["/?m=fast", ["H100, USD per GPU-hour", "Fast market", "Model data, not the chain"]],
+  ["/", ["Take the heat out of your", "GPU bill.", "Who is in the room", "One round, as work", "Example orders", "Simulated", "H100, USD per GPU-hour", "Series and phase clock", "Last clearing", "Payoff and hedge size", "Limits", "Model data, not the chain"]],
+  ["/?m=fast", ["H100, USD per GPU-hour", "H100 hourly (demo)", "Model data, not the chain"]],
+  ["/?m=h100-fast", ["H100, USD per GPU-hour", "H100 hourly (demo)"]],
+  ["/?m=h200-weekly", ["H200, USD per GPU-hour", "Week-ahead H200 auctions", "H200 weekly", "Open the A100 market", "This is the H200 market"]],
+  ["/?m=a100-80-weekly", ["A100 80 GB, USD per GPU-hour", "A100 80 GB weekly", "Open the H100 market"]],
+  ["/?m=h200-weekly&range=30d", ["Index, last 30 d"]],
   ["/?m=fast&range=6h", ["Index, last 6 h"]],
   ["/auction", ["Sealed book", "Bid with an agent", "Recent rounds"]],
   ["/auction?m=fast", ["Sealed book", "Recent rounds"]],
   ["/simulate", ["Simulation. Nothing here touches the chain.", "Skip to clearing", "Run 10 rounds"]],
-  ["/simulate?m=fast", ["Fast preset"]],
+  ["/simulate?m=fast", ["H100 hourly (demo) market"]],
+  ["/simulate?m=a100-80-weekly", ["A100 80 GB weekly market"]],
+  ["/auction?m=h200-weekly", ["Sealed book", "Recent rounds", "Commit fees held"]],
+  ["/proof?m=a100-80-weekly", ["Solvency, A100 80 GB weekly market", "evidence/bundles/a100-80/"]],
+  ["/spec", ["The rules, as written", "version 0.4"]],
   ["/backtest", ["What a hedge would have done", "The rule", "Average stayed inside the band in", "What this does not show"]],
-  ["/how", ["The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
-  ["/proof", ["Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
-  ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book"]],
+  ["/how", ["How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
+  ["/proof", ["Audited", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
+  ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book", "max_round_lock", "Three things bound an agent"]],
 ];
 
 let server = await start({ WEIR_MODEL: "1" });
@@ -112,7 +120,7 @@ try {
   console.log(`model mode on ${server.base}`);
   for (const [path, expect] of PAGES) await page(server.base, path, expect);
   await page(server.base, "/no-such-page", ["No page at this address"], 404);
-  for (const m of ["weekly", "fast"]) {
+  for (const m of ["h100-weekly", "h100-fast", "h200-weekly", "a100-80-weekly", "weekly", "fast"]) {
     const s = await api(server.base, `/api/status?m=${m}`, 200);
     check(s.source === "model", `/api/status?m=${m}: source ${String(s.source)}`);
     const live = (s.series as { series: number; last_clearing: { round: number } | null }[])[0];
@@ -121,12 +129,14 @@ try {
     if (lc) {
       const r = await api(server.base, `/api/round?m=${m}&series=${lc.series}&round=${lc.last_clearing!.round}`, 200);
       check(r.state === "cleared", `/api/round ${m}: state ${String(r.state)}`);
-      await page(server.base, `/auction?${m === "fast" ? "m=fast&" : ""}series=${lc.series}&round=${lc.last_clearing!.round}`, ["Result", "Fills", "Other rounds"]);
+      await page(server.base, `/auction?m=${m}&series=${lc.series}&round=${lc.last_clearing!.round}`, ["Result", "Filled orders", "Burned in this round", "Other rounds"]);
     } else check(false, `/api/status?m=${m}: no last clearing to request`);
   }
   await api(server.base, "/api/status?m=nope", 400);
   await api(server.base, "/api/round?m=fast&series=x&round=1", 400);
   await api(server.base, "/api/round?m=fast&series=0&round=0", 404);
+  const totals = (await api(server.base, "/api/status?m=h200-weekly", 200)) as { params?: { max_spread_bps?: number; commit_fee?: string } };
+  check(typeof totals.params?.max_spread_bps === "number" && typeof totals.params?.commit_fee === "string", "/api/status: 0.4 parameters");
   for (const f of ["/llms.txt", "/robots.txt", "/opengraph-image.png", "/icon.svg", "/apple-icon.png"]) {
     const r = await fetch(server.base + f);
     check(r.ok, `${f}: status ${r.status}`);
@@ -144,7 +154,7 @@ if ((deployed.markets ?? []).length === 0) {
       const html = await page(server.base, path, []);
       check(!text(html).includes("Model data, not the chain"), `${path}: model ribbon without model mode`);
     }
-    for (const p of ["/", "/?m=fast", "/auction", "/proof", "/agents"]) await page(server.base, p, ["is not deployed yet"]);
+    for (const p of ["/", "/?m=fast", "/?m=h200-weekly", "/auction", "/proof", "/agents"]) await page(server.base, p, ["is not deployed yet"]);
     await page(server.base, "/proof", ["No market is deployed yet", "Recorded sample"]);
     const s = await api(server.base, "/api/status?m=weekly", 404);
     check((s.error as { code?: string })?.code === "not_deployed", "/api/status: error code");

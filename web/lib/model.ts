@@ -1,21 +1,20 @@
 // Model mode (WEIR_MODEL=1): the engine's Market, driven by a fixed script against the wall
-// clock, answers the same views as the chain through callView. Reporters print a made-up H100
-// path, scripted agents commit and reveal each round, a keeper clears, settles and redeems.
+// clock, answers the same views as the chain through callView. Reporters print a made-up path
+// for each market's chip, scripted agents commit and reveal each round, a keeper clears, settles and redeems.
 // Every page that shows these figures carries the "Model data, not the chain" ribbon.
 import { auctionClose, auctionOpen, callView, commitHash, computeBand, deliveryEnd, Market, roundCount, roundEnd, roundSecs, roundStart, seriesOf, sha256Hex } from "@weir/engine";
 import type { Params, Side, ViewMethod, ViewMethods } from "@weir/engine";
-import type { MarketId } from "./config.ts";
-import { PRESETS } from "@weir/agents/sim";
+import { MARKET_IDS, type MarketId } from "./config.ts";
+import { MARKETS } from "@weir/agents/sim";
 import { paramsFromWire } from "@weir/chain";
 
 const HOUR = 3600;
 const DAY = 86_400;
 
-/** The same parameters the deployment uses (agents/src/presets.ts), as the engine takes them. */
-export const MODEL_PARAMS: Record<MarketId, Params> = {
-  weekly: paramsFromWire(PRESETS.weekly),
-  fast: paramsFromWire(PRESETS.fast),
-};
+/** The same parameters the deployment uses (agents/src/presets.ts, MARKETS), as the engine takes them. */
+export const MODEL_PARAMS = Object.fromEntries(MARKET_IDS.map((id) => [id, paramsFromWire(MARKETS[id].params)])) as Record<MarketId, Params>;
+
+const weekly = (id: MarketId) => MARKETS[id].preset === "weekly";
 
 export interface ModelAgent {
   id: string;
@@ -57,10 +56,10 @@ function rng(key: string): () => number {
   };
 }
 
-/** The made-up H100 path in micro-USD per GPU-hour. */
+/** A made-up path for the market's chip, in micro-USD per GPU-hour, around its index level on 2026-11-12. */
 export function modelIndex(id: MarketId, t: number): number {
-  const base = 2_700_000;
-  const w = id === "weekly" ? [23 * DAY, 3.1 * DAY, 0.06, 0.025] : [5 * HOUR, 47 * 60, 0.04, 0.015];
+  const base = MARKETS[id].startPrice * 0.94;
+  const w = weekly(id) ? [23 * DAY, 3.1 * DAY, 0.06, 0.025] : [5 * HOUR, 47 * 60, 0.04, 0.015];
   const noise = rng(`${id}|path|${t}`)() - 0.5;
   const v = base * (1 + w[2]! * Math.sin((2 * Math.PI * t) / w[0]!) + w[3]! * Math.sin((2 * Math.PI * t) / w[1]!) + noise * 0.008);
   return Math.round(v / 1000) * 1000;
@@ -109,7 +108,7 @@ function agentOrders(st: ModelState, agent: ModelAgent, k: number, series: numbe
   const info = reference(st, series);
   if (!info) return [];
   const { tick } = st.market.params;
-  const scale = st.id === "weekly" ? 8 : 1;
+  const scale = weekly(st.id) ? 8 : 1;
   const clampPrice = (p: number) => Math.min(Math.max(Math.round(p / tick) * tick, tick), info.band - tick);
   // One price step is 4% of the band, so orders spread visibly across it.
   const unit = Math.max(tick, Math.round((info.band * 0.04) / tick) * tick);
@@ -156,16 +155,20 @@ function schedule(st: ModelState, a: number, b: number): Ev[] {
   const p = st.market.params;
   const evs: Ev[] = [];
   const I = p.printIntervalSecs;
-  const offsets = st.id === "weekly" ? { report: 40, commit: 300, reveal: 90 } : { report: 15, commit: 25, reveal: 15 };
+  const offsets = weekly(st.id) ? { report: 40, commit: 300, reveal: 90 } : { report: 15, commit: 25, reveal: 15 };
 
   // Reports: reporter i reports each bucket at bucket + offset * (i + 1); reporter 3 sometimes misses one.
   for (let bucket = Math.ceil((a - 3 * offsets.report - I) / I) * I; bucket < b; bucket += I) {
     p.reporters.forEach((rep, i) => {
       const at = bucket + offsets.report * (i + 1);
       if (at < a || at >= b) return;
-      if (i === 2 && rng(`${st.id}|miss|${bucket}`)() < 0.2) return;
+      const missing = rng(`${st.id}|miss|${bucket}`)() < 0.2;
+      if (i === 2 && missing) return;
       const base = modelIndex(st.id, bucket);
-      const jitter = (rng(`${st.id}|rep|${bucket}|${i}`)() - 0.5) * 0.012;
+      // Now and then, with the third reporter missing, the other two disagree by more than
+      // max_spread_bps: the bucket then ends with no print (SPEC 9), as it would on chain.
+      const apart = missing && i === 1 && rng(`${st.id}|apart|${bucket}`)() < 0.3;
+      const jitter = apart ? 0.035 : (rng(`${st.id}|rep|${bucket}|${i}`)() - 0.5) * 0.012;
       const price = Math.round((base * (1 + jitter)) / 1000) * 1000;
       evs.push({ at, run: (s) => attempt(() => s.market.report(rep, bucket, price, sha256Hex(`weir-model-bundle|${bucket}|${rep}`))) });
     });
@@ -238,7 +241,7 @@ function start(id: MarketId, now: number): ModelState {
   const p = MODEL_PARAMS[id];
   const current = seriesOf(p, now) ?? 0;
   // Enough history for a settled series, the one delivering now and the one in auction.
-  const back = id === "weekly" ? 2 : 8;
+  const back = weekly(id) ? 2 : 8;
   const begin = Math.max(p.t0, auctionOpen(p, Math.max(0, current - back)) - 2 * p.printIntervalSecs);
   const market = new Market(p, begin);
   let deposited = 0n;

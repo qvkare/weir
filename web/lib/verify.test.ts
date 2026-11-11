@@ -20,6 +20,20 @@ test("the recorded bundle hashes to the hash in its file name and passes the met
   assert.equal(h.ok, false);
 });
 
+test("each chip's recorded bundle (version 2) hashes to its file name and passes the method's checks", async () => {
+  for (const chip of ["h100", "h200", "a100-80"]) {
+    const sub = new URL(`${chip}/`, dir);
+    const name = readdirSync(sub).find((f) => f.endsWith(".json"));
+    assert.ok(name, `${chip} has a recorded bundle`);
+    const text = readFileSync(new URL(name!, sub), "utf8");
+    assert.equal(JSON.parse(text).chip, chip);
+    const rows = await checkBundle(text, "0".repeat(64), JSON.parse(text).index, chip);
+    const h = rows.find((r) => r.kind === "hash");
+    assert.ok(h && h.kind === "hash" && h.file.startsWith(hashFromFileName(name!)!), chip);
+    assert.equal(rows.find((r) => r.kind === "rules")!.ok, true, chip);
+  }
+});
+
 test("a tampered bundle fails the hash and the index", async () => {
   const text = readFileSync(new URL(file!, dir), "utf8");
   const b = JSON.parse(text);

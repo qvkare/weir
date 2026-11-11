@@ -6,12 +6,16 @@ export interface RecordedBundle {
   /** The file's exact text, so its hash can be recomputed in the browser. */
   text: string;
   bucket: number | null;
+  /** The chip the bundle prices: "h100", "h200" or "a100-80". */
+  chip: string;
 }
 
 export interface BuildData {
   builtAt: number;
   /** "0.2", from the first "Version x.y" line of docs/SPEC.md. */
   specVersion: string | null;
+  /** docs/SPEC.md as text, for /spec. */
+  spec: string | null;
   deployments: unknown;
   bundles: RecordedBundle[];
   bundleCount: number;

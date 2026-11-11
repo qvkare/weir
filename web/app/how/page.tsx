@@ -3,7 +3,9 @@ import Link from "next/link";
 import { clearRound, commitHash, commitPreimage, type Order } from "@weir/engine";
 import type { WireParams } from "@weir/engine";
 import { LimitsList } from "@/components/home-blocks.tsx";
+import { FloorScene } from "@/components/floor-scene.tsx";
 import { QuoteWidget } from "@/components/quote-widget.tsx";
+import { buildFloor } from "@/lib/floor.ts";
 import { ClearingFigure, CommitFigure, FundingFigure, SeriesClockFigure, SettlementFigure } from "@/components/how-figures.tsx";
 import { buildData, deployments, funding } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
@@ -16,6 +18,8 @@ import { stepSummary } from "@/lib/step.ts";
 import { timesOf } from "@/lib/views.ts";
 import { callView, Market } from "@weir/engine";
 
+const FLOOR = buildFloor();
+
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "How it works", description: "Series and rounds, commit and reveal, the clearing rule, settlement, funding through NEAR Intents, and every limit." };
 
@@ -23,7 +27,7 @@ type Search = Promise<Record<string, string | string[] | undefined>>;
 
 /** Example parameters for the drawings when no market is deployed: the fast model's, labelled as such. */
 function exampleParams(): WireParams {
-  return callView(new Market(MODEL_PARAMS.fast, MODEL_PARAMS.fast.t0), "get_params", {});
+  return callView(new Market(MODEL_PARAMS["h100-fast"], MODEL_PARAMS["h100-fast"].t0), "get_params", {});
 }
 
 export default async function HowPage({ searchParams }: { searchParams: Search }) {
@@ -33,7 +37,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
   const params = live ?? exampleParams();
   // Worked examples in round dollars, put on the tick grid.
   const snap = (micro: number) => Math.max(params.tick, Math.round(micro / params.tick) * params.tick);
-  const paramsNote = live ? `${MARKET_INFO[market].label} market parameters, read from get_params${core.src.kind === "model" ? " of the model" : ""}.` : "Example parameters (the fast model's), because no market is deployed yet.";
+  const paramsNote = live ? `${MARKET_INFO[market].name} market parameters, read from get_params${core.src.kind === "model" ? " of the model" : ""}.` : "Example parameters (the fast model's), because no market is deployed yet.";
   const f = funding();
   const intents = buildData().modules.intents;
 
@@ -75,8 +79,19 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
         <header className="page-head">
           <span className="eyebrow">How it works</span>
           <h1>A week-ahead price, set in sealed rounds</h1>
-          <p className="sub">Five steps from a sealed order to a payout, then every limit. Figures in the drawings use {live ? "the live parameters" : "example parameters"}; worked examples are computed by the Weir engine on this page.</p>
+          <p className="sub">One round as work first, then five steps from a sealed order to a payout, then every limit. Figures in the drawings use {live ? "the live parameters" : "example parameters"}; worked examples are computed by the Weir engine on this page.</p>
         </header>
+
+        <section className="section" id="round" aria-labelledby="round-h">
+          <div className="section-head">
+            <h2 id="round-h">One round, as work</h2>
+            <span className="note">Example orders · cleared by the Weir engine</span>
+          </div>
+          <p className="lead">Ten sealed bids, five from buyers and five from sellers, go through one round. The rows of the rack are their prices; the counts the scanner reads at each row and the row it stops on are the engine&rsquo;s. The steps below take each part in turn.</p>
+          <div className="floor-wrap">
+            <FloorScene plan={FLOOR} />
+          </div>
+        </section>
 
         <section className="how-section" id="series">
           <div className="text">
@@ -106,7 +121,10 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
               During the commit phase an order is only a hash and a lock. The lock is dollars moved from your free balance; at least {fmtUsd(params.min_lock)} (min_lock). Because both sides lock dollars, a commit shows neither side, size nor price, only an upper bound on what the order can cost.
             </p>
             <p>
-              During the reveal phase you send the order and the salt. The contract hashes them again and compares. A commit not revealed in time forfeits {fmtBps(params.forfeit_bps)} of its lock to the series&rsquo; bonus pool; the rest comes back.
+              During the reveal phase you send the order and the salt. The contract hashes them again and compares. A commit not revealed in time forfeits {fmtBps(params.forfeit_bps)} of its lock; the rest comes back. Forfeits and the fee of {fmtUsd(params.commit_fee)} every commit pays are burned when the round clears: they belong to nobody, so no one gains when someone else fails to reveal, and taking a slot in a round always costs something.
+            </p>
+            <p>
+              An account can set a guard: an order priced further than the guard from the reference is void at reveal, and its lock comes back. The commit records the guard and the reference when it is made, so whether an order is void is settled at commit; changing the guard afterwards cannot back out of a bid. An account can also cap what its commits lock in one round (<code>max_round_lock</code>).
             </p>
           </div>
           <div className="stack">
@@ -160,6 +178,9 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             <h2>4. Settlement</h2>
             <p>
               After delivery, <code>settle</code> takes the average of the series&rsquo; prints as the fixing. A LONG unit pays the fixing minus the floor, between zero and the band. A SHORT unit pays the band minus that. Then anyone may call <code>redeem</code> for any holder.
+            </p>
+            <p>
+              <b>How a print is decided.</b> Each of {params.reporters.length} reporters may report a bucket within its window, {fmtSpan(params.print_interval_secs)} plus {fmtSpan(params.report_grace_secs)} of grace. The bucket is decided when every reporter has reported, or when the window closes. The print is the median of the reports. With fewer than {fmtInt(params.quorum)} reports (quorum) there is no print; with an even number, the two middle reports must agree within {fmtBps(params.max_spread_bps)} (max_spread_bps) or there is no print. A bucket without a print stays without one, and the index chart marks it. Nothing compares a print with earlier ones.
             </p>
             <p>
               If fewer than {fmtInt(params.min_prints)} prints (min_prints) arrived, the series waits; after {fmtSpan(params.void_after_secs)} (void_after_secs) it settles on what it has, or on the middle of the band if it has none, and is marked void.
@@ -224,7 +245,8 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
           <ul className="limits">
             <li><span>Prices move in steps of {fmtPrice(params.tick, params.tick)}.</span><code>tick</code></li>
             <li><span>A series can only open on a print at most {fmtSpan(params.max_anchor_age_secs)} old.</span><code>max_anchor_age_secs</code></li>
-            <li><span>A print more than {fmtBps(params.max_move_bps)} from the last one needs every reporter.</span><code>max_move_bps</code></li>
+            <li><span>When an even number of reporters decide a print, the two middle reports must be within {fmtBps(params.max_spread_bps)} of each other, or the bucket has no print.</span><code>max_spread_bps</code></li>
+            <li><span>Every commit pays a fee of {fmtUsd(params.commit_fee)}, burned when its round clears.</span><code>commit_fee</code></li>
             <li><span>A round holds at most {fmtInt(params.max_commits)} commits; when full, a larger lock evicts the smallest.</span><code>max_commits</code></li>
             <li><span>One order is at most {fmtGpuH(params.max_order_size)}.</span><code>max_order_size</code></li>
             <li><span>A commit locks at least {fmtUsd(params.min_lock)}.</span><code>min_lock</code></li>

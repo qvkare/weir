@@ -1,16 +1,17 @@
 import { deployments } from "@/lib/build.ts";
 import { fail, json } from "@/lib/api.ts";
 import { valueOf } from "@/lib/cache.ts";
-import { MARKET_IDS, type MarketId } from "@/lib/config.ts";
+import { MARKET_IDS, parseMarket, type MarketId } from "@/lib/config.ts";
 import { loadCore, loadLastClearing } from "@/lib/load.ts";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/status?m=weekly|fast: get_status, the parameters, the last print and each live series. */
+/** GET /api/status?m=<market>: get_status, the parameters, the last print and each live series. */
 export async function GET(request: Request) {
-  const m = new URL(request.url).searchParams.get("m") ?? "weekly";
-  if (!MARKET_IDS.includes(m as MarketId)) return fail(400, "bad_market", `m must be one of ${MARKET_IDS.join(", ")}.`);
-  const market = m as MarketId;
+  const parsed = parseMarket(new URL(request.url).searchParams.get("m"));
+  if (!parsed) return fail(400, "bad_market", `m must be one of ${MARKET_IDS.join(", ")} (weekly and fast still mean the H100 markets).`);
+  const m: MarketId = parsed;
+  const market = m;
   const core = await loadCore(market);
   if (core.src.kind === "none") return fail(404, "not_deployed", `The ${market} market is not deployed yet: deployments.json lists no contract for it.`);
   const status = valueOf(core.status);

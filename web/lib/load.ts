@@ -4,7 +4,7 @@ import type { Bundle } from "@weir/index";
 import type { WireLastPrint, WireLiveSeries, WireParams, WirePrint, WireResult, WireSeries, WireStatus } from "@weir/engine";
 import { buildData, deployments } from "./build.ts";
 import { readCache, valueOf, type Read } from "./cache.ts";
-import type { MarketId } from "./config.ts";
+import type { ChipKey, MarketId } from "./config.ts";
 import { source, type Source } from "./source.ts";
 import { deliveringSeries, lastResult } from "./views.ts";
 
@@ -71,6 +71,34 @@ export async function loadLastClearing(core: Core, series: number): Promise<{ re
   return { read, last: lastResult(list), traded };
 }
 
+/** What became of the buckets in a window that have no final print (SPEC 9). */
+export interface BucketGaps {
+  /** Decided without a print, for good. */
+  noPrint: number[];
+  /** Still taking reports, or waiting to be decided. */
+  open: number[];
+  /** Gaps not asked about: get_print is one call per bucket, so only the newest are read. */
+  unread: number;
+}
+
+/** Asks get_print about the newest buckets in [from, to] without a final print, up to `cap` of them. */
+export async function loadGaps(src: Source, params: WireParams, finals: WirePrint[], from: number, to: number, cap: number): Promise<BucketGaps> {
+  const I = params.print_interval_secs;
+  const have = new Set(finals.map((p) => p.bucket));
+  const missing: number[] = [];
+  for (let b = Math.floor(to / I) * I - I; b >= Math.ceil(from / I) * I; b -= I) if (!have.has(b)) missing.push(b);
+  const asked = missing.slice(0, cap);
+  const reads = await Promise.all(asked.map((bucket) => src.view("get_print", { bucket })));
+  const noPrint: number[] = [];
+  const open: number[] = [];
+  reads.forEach((r, i) => {
+    const p = valueOf(r);
+    if (p?.state === "NoPrint") noPrint.push(asked[i]!);
+    else if (p?.state === "Open") open.push(asked[i]!);
+  });
+  return { noPrint: noPrint.sort((a, b) => a - b), open: open.sort((a, b) => a - b), unread: missing.length - asked.length };
+}
+
 /** Final prints in [from, to], paging get_prints by 200. */
 export async function loadPrints(src: Source, params: WireParams, from: number, to: number): Promise<Read<WirePrint[]>> {
   const I = params.print_interval_secs;
@@ -114,9 +142,9 @@ export async function loadBundle(hash: string): Promise<Read<LoadedBundle> | nul
   });
 }
 
-/** The newest bundle recorded in evidence/bundles, the fixture and fallback. */
-export function recordedBundle(): LoadedBundle | null {
-  const r = buildData().bundles[0];
+/** The newest bundle recorded in evidence/bundles for a chip, the fixture and fallback. */
+export function recordedBundle(chip: ChipKey = "h100"): LoadedBundle | null {
+  const r = buildData().bundles.find((b) => b.chip === chip);
   if (!r) return null;
   try {
     return { bundle: JSON.parse(r.text) as Bundle, text: r.text, origin: { kind: "recorded", file: r.file } };

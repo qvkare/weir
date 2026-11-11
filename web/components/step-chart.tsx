@@ -60,7 +60,7 @@ function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { wid
       {g.clearing ? (
         <>
           <rect x={g.clearing.longRect.x} y={g.clearing.longRect.y} width={Math.max(0, g.clearing.longRect.w)} height={Math.max(0, g.clearing.longRect.h)} fill="var(--long-soft)" />
-          <rect x={g.clearing.shortRect.x} y={g.clearing.shortRect.y} width={Math.max(0, g.clearing.shortRect.w)} height={Math.max(0, g.clearing.shortRect.h)} fill="var(--short-soft)" />
+          <rect x={g.clearing.shortRect.x} y={g.clearing.shortRect.y} width={Math.max(0, g.clearing.shortRect.w)} height={Math.max(0, g.clearing.shortRect.h)} fill="url(#hatch-short-soft)" />
         </>
       ) : null}
       {g.yTicks.map((t) => (
@@ -102,7 +102,8 @@ function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { wid
         <path className="curve" pathLength={1} d={thin(g.demand)} stroke="var(--long)" strokeWidth={1} strokeOpacity={0.5} />
         <path className="curve" pathLength={1} d={thin(g.supply)} stroke="var(--short)" strokeWidth={1} strokeOpacity={0.5} />
         <path className="curve" pathLength={1} d={thick(g.demand)} stroke="var(--long)" strokeWidth={3} />
-        <path className="curve" pathLength={1} d={thick(g.supply)} stroke="var(--short)" strokeWidth={3} />
+        {/* Supply's filled steps are dashed as well as gold: a second cue besides colour. They fade in rather than draw. */}
+        <path className="fade-in" d={thick(g.supply)} stroke="var(--short)" strokeWidth={3} strokeDasharray="7 3" strokeLinecap="butt" />
       </g>
       {g.steps
         .filter((s) => s.partAt !== null)

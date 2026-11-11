@@ -7,13 +7,14 @@ import { CheckIcon, CrossIcon } from "@/components/icons.tsx";
 import { Empty, NotDeployed, RpcError, Skeleton } from "@/components/state.tsx";
 import { buildData, deployments, sourceKind } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
-import { accountUrl, marketFromParam, MARKET_IDS, MARKET_INFO, txUrl, type MarketId } from "@/lib/config.ts";
+import { accountUrl, marketFromParam, MARKET_IDS, MARKET_INFO, mq, txUrl, type MarketId } from "@/lib/config.ts";
 import { groupTxs } from "@/lib/evidence.ts";
 import { fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtSpan, fmtUsd, fmtUsdOrNone, fmtUtc, shortHash } from "@/lib/format.ts";
 import { loadCore, recordedBundle } from "@/lib/load.ts";
 import { modelContract } from "@/lib/model.ts";
 import { readAccount, readKeys, readTokenBalance } from "@/lib/source.ts";
 import { totalsSum } from "@/lib/views.ts";
+import { AUDIT_FINDINGS, AUDIT_TEST_FILE, specHref } from "@/lib/audit.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Proof", description: "Contracts and their remaining keys, parameters, recorded transactions, bundle hashes re-checked in your browser, and a live solvency check." };
@@ -42,9 +43,17 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
           </Suspense>
         </section>
 
+        <section className="section" id="audited" aria-labelledby="audited-h">
+          <div className="section-head">
+            <h2 id="audited-h">Audited</h2>
+            <span className="note">Reviewed by an AI reviewer, not an audit firm</span>
+          </div>
+          <Audited />
+        </section>
+
         <section className="section" id="solvency" aria-labelledby="solvency-h">
           <div className="section-head">
-            <h2 id="solvency-h">Solvency, {MARKET_INFO[market].label.toLowerCase()} market</h2>
+            <h2 id="solvency-h">Solvency, {MARKET_INFO[market].name} market</h2>
             <span className="note">get_totals against the contract&rsquo;s USDC balance, read on each visit</span>
           </div>
           <Suspense fallback={<Skeleton lines={5} label="Reading totals" />}>
@@ -64,7 +73,7 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
 
         <section className="section" id="params" aria-labelledby="params-h">
           <div className="section-head">
-            <h2 id="params-h">Parameters, {MARKET_INFO[market].label.toLowerCase()} market</h2>
+            <h2 id="params-h">Parameters, {MARKET_INFO[market].name} market</h2>
             <span className="note">get_params. Set once at deployment; there is no method to change them.</span>
           </div>
           <Suspense fallback={<Skeleton lines={6} label="Reading parameters" />}>
@@ -81,6 +90,64 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
         </section>
       </div>
     </main>
+  );
+}
+
+function Audited() {
+  return (
+    <div className="stack">
+      <p className="lead" style={{ marginBottom: 0 }}>
+        An independent review of the contract found the dollar accounting sound and eight weaknesses in the rules around it. Specification 0.4 closes each one, and each of the reviewer&rsquo;s demonstrations is kept as a test in <code>{AUDIT_TEST_FILE}</code> that now asserts the attack fails.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" className="num">#</th>
+              <th scope="col">Weakness found</th>
+              <th scope="col">Rule that now closes it</th>
+              <th scope="col" className="collapse-sm">Spec</th>
+              <th scope="col" className="collapse-sm">Test that asserts it</th>
+            </tr>
+          </thead>
+          <tbody>
+            {AUDIT_FINDINGS.map((f) => (
+              <tr key={f.n}>
+                <td className="num">{f.n}</td>
+                <td>{f.finding}</td>
+                <td>
+                  {f.rule}
+                  <div className="only-sm tiny muted">
+                    {f.sections.map((s, i) => (
+                      <span key={s}>{i ? ", " : "SPEC "}<a href={specHref(s)}>{s}</a></span>
+                    ))}{" "}
+                    · <code>{f.test}</code>
+                  </div>
+                </td>
+                <td className="collapse-sm mono">
+                  {f.sections.map((s, i) => (
+                    <span key={s}>
+                      {i ? ", " : ""}
+                      <a href={specHref(s)}>{s}</a>
+                    </span>
+                  ))}
+                </td>
+                <td className="collapse-sm mono tiny" style={{ overflowWrap: "anywhere" }}>{f.test}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="board">
+        <b className="eyebrow">Who reviewed it, and what it did not cover</b>
+        <ul>
+          <li><span aria-hidden="true">·</span><span>The review was done by an AI reviewer that did not write the contract. It is not an audit by a security firm, and this page makes no claim that the contract is secure.</span></li>
+          <li><span aria-hidden="true">·</span><span>It read the contract in <code>contracts/weir</code> against the specification. Outside it: the NEAR protocol and near-sdk, the USDC token contract, the reporters&rsquo; honesty and their index code, this site, the agents and the keeper.</span></li>
+          <li><span aria-hidden="true">·</span><span>No market is deployed, so nothing was reviewed on a live chain; the eight demonstrations run in near-sdk&rsquo;s mocked VM.</span></li>
+          <li><span aria-hidden="true">·</span><span>What the rules still allow is written in <a href="/spec#s15">SPEC 15, Trust</a>: a majority of reporters can set a fixing, and a bidder with capital can still block a round, at <code>commit_fee</code> per slot.</span></li>
+        </ul>
+      </div>
+    </div>
   );
 }
 
@@ -123,7 +190,7 @@ async function Contracts() {
             const model = sourceKind(r.market) === "model";
             return (
               <tr key={`${r.market}-${r.account}`}>
-                <td>{MARKET_INFO[r.market].label}</td>
+                <td>{MARKET_INFO[r.market].name}</td>
                 <td className="mono">{url ? <ExtLink href={url}>{r.account}</ExtLink> : r.account}</td>
                 <td className="collapse-sm">{r.role}</td>
                 <td className="mono">{model ? <span className="muted">model, no chain account</span> : valueOf(r.acct) ? shortHash(valueOf(r.acct)!.codeHash, 6, 4) : <span className="bad">read failed</span>}</td>
@@ -157,25 +224,27 @@ async function Solvency({ market }: { market: MarketId }) {
   const params = valueOf(core.params);
   const totalsR = await core.src.view("get_totals", {});
   const totals = valueOf(totalsR);
-  if (!params || !totals) return <RpcError read={!core.params.ok ? core.params : totalsR} href={`/proof${market === "weekly" ? "" : "?m=fast"}#solvency`} model={core.src.kind === "model"} />;
+  if (!params || !totals) return <RpcError read={!core.params.ok ? core.params : totalsR} href={`/proof${mq(market)}#solvency`} model={core.src.kind === "model"} />;
   const balanceR = await readTokenBalance(market, params.usdc, core.src.contract!);
   const balance = valueOf(balanceR);
   const sum = totalsSum(totals);
   const bal = balance !== null && /^\d+$/.test(balance) ? BigInt(balance) : null;
+  // Burned dollars stay in the contract's token balance and belong to nobody, so the balance
+  // must equal all five terms (SPEC 11, invariant 1); a surplus would be an unexplained deposit.
   const ok = sum !== null && bal !== null && bal >= sum;
   const model = core.src.kind === "model";
   const terms: [string, string, string][] = [
     ["Free balances", totals.free, "free"],
     ["Commit locks", totals.locked, "locked"],
     ["Open sets x band", totals.sets_backing, "sets_backing"],
-    ["Bonus and carry pools", totals.pools, "pools"],
     ["Not yet redeemed", totals.unredeemed, "unredeemed"],
+    ["Burned: forfeits and commit fees, owned by nobody", totals.burned, "burned"],
   ];
   return (
     <div className="grid-2">
       <div className="table-wrap">
         <table>
-          <caption>SPEC 11, invariant 1: the USDC held must cover these five terms.</caption>
+          <caption>SPEC 11, invariant 1: the USDC held must cover these five terms. Burned dollars stay in the contract and are counted, so nobody can claim them.</caption>
           <tbody>
             {terms.map(([label, v, key]) => (
               <tr key={key}>
@@ -223,7 +292,7 @@ async function Verifier({ market }: { market: MarketId }) {
   const core = await loadCore(market);
   const params = valueOf(core.params);
   const d = deployments();
-  const rec = recordedBundle();
+  const rec = recordedBundle(MARKET_INFO[market].chip);
   const recorded = rec && rec.origin.kind === "recorded" ? { file: rec.origin.file, text: rec.text, bucket: rec.bundle.bucket } : null;
   if (core.src.kind === "none" || !params) {
     return (
@@ -275,12 +344,13 @@ function ParamsTable({ p }: { p: WireParams }) {
     ["tick", fmtPrice(p.tick, p.tick)],
     ["print_interval_secs", fmtSpan(p.print_interval_secs)],
     ["report_grace_secs", fmtSpan(p.report_grace_secs)],
-    ["max_move_bps", `${fmtInt(p.max_move_bps)} (${fmtBps(p.max_move_bps)})`],
+    ["max_spread_bps", `${fmtInt(p.max_spread_bps)} (${fmtBps(p.max_spread_bps)})`],
     ["min_prints", fmtInt(p.min_prints)],
     ["void_after_secs", fmtSpan(p.void_after_secs)],
     ["max_anchor_age_secs", fmtSpan(p.max_anchor_age_secs)],
     ["forfeit_bps", `${fmtInt(p.forfeit_bps)} (${fmtBps(p.forfeit_bps)})`],
     ["min_lock", fmtUsd(p.min_lock)],
+    ["commit_fee", `${fmtUsd(p.commit_fee)}, burned per commit`],
     ["max_commits", fmtInt(p.max_commits)],
     ["max_order_size", fmtGpuH(p.max_order_size)],
     ["reporters", p.reporters.join(", ")],

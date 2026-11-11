@@ -3,10 +3,11 @@
 // and React state without surprises.
 import { callView, type WireParams, type WireResult, type WireRound, type WireSeries } from "@weir/engine";
 import { agentReports, type SimEvent, type Simulation } from "@weir/agents/sim";
+import type { MarketId } from "./config.ts";
 
 export interface SimConfigInput {
   seed: number;
-  market: "weekly" | "fast";
+  market: MarketId;
 }
 
 export interface SimSnapshot {
@@ -17,7 +18,7 @@ export interface SimSnapshot {
   lastPrint: { bucket: number; price: number } | null;
   agents: { id: string; role: string; rule: string; deposit: string; balance: string }[];
   /** Per-agent results once at least one series has settled. */
-  results: null | { id: string; role: string; long: number; short: number; paid: string; received: string; forfeited: string; result: string }[];
+  results: null | { id: string; role: string; long: number; short: number; paid: string; received: string; fees: string; forfeited: string; result: string }[];
   settled: number;
 }
 
@@ -70,7 +71,7 @@ export function snapshot(sim: Simulation): SimSnapshot {
     agents: sim.agents.map((a) => ({ id: a.id, role: a.role, rule: a.rule, deposit: String(a.deposit), balance: String(balances[a.id] ?? "0") })),
     results:
       settled > 0
-        ? agentReports(sim).map((r) => ({ id: r.id, role: r.role, long: r.long, short: r.short, paid: r.paid.toString(), received: r.received.toString(), forfeited: r.forfeited.toString(), result: r.result.toString() }))
+        ? agentReports(sim).map((r) => ({ id: r.id, role: r.role, long: r.long, short: r.short, paid: r.paid.toString(), received: r.received.toString(), fees: r.fees.toString(), forfeited: r.forfeited.toString(), result: r.result.toString() }))
         : null,
     settled,
   };

@@ -3,9 +3,12 @@ import { cache } from "react";
 import type { WireParams } from "@weir/engine";
 import { funding } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
-import { MARKET_INFO, type MarketId } from "@/lib/config.ts";
+import { CHIP_LABEL, MARKET_INFO, marketsOfChip, mq, withMarket, type ChipKey, type MarketId } from "@/lib/config.ts";
+import { liveMarkets } from "@/lib/build.ts";
+import { CHIPS } from "@/lib/hardware.ts";
+import type { ChipCardData } from "./chip-cards.tsx";
 import { dollarsOfPrice, fmtBps, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
-import { isStale, loadBundle, loadCore, loadLastClearing, loadPrints, loadSeriesSet, recordedBundle, type Core, type LoadedBundle } from "@/lib/load.ts";
+import { isStale, loadBundle, loadCore, loadGaps, loadLastClearing, loadPrints, loadSeriesSet, recordedBundle, type Core, type LoadedBundle } from "@/lib/load.ts";
 import { isNotDeployed } from "@/lib/source.ts";
 import { average, printView, seriesTimes, stepOrdersFromResult, summarize, timesOf } from "@/lib/views.ts";
 import { seriesStage } from "@/lib/timeline.ts";
@@ -17,11 +20,13 @@ import { PayoffSizer } from "./payoff-sizer.tsx";
 import { SeriesStrip } from "./series-strip.tsx";
 import { Empty, NotDeployed, RpcError, Stale } from "./state.tsx";
 import { StepChart } from "./step-chart.tsx";
+import { SheetHead } from "./sheet-head.tsx";
+import { Wafer } from "./wafer.tsx";
 
 export const getCore = cache(loadCore);
 const getSeriesSet = cache(async (market: MarketId) => loadSeriesSet(await getCore(market)));
 
-const q = (market: MarketId, extra = "") => (market === "weekly" ? (extra ? `?${extra}` : "") : `?m=${market}${extra ? `&${extra}` : ""}`);
+const q = mq;
 
 function coreProblem(core: Core, market: MarketId, href: string, what: string) {
   if (isNotDeployed(core.params)) return <NotDeployed market={market} what={what} />;
@@ -58,7 +63,8 @@ export async function HeroIndex({ market }: { market: MarketId }) {
       <Figure
         display
         live
-        label="H100, USD per GPU-hour"
+        dots
+        label={`${CHIP_LABEL[MARKET_INFO[market].chip]}, USD per GPU-hour`}
         value={shown?.value ?? null}
         unit={shown?.unit}
         source={
@@ -88,6 +94,42 @@ export async function HeroIndex({ market }: { market: MarketId }) {
   );
 }
 
+/** The wafer behind the first screen, its simulated book centred on the live index when there is one. */
+export async function HeroWafer({ market }: { market: MarketId }) {
+  const { last } = await getHead(market);
+  return <Wafer anchor={last?.price ?? null} anchorIsLive={!!last} />;
+}
+
+/** One card per chip: the market shown for it (the selected one, else its first market), its last print and a link. */
+export async function chipCardData(market: MarketId): Promise<ChipCardData[]> {
+  const offered = liveMarkets();
+  return Promise.all(
+    CHIPS.map(async (chip) => {
+      const key = chip.id as ChipKey;
+      const ids = marketsOfChip(key, offered);
+      const m = MARKET_INFO[market].chip === key ? market : ids[0] ?? null;
+      if (!m) return { chip, href: null, status: "No market", live: false, last: "No market listed", current: false };
+      const core = await getCore(m);
+      const kind = core.src.kind;
+      const last = valueOf(core.last);
+      const tick = valueOf(core.params)?.tick;
+      const text = kind === "none" ? "Not deployed yet" : last ? `${fmtPrice(last.price, tick)}, ${fmtDuration(core.now - last.bucket)} old${kind === "model" ? " (model)" : ""}` : "No print yet";
+      return { chip, href: withMarket("/", m) + "#hardware", status: kind === "chain" ? "Trading" : kind === "model" ? "Model" : "Not deployed", live: kind !== "none", last: text, current: m === market };
+    }),
+  );
+}
+
+/** One line for the H100 card and the specimen: the last clearing, or why there is none. */
+export async function lastClearingLine(market: MarketId): Promise<string> {
+  const core = await getCore(market);
+  const params = valueOf(core.params);
+  if (isNotDeployed(core.params)) return "Market not deployed yet";
+  if (!params) return "No reading";
+  const { info, c } = await getClearing(market);
+  if (!c?.traded || !info) return "No round has cleared yet";
+  return `${fmtPrice(info.floor + (c.traded.result.price ?? 0), params.tick)} forward, round ${c.traded.round}${core.src.kind === "model" ? " (model)" : ""}`;
+}
+
 /** The sources in the latest bundle and the reports behind the print. */
 export async function IndexSources({ market }: { market: MarketId }) {
   const { core, pv, hosted } = await getHead(market);
@@ -95,7 +137,7 @@ export async function IndexSources({ market }: { market: MarketId }) {
   if (problem) return problem;
   const tick = valueOf(core.params)?.tick;
   const hostedOk = hosted && hosted.ok ? hosted.value : null;
-  const sample = hostedOk ? null : recordedBundle();
+  const sample = hostedOk ? null : recordedBundle(MARKET_INFO[market].chip);
   return (
     <div className="grid-2 sources-grid">
       <SourcesTable loaded={hostedOk ?? sample} hostedError={hosted && !hosted.ok ? hosted.error : null} reporterOfBundle={hostedOk ? (pv?.reporters[0]?.reporter ?? null) : null} tick={tick} />
@@ -161,7 +203,7 @@ function ReportersTable({ pv, tick }: { pv: NonNullable<ReturnType<typeof printV
   return (
     <div className="table-wrap">
       <table>
-        <caption>Reports behind this print. The print is their median{pv.middle.length === 2 ? " (mean of the two middle reports, rounded down)" : ""}.</caption>
+        <caption>Reports behind this print. The print is their median{pv.middle.length === 2 ? " (the two middle reports agreed within max_spread_bps; the print is their mean, rounded down)" : ""}. A bucket is decided once every reporter has reported or its window has closed.</caption>
         <thead>
           <tr>
             <th scope="col">Reporter</th>
@@ -192,7 +234,7 @@ function ReportersTable({ pv, tick }: { pv: NonNullable<ReturnType<typeof printV
 
 // Index chart
 
-export const RANGES: Record<MarketId, { id: string; label: string; secs: number }[]> = {
+const RANGE_SETS: Record<"weekly" | "fast", { id: string; label: string; secs: number }[]> = {
   weekly: [
     { id: "24h", label: "24 h", secs: 86_400 },
     { id: "7d", label: "7 d", secs: 7 * 86_400 },
@@ -205,22 +247,29 @@ export const RANGES: Record<MarketId, { id: string; label: string; secs: number 
   ],
 };
 
+export const RANGES = Object.fromEntries((Object.keys(MARKET_INFO) as MarketId[]).map((m) => [m, RANGE_SETS[MARKET_INFO[m].cadence === "Hourly" ? "fast" : "weekly"]])) as Record<MarketId, { id: string; label: string; secs: number }[]>;
+
 export const rangeOf = (market: MarketId, id: string | undefined) => RANGES[market].find((r) => r.id === id) ?? RANGES[market][1]!;
 
-export async function IndexChartBlock({ market, range }: { market: MarketId; range: string | undefined }) {
+export async function IndexChartBlock({ market, range, no }: { market: MarketId; range: string | undefined; no?: string }) {
   const core = await getCore(market);
   const r = rangeOf(market, range);
   const params = valueOf(core.params);
-  const head = (
+  const nav = (
+    <nav aria-label="Chart range" className="switch">
+      {RANGES[market].map((x) => (
+        <a key={x.id} href={`/${q(market, `range=${x.id}`)}#index`} aria-current={x.id === r.id ? "true" : undefined}>
+          {x.label}
+        </a>
+      ))}
+    </nav>
+  );
+  const head = no ? (
+    <SheetHead no={no} id="index-h" title={<>Index, last {r.label}</>} note={nav} />
+  ) : (
     <div className="section-head">
       <h2>Index, last {r.label}</h2>
-      <nav aria-label="Chart range" className="switch">
-        {RANGES[market].map((x) => (
-          <a key={x.id} href={`/${q(market, `range=${x.id}`)}#index`} aria-current={x.id === r.id ? "true" : undefined}>
-            {x.label}
-          </a>
-        ))}
-      </nav>
+      {nav}
     </div>
   );
   const problem = coreProblem(core, market, `/${q(market)}`, "index history");
@@ -240,18 +289,26 @@ export async function IndexChartBlock({ market, range }: { market: MarketId; ran
   const t = delivering ? timesOf(delivering.series, params) : null;
   const avg = average(acc);
   const indexPrints = list.map((p) => ({ bucket: p.bucket, price: p.price!, reports: p.reports.map((x) => ({ reporter: x.reporter, price: x.price })) }));
+  // Buckets without a final print: ask which ended with no print (one view each, so the model reads
+  // every one and the chain the newest 48).
+  const gaps = await loadGaps(core.src, params, list, from, core.now, core.src.kind === "model" ? 2000 : 48);
+  const rows = [...list.map((p) => ({ bucket: p.bucket, price: p.price as number | null, reports: p.reports.length, open: false })), ...gaps.noPrint.map((b) => ({ bucket: b, price: null, reports: 0, open: false })), ...gaps.open.map((b) => ({ bucket: b, price: null, reports: 0, open: true }))].sort((a, b) => b.bucket - a.bucket);
   return (
     <>
       {head}
       {!prints.ok ? <RpcError read={prints} href={`/${q(market)}`} model={core.src.kind === "model"} /> : null}
       <IndexChart
         tick={params.tick}
-        summary={indexSummary(indexPrints, params.tick, from, core.now) + (dInfo && avg !== null ? ` Series ${dInfo.series} is in delivery with a band of ${fmtPrice(dInfo.floor, params.tick)} to ${fmtPrice(dInfo.floor + dInfo.band, params.tick)} and an average so far of ${fmtPrice(avg, params.tick)}.` : "")}
-        input={{ prints: indexPrints, interval: params.print_interval_secs, from, to: core.now, band: dInfo && t ? { floor: dInfo.floor, band: dInfo.band, start: t.deliveryStart, end: t.deliveryEnd, average: avg } : null }}
+        summary={indexSummary(indexPrints, params.tick, from, core.now) + (gaps.noPrint.length ? ` ${gaps.noPrint.length} bucket${gaps.noPrint.length === 1 ? "" : "s"} ended with no print.` : "") + (dInfo && avg !== null ? ` Series ${dInfo.series} is in delivery with a band of ${fmtPrice(dInfo.floor, params.tick)} to ${fmtPrice(dInfo.floor + dInfo.band, params.tick)} and an average so far of ${fmtPrice(avg, params.tick)}.` : "")}
+        input={{ prints: indexPrints, interval: params.print_interval_secs, from, to: core.now, band: dInfo && t ? { floor: dInfo.floor, band: dInfo.band, start: t.deliveryStart, end: t.deliveryEnd, average: avg } : null, noPrint: gaps.noPrint }}
       />
       <div className="legend" aria-hidden="true">
         <span className="key">
-          <span className="swatch" style={{ color: "var(--ink)" }} /> Index: final prints, a gap where a bucket has none
+          <span className="swatch" style={{ color: "var(--ink)" }} /> Index: final prints
+        </span>
+        <span className="key">
+          <span style={{ color: "var(--flag)", fontWeight: 600 }}>×</span> No print: too few reports, or the two middle reports did not agree
+          {gaps.unread ? ` (the newest ${48} gaps are read)` : ""}
         </span>
         <span className="key">
           <span className="swatch thin" style={{ color: "var(--ink-3)" }} /> Each reporter&rsquo;s reports
@@ -263,7 +320,9 @@ export async function IndexChartBlock({ market, range }: { market: MarketId; ran
         ) : null}
       </div>
       <details className="data">
-        <summary>Prints as a table ({list.length})</summary>
+        <summary>
+          Prints as a table ({list.length} final{gaps.noPrint.length ? `, ${gaps.noPrint.length} with no print` : ""})
+        </summary>
         <div className="table-wrap">
           <table>
             <thead>
@@ -278,11 +337,11 @@ export async function IndexChartBlock({ market, range }: { market: MarketId; ran
               </tr>
             </thead>
             <tbody>
-              {[...list].reverse().slice(0, 200).map((p) => (
-                <tr key={p.bucket}>
+              {rows.slice(0, 200).map((p) => (
+                <tr key={p.bucket} className={p.price === null ? "dim" : undefined}>
                   <td>{fmtUtc(p.bucket)}</td>
-                  <td className="num">{fmtPrice(p.price, params.tick)}</td>
-                  <td className="num">{p.reports.length}</td>
+                  <td className="num">{p.price !== null ? fmtPrice(p.price, params.tick) : p.open ? <span className="muted">open, not decided yet</span> : <span className="flag">no print</span>}</td>
+                  <td className="num">{p.price !== null ? p.reports : "no data"}</td>
                 </tr>
               ))}
             </tbody>
@@ -503,7 +562,7 @@ export async function HomeRefresh({ market }: { market: MarketId }) {
   const status = valueOf(core.status);
   const next = status?.live.map((l) => l.phase_ends_at).filter((x): x is number => x !== null).sort((a, b) => a - b)[0] ?? null;
   const { AutoRefresh } = await import("./auto-refresh.tsx");
-  return core.src.kind === "none" ? null : <AutoRefresh everySecs={market === "fast" ? 15 : 30} at={next} serverNow={core.now} />;
+  return core.src.kind === "none" ? null : <AutoRefresh everySecs={MARKET_INFO[market].cadence === "Hourly" ? 15 : 30} at={next} serverNow={core.now} />;
 }
 
-export const marketLine = (market: MarketId) => `${MARKET_INFO[market].label} market: ${MARKET_INFO[market].delivery}, ${MARKET_INFO[market].rounds}`;
+export const marketLine = (market: MarketId) => `${MARKET_INFO[market].name}: ${MARKET_INFO[market].delivery}, ${MARKET_INFO[market].rounds}`;

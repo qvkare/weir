@@ -71,7 +71,7 @@ export function readKeys(market: MarketId, account: string): Promise<Read<Access
   if (kind === "model") {
     const agent = MODEL_AGENTS.find((a) => a.id === account);
     const keys: AccessKeyInfo[] = agent?.functionCallOnly
-      ? [{ publicKey: "ed25519:model", permission: { receiver: modelContract(market), methods: ["commit", "reveal", "clear", "mint", "merge", "redeem"], allowance: null } }]
+      ? [{ publicKey: "ed25519:model", permission: { receiver: modelContract(market), methods: ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"], allowance: null } }]
       : agent
         ? [{ publicKey: "ed25519:model", permission: "FullAccess" }]
         : [];

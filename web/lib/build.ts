@@ -1,11 +1,12 @@
 // The repository data inlined at build time (see next.config.ts and build-data.ts).
 import type { BuildData } from "./build-types.ts";
-import { parseDeployments, type Deployments, type MarketId } from "./config.ts";
+import { MARKET_IDS, parseDeployments, type Deployments, type MarketId } from "./config.ts";
 import { fundingStatus, type FundingStatus } from "./evidence.ts";
 
 const EMPTY: BuildData = {
   builtAt: 0,
   specVersion: null,
+  spec: null,
   deployments: null,
   bundles: [],
   bundleCount: 0,
@@ -33,6 +34,13 @@ export const deployments = (): Deployments => parseDeployments(buildData().deplo
 export const isModel = (): boolean => process.env.WEIR_MODEL === "1";
 
 export const funding = (): FundingStatus => fundingStatus(buildData().txs);
+
+/** The markets this site offers: all four in model mode, else those deployments.json lists (all four when it lists none, each saying it is not deployed). */
+export function liveMarkets(): MarketId[] {
+  if (isModel()) return [...MARKET_IDS];
+  const listed = deployments().markets.map((m) => m.id);
+  return listed.length ? MARKET_IDS.filter((m) => listed.includes(m)) : [...MARKET_IDS];
+}
 
 /** Where a market's data comes from in this process. */
 export function sourceKind(market: MarketId): "model" | "chain" | "none" {

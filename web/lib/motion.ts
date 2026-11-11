@@ -23,7 +23,48 @@ export const EASE = {
   inOut: "cubic-bezier(0.65, 0, 0.35, 1)",
   /** Progress and clocks: time itself. */
   linear: "linear",
+  /** A thing with weight arriving: passes its mark and settles back. */
+  overshoot: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+  /** A thing with weight leaving: draws back before it goes. */
+  anticipate: "cubic-bezier(0.36, 0, 0.66, -0.56)",
 } as const;
+
+/**
+ * The same curves as functions of u in [0, 1], for drawings posed frame by frame (the floor and
+ * the specimen). `overshoot` passes the target and settles back (--ease-overshoot); `anticipate`
+ * draws back a little before it goes (--ease-anticipate); `travel` is --ease-in-out.
+ */
+export const EASE_FN = {
+  out: (u: number) => 1 - (1 - u) ** 3,
+  travel: (u: number) => (u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2),
+  overshoot: (u: number) => {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * (u - 1) ** 3 + c1 * (u - 1) ** 2;
+  },
+  anticipate: (u: number) => {
+    const c1 = 1.70158;
+    return (c1 + 1) * u ** 3 - c1 * u ** 2;
+  },
+  /** Anticipate, travel, overshoot and settle: a thing with weight moving on its own. */
+  weighted: (u: number) => {
+    if (u <= 0) return 0;
+    if (u >= 1) return 1;
+    // 0 to 0.18: draw back 6%; 0.18 to 0.78: travel to 104%; 0.78 to 1: settle.
+    if (u < 0.18) return -0.06 * Math.sin((u / 0.18) * (Math.PI / 2));
+    if (u < 0.78) {
+      const k = (u - 0.18) / 0.6;
+      const e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;
+      return -0.06 + e * 1.1;
+    }
+    const k = (u - 0.78) / 0.22;
+    return 1.04 - 0.04 * (1 - (1 - k) ** 2);
+  },
+} as const;
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** Progress of a step that starts at `a` and lasts `d`, at time t: 0 before, 1 after. */
+export const seg = (t: number, a: number, d: number) => clamp01((t - a) / d);
 
 export type Frame = Record<string, string | number>;
 

@@ -17,6 +17,8 @@ export interface IndexChartInput {
   from: number;
   to: number;
   band: null | { floor: number; band: number; start: number; end: number; average: number | null };
+  /** Buckets decided without a print (SPEC 9): marked on the axis, never drawn as a price. */
+  noPrint?: number[];
   width: number;
   height: number;
 }
@@ -35,6 +37,8 @@ export interface IndexChartGeometry {
   xTicks: { x: number; t: number }[];
   last: null | { x: number; y: number; price: number };
   gaps: number;
+  /** x of each bucket that ended with no print. */
+  noPrint: number[];
 }
 
 export function indexChartGeometry(o: IndexChartInput): IndexChartGeometry {
@@ -133,6 +137,7 @@ export function indexChartGeometry(o: IndexChartInput): IndexChartGeometry {
     xTicks,
     last: lp ? { x: clampX(X(lp.bucket + o.interval)), y: Y(lp.price), price: lp.price } : null,
     gaps: indexGaps,
+    noPrint: (o.noPrint ?? []).filter((b) => b >= o.from && b <= o.to).map((b) => X(b + o.interval / 2)),
   };
 }
 

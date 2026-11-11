@@ -5,15 +5,14 @@ export function SiteFooter({ builtAt, spec }: { builtAt: number; spec: string | 
   return (
     <footer className="site-footer">
       <div className="wrap">
-        <div className="footer-level" aria-hidden="true">
-          <span />
-          <Mark width={26.7} height={20} />
-          <span />
+        <div className="footer-level">
+          <Mark className="footer-mark" size={56} cropped />
+          <p className="footer-line">Take the heat out of your GPU bill.</p>
         </div>
         <div className="footer-cols">
           <div className="footer-brand">
             <Lockup />
-            <p>One price for next week&rsquo;s GPU-hour.</p>
+            <p>Sealed, single-price auctions on next week&rsquo;s GPU-hour: H100, H200 and A100 80 GB.</p>
             <p className="tiny">NEAR testnet only. No real money moves.</p>
           </div>
           <nav aria-label="Footer: market">
@@ -31,6 +30,8 @@ export function SiteFooter({ builtAt, spec }: { builtAt: number; spec: string | 
               <li><Link href="/how">How it works</Link></li>
               <li><Link href="/how#limits">Limits and trust</Link></li>
               <li><Link href="/proof">Contracts and checks</Link></li>
+              <li><Link href="/proof#audited">Audit findings</Link></li>
+              <li><Link href="/spec">Specification</Link></li>
             </ul>
           </nav>
           <nav aria-label="Footer: for agents">
@@ -44,7 +45,7 @@ export function SiteFooter({ builtAt, spec }: { builtAt: number; spec: string | 
           </nav>
         </div>
         <p className="footer-colophon tiny">
-          Built {new Date(builtAt * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC{spec ? ` from SPEC v${spec}` : ""}. No analytics, no cookies, no third-party scripts. Set in Archivo and IBM Plex Mono.
+          Built {new Date(builtAt * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC{spec ? ` from SPEC v${spec}` : ""}. No analytics, no cookies, no third-party scripts. Set in Geist and Geist Mono; figures drawn on a 5 by 7 die grid.
         </p>
       </div>
     </footer>

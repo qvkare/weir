@@ -2,7 +2,8 @@
 
 The Weir site: Next.js App Router on Cloudflare Workers through OpenNext. It reads the Weir
 contract views over NEAR JSON-RPC, re-checks index bundles in the browser, runs the agents'
-simulation in a Web Worker and draws every chart in hand-written SVG. Design brief: `DESIGN.md`.
+simulation in a Web Worker and draws every chart in hand-written SVG; the wafer on the first
+screen is a canvas cleared by the engine. Design brief: `DESIGN.md`.
 
 ## Run
 
@@ -19,11 +20,12 @@ pnpm --filter @weir/web smoke             # next build, then every page and API 
 
 | Source | When | How |
 |---|---|---|
-| Contract views | a market is listed in `../deployments.json` | `lib/near.ts`, JSON-RPC `call_function`, failing over across the `rpc` list; 4 s per-isolate cache, last good value kept for the error state |
-| Model | `WEIR_MODEL=1` | `lib/model.ts`: the engine `Market` with the agents' presets, driven by a fixed script against the wall clock, answered through `callView`. A ribbon on every page says so |
+| Contract views | a market is listed in `../deployments.json` (`{ id, label, chip, contract, usdc }`, ids `h100-weekly`, `h100-fast`, `h200-weekly`, `a100-80-weekly`) | `lib/near.ts`, JSON-RPC `call_function`, failing over across the `rpc` list; 4 s per-isolate cache, last good value kept for the error state |
+| Model | `WEIR_MODEL=1` | `lib/model.ts`: one engine `Market` per market of the agents' `MARKETS` (all four), driven by a fixed script against the wall clock, answered through `callView`. A ribbon on every page says so |
 | Nothing | neither | every live block says the market is not deployed yet; the rest of the site works |
 | Index bundles | `bundles_base` set | fetched as `<base>/<hash>.json`, hashed with SubtleCrypto in the browser on `/proof` |
-| Recorded bundle | always | the newest `../evidence/bundles/*.json`, inlined at build; fixture and fallback, labelled with its date |
+| Recorded bundles | always | the newest bundle of each chip (`../evidence/bundles/<chip>/`, and the version-1 H100 file at the top level), inlined at build; fixture and fallback for the selected chip, labelled with its date |
+| Specification | always | `../docs/SPEC.md`, inlined at build and rendered at `/spec` |
 | Transactions | JSON in `../evidence/` | tolerant reader in `lib/evidence.ts`, inlined at build |
 | Backtest | `../backtest/results/site.json`, `summary.json`, `summary.md` | inlined at build; "Backtest file missing" when absent |
 | Simulation | always | `@weir/agents/sim` in `lib/sim-worker.ts` |
@@ -39,7 +41,7 @@ placeholder; nothing is ever sent to it).
 
 ## JSON endpoints
 
-- `GET /api/status?m=weekly|fast`: `get_status`, `get_params`, last print, live series with floor, band and last clearing. `max-age=2`.
+- `GET /api/status?m=h100-weekly|h100-fast|h200-weekly|a100-80-weekly` (`weekly` and `fast` still accepted): `get_status`, `get_params`, last print, live series with floor, band and last clearing. `max-age=2`.
 - `GET /api/round?m=…&series=…&round=…`: sealed book or result. `max-age=60` once cleared.
 - `GET /api/quote?from=arbitrum|ethereum|solana|base&amount=20`: dry NEAR Intents quote.
 
@@ -66,8 +68,9 @@ CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node tools
 ```
 
 Writes `public/icon.svg`, `icon-32.png`, `apple-icon.png`, `icon-512.png` and
-`opengraph-image.png` from the mark's geometry (`lib/logo.ts`) and the hero film's clearing
-(`lib/film.ts`). Logo concepts, construction and usage rules: `DESIGN.md` section 3, files in `brand/`.
+`opengraph-image.png` from the mark's geometry (`lib/logo.ts`) and a still of the wafer cleared by
+the engine (`lib/wafer.ts`). Mark construction and usage: `DESIGN.md` section 3, exports in
+`brand/`. The three art-direction boards the identity came from are in `brand/proposals/`.
 
 ## Not built
 

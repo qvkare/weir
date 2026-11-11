@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { clearingScore, commitScore, fundingScore, seriesClockScore, settlementScore } from "@/lib/how-scores.ts";
 import type { StepOrder } from "@/lib/step.ts";
-import { ClearingChart } from "./clearing-film.tsx";
+import { ClearingChart } from "./clearing-chart.tsx";
 import { CheckIcon, LockIcon } from "./icons.tsx";
 import { MotionFigure } from "./motion-figure.tsx";
 

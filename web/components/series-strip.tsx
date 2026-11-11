@@ -16,7 +16,7 @@ export function SeriesStrip({ times, now, round, summary }: { times: SeriesTimes
 const HATCH = (id: string) => (
   <defs>
     <pattern id={id} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="4" height="4" fill="var(--paper)" />
+      <rect width="4" height="4" fill="var(--sheet)" />
       <line x1="0" y1="0" x2="0" y2="4" stroke="var(--ink-2)" strokeWidth="1.5" />
     </pattern>
   </defs>
@@ -51,7 +51,7 @@ function Horizontal({ times, now, round, width }: { times: SeriesTimes; now: num
       {g.blocks
         .filter((b) => b.current)
         .map((b) => (
-          <rect key="cur" x={x0 + b.a - 2} y={lane.auction - 3} width={b.b - b.a + 4} height={22} fill="none" stroke="var(--long)" strokeWidth={2} />
+          <rect key="cur" x={x0 + b.a - 2} y={lane.auction - 3} width={b.b - b.a + 4} height={22} fill="none" stroke="var(--ink)" strokeWidth={2} />
         ))}
       <text x={x0 + g.delivery.a} y={lane.delivery - 8}>
         Delivery
@@ -68,7 +68,7 @@ function Horizontal({ times, now, round, width }: { times: SeriesTimes; now: num
       ))}
       {g.now.inside ? (
         <g>
-          <line x1={x0 + g.now.pos} x2={x0 + g.now.pos} y1={4} y2={lane.delivery + 34} stroke="var(--long)" strokeWidth={2} />
+          <line x1={x0 + g.now.pos} x2={x0 + g.now.pos} y1={4} y2={lane.delivery + 34} stroke="var(--ink)" strokeWidth={2} />
           <text className="long" x={x0 + g.now.pos + 4} y={12}>
             now
           </text>
@@ -113,7 +113,7 @@ function Vertical({ times, now, round, width }: { times: SeriesTimes; now: numbe
       ))}
       {g.now.inside ? (
         <g>
-          <line x1={2} x2={width - 4} y1={y0 + g.now.pos} y2={y0 + g.now.pos} stroke="var(--long)" strokeWidth={2} strokeDasharray="6 3" />
+          <line x1={2} x2={width - 4} y1={y0 + g.now.pos} y2={y0 + g.now.pos} stroke="var(--ink)" strokeWidth={2} strokeDasharray="6 3" />
           <text className="long" x={width - 6} y={y0 + g.now.pos - 4} textAnchor="end">
             now
           </text>

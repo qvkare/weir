@@ -31,7 +31,7 @@ export default async function AuctionPage({ searchParams }: { searchParams: Sear
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">
-            Auction · {MARKET_INFO[market].label} market, {MARKET_INFO[market].delivery}
+            Auction · {MARKET_INFO[market].name} market, {MARKET_INFO[market].delivery}
           </span>
           <h1>{h1}</h1>
           {sub ? <p className="sub">{sub}</p> : null}
@@ -98,14 +98,14 @@ export default async function AuctionPage({ searchParams }: { searchParams: Sear
 
   const h1 = (
     <>
-      Round {live.round} {commit ? "reveals" : "closes"} in <Countdown endsAt={live.phase_ends_at} serverNow={core.now} className="countdown" />
+      Round {live.round} {commit ? "reveals" : "closes"} in <Countdown endsAt={live.phase_ends_at} serverNow={core.now} className="countdown" dots />
     </>
   );
   const sub = totals.commits === 0
     ? "No sealed commits yet. Sides and prices stay hidden until reveal."
     : commit
     ? `${totals.commits} sealed commit${totals.commits === 1 ? "" : "s"}, ${fmtUsd(totals.locked)} locked. Sides and prices stay hidden until reveal.`
-    : `${totals.revealed} of ${totals.commits} commits revealed, ${fmtUsd(totals.locked)} locked. Unrevealed commits forfeit ${fmtBps(params.forfeit_bps)} of their lock.`;
+    : `${totals.revealed} of ${totals.commits} commits revealed, ${fmtUsd(totals.locked)} locked. Unrevealed commits forfeit ${fmtBps(params.forfeit_bps)} of their lock, burned at clearing.`;
 
   return frame(
     h1,
@@ -117,6 +117,7 @@ export default async function AuctionPage({ searchParams }: { searchParams: Sear
           <Figure label="Round" value={String(live.round)} source={`${commit ? "Commit" : "Reveal"} phase, ends ${fmtUtc(live.phase_ends_at)}`} />
           <Figure live label="Commits" value={String(totals.commits)} source={`${totals.revealed} revealed, ${totals.void} void, ${totals.sealed} sealed`} />
           <Figure live label="Total locked" value={fmtUsdOrNone(totals.locked)} source="An upper bound on what the orders can cost" />
+          <Figure live label="Commit fees held" value={fmtUsdOrNone(totals.fees)} source="Burned when the round clears; they belong to nobody" />
         </div>
         {!roundR.ok ? <RpcError read={roundR} href={href} model={core.src.kind === "model"} /> : null}
       </section>
@@ -151,7 +152,7 @@ export default async function AuctionPage({ searchParams }: { searchParams: Sear
         <h2 id="recent-h" style={{ fontSize: "var(--t21)", marginBottom: 24 }}>Recent rounds</h2>
         <RecentRounds src={core.src} series={live.series} params={params} now={core.now} market={market} current={null} />
       </section>
-      <AutoRefresh everySecs={market === "fast" ? 10 : 30} at={live.phase_ends_at} serverNow={core.now} />
+      <AutoRefresh everySecs={MARKET_INFO[market].cadence === "Hourly" ? 10 : 30} at={live.phase_ends_at} serverNow={core.now} />
     </>,
   );
 }

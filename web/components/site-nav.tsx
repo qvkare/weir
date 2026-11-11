@@ -2,11 +2,9 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LINKS } from "@/lib/nav.ts";
-import { MARKET_INFO, MARKET_IDS, marketFromParam, type MarketId } from "@/lib/config.ts";
+import { CHIP_KEYS, CHIP_LABEL, DEFAULT_MARKET, MARKET_INFO, marketFromParam, marketsOfChip, mq, withMarket, type MarketId } from "@/lib/config.ts";
 
 export { LINKS };
-
-const withMarket = (href: string, m: MarketId) => (m === "weekly" ? href : `${href}?m=${m}`);
 
 export function SiteNav() {
   const path = usePathname();
@@ -26,8 +24,11 @@ export function SiteNav() {
   );
 }
 
-/** Weekly or fast. Keeps the page and its other parameters, except a round picked on another market. */
-export function MarketSwitch() {
+/**
+ * Chip first, then cadence where a chip has more than one market (H100: weekly and hourly).
+ * Keeps the page and its other parameters, except a round picked on another market.
+ */
+export function MarketSwitch({ markets }: { markets: readonly MarketId[] }) {
   const path = usePathname();
   const params = useSearchParams();
   const m = marketFromParam(params.get("m"));
@@ -35,18 +36,36 @@ export function MarketSwitch() {
     const q = new URLSearchParams(params.toString());
     q.delete("series");
     q.delete("round");
-    if (id === "weekly") q.delete("m");
+    q.delete("range");
+    if (id === DEFAULT_MARKET) q.delete("m");
     else q.set("m", id);
     const s = q.toString();
     return s ? `${path}?${s}` : path;
   };
+  const chips = CHIP_KEYS.filter((c) => marketsOfChip(c, markets).length);
+  const cur = MARKET_INFO[m].chip;
+  const cadences = marketsOfChip(cur, markets);
   return (
-    <div className="switch" role="group" aria-label="Market">
-      {MARKET_IDS.map((id) => (
-        <Link key={id} href={href(id)} aria-current={id === m ? "true" : undefined} title={`${MARKET_INFO[id].delivery}, ${MARKET_INFO[id].rounds}`}>
-          {MARKET_INFO[id].label}
-        </Link>
-      ))}
+    <div className="market-switch">
+      <div className="switch" role="group" aria-label="Chip">
+        {chips.map((c) => {
+          const target = cadences.includes(m) && c === cur ? m : marketsOfChip(c, markets)[0]!;
+          return (
+            <Link key={c} href={href(target)} aria-current={c === cur ? "true" : undefined} title={`${CHIP_LABEL[c]} markets`}>
+              {CHIP_LABEL[c]}
+            </Link>
+          );
+        })}
+      </div>
+      {cadences.length > 1 ? (
+        <div className="switch" role="group" aria-label={`${CHIP_LABEL[cur]} cadence`}>
+          {cadences.map((id) => (
+            <Link key={id} href={href(id)} aria-current={id === m ? "true" : undefined} title={`${MARKET_INFO[id].delivery}, ${MARKET_INFO[id].rounds}`}>
+              {MARKET_INFO[id].cadence}
+            </Link>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -66,14 +85,20 @@ export function SiteNavFallback() {
   );
 }
 
-export function MarketSwitchFallback() {
+export function MarketSwitchFallback({ markets }: { markets: readonly MarketId[] }) {
+  const chips = CHIP_KEYS.filter((c) => marketsOfChip(c, markets).length);
   return (
-    <div className="switch" role="group" aria-label="Market">
-      {MARKET_IDS.map((id) => (
-        <a key={id} href={id === "weekly" ? "/" : `/?m=${id}`}>
-          {MARKET_INFO[id].label}
-        </a>
-      ))}
+    <div className="market-switch">
+      <div className="switch" role="group" aria-label="Chip">
+        {chips.map((c) => {
+          const id = marketsOfChip(c, markets)[0]!;
+          return (
+            <a key={c} href={`/${mq(id)}`}>
+              {CHIP_LABEL[c]}
+            </a>
+          );
+        })}
+      </div>
     </div>
   );
 }

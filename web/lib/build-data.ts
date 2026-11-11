@@ -31,17 +31,24 @@ export function readBuildData(root: string): BuildData {
   const evidence = join(root, "evidence");
   const bundlesDir = join(evidence, "bundles");
 
+  // Version-2 bundles live in evidence/bundles/<chip>/; the version-1 H100 first print stays at
+  // the top level and counts as an H100 bundle.
   const bundles: RecordedBundle[] = [];
-  if (existsSync(bundlesDir)) {
-    for (const name of readdirSync(bundlesDir).sort()) {
+  const readDir = (dir: string, rel: string, fallbackChip: string | null) => {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir).sort()) {
       if (!name.endsWith(".json")) continue;
-      const text = readFileSync(join(bundlesDir, name), "utf8");
-      const json = readJson(join(bundlesDir, name));
+      const text = readFileSync(join(dir, name), "utf8");
+      const json = readJson(join(dir, name));
       if (!json || typeof json !== "object") continue;
-      const b = json as { bucket?: unknown };
-      bundles.push({ file: `evidence/bundles/${name}`, text, bucket: typeof b.bucket === "number" ? b.bucket : null });
+      const b = json as { bucket?: unknown; chip?: unknown };
+      const chip = typeof b.chip === "string" ? b.chip : fallbackChip;
+      if (!chip) continue;
+      bundles.push({ file: `${rel}/${name}`, text, bucket: typeof b.bucket === "number" ? b.bucket : null, chip });
     }
-  }
+  };
+  readDir(bundlesDir, "evidence/bundles", "h100");
+  if (existsSync(bundlesDir)) for (const d of readdirSync(bundlesDir).sort()) if (d !== "raw" && !d.endsWith(".raw") && statSync(join(bundlesDir, d)).isDirectory()) readDir(join(bundlesDir, d), `evidence/bundles/${d}`, d);
   bundles.sort((a, b) => (b.bucket ?? 0) - (a.bucket ?? 0));
 
   const txs: TxRecord[] = [];
@@ -57,9 +64,10 @@ export function readBuildData(root: string): BuildData {
   return {
     builtAt: Math.floor(Date.now() / 1000),
     specVersion: specVersion(root),
+    spec: existsSync(join(root, "docs", "SPEC.md")) ? readFileSync(join(root, "docs", "SPEC.md"), "utf8") : null,
     deployments: readJson(join(root, "deployments.json")) ?? null,
-    // Only the newest recorded bundle travels with the build: it is the fixture and the fallback.
-    bundles: bundles.slice(0, 1),
+    // Only the newest recorded bundle of each chip travels with the build: the fixture and the fallback.
+    bundles: [...new Set(bundles.map((b) => b.chip))].map((c) => bundles.find((b) => b.chip === c)!),
     bundleCount: bundles.length,
     txs,
     backtest: { site: site ?? null, summary: summary ?? null, summaryMd, siteMissing: site === undefined },

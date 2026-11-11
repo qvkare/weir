@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { WireParams, WireResult, WireRound, WireSeries } from "@weir/engine";
 import { valueOf } from "@/lib/cache.ts";
-import type { MarketId } from "@/lib/config.ts";
+import { mq, type MarketId } from "@/lib/config.ts";
 import { fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtUsd, fmtUsdOrNone, fmtUtc, shortAccount, shortHash } from "@/lib/format.ts";
 import { latestRound, loadResults } from "@/lib/load.ts";
 import { bookRows, bookTotals, fillRows, nextOpening, stepOrdersFromResult, stepOrdersFromRound, summarize } from "@/lib/views.ts";
@@ -11,7 +11,7 @@ import { Empty } from "./state.tsx";
 import { StepChart } from "./step-chart.tsx";
 import { stepSummary } from "@/lib/step.ts";
 
-export const qs = (market: MarketId, extra = "") => (market === "weekly" ? (extra ? `?${extra}` : "") : `?m=${market}${extra ? `&${extra}` : ""}`);
+export const qs = (market: MarketId, extra = "") => mq(market, extra);
 
 export function SealedBook({ round, params }: { round: WireRound | null; params: WireParams }) {
   const rows = bookRows(round);
@@ -83,9 +83,9 @@ export function RoundResult({ result, series, params, round, animate = false }: 
             <span className="key short"><span className="swatch" /> Supply: SHORT orders, lowest first</span>
             <span className="key"><span className="swatch" style={{ color: "var(--ink)" }} /> Clearing price</span>
             <span className="key"><span className="swatch box" style={{ color: "var(--long-soft)" }} /> What filled LONGs paid</span>
-            <span className="key"><span className="swatch box" style={{ color: "var(--short-soft)" }} /> What filled SHORTs paid</span>
+            <span className="key"><span className="swatch box hatched" /> What filled SHORTs paid</span>
           </div>
-          <p className="small muted">{stepSummary({ orders: stepOrdersFromResult(result), price: result.price, volume: result.volume, cleared: true, floor, tick: params.tick })} Thick steps were filled; thin ones were not.</p>
+          <p className="small muted">{stepSummary({ orders: stepOrdersFromResult(result), price: result.price, volume: result.volume, cleared: true, floor, tick: params.tick })} The result keeps only the filled orders (SPEC 12), so the curves show what traded.</p>
         </>
       ) : (
         <Empty>The series record is gone, so the band for this chart is unknown.</Empty>
@@ -93,7 +93,7 @@ export function RoundResult({ result, series, params, round, animate = false }: 
       <FillsTable rows={fills} tick={params.tick} />
       <p className="small">
         {s.commits} commit{s.commits === 1 ? "" : "s"}, {s.orders} took part in clearing. {s.outside > 0 ? `${s.outside} did not: void by guard (lock returned at reveal) or never revealed. ` : ""}
-        Forfeited to the series bonus pool: {fmtUsdOrNone(s.forfeited)}
+        Burned in this round: {fmtUsdOrNone(s.forfeited)} in forfeits and {fmtUsdOrNone(s.fees)} in commit fees. Burned dollars belong to nobody.
         {s.outside > 0 ? ` (${fmtBps(params.forfeit_bps)} of each unrevealed lock)` : ""}. Refunds are each lock minus what it paid; locks are in the commit events, not in this view.
       </p>
       <p className="tiny muted">Series {series?.series ?? "no data"}, round {round}.</p>
@@ -102,11 +102,11 @@ export function RoundResult({ result, series, params, round, animate = false }: 
 }
 
 export function FillsTable({ rows, tick }: { rows: ReturnType<typeof fillRows>; tick: number }) {
-  if (rows.length === 0) return <Empty>No order was revealed and valid, so there are no fills.</Empty>;
+  if (rows.length === 0) return <Empty>Nothing was filled in this round. A result keeps only filled orders, so there are no rows to list.</Empty>;
   return (
     <div className="table-wrap">
       <table>
-        <caption>Fills, in seq order. LONG pays p* per unit filled; SHORT pays band - p*.</caption>
+        <caption>Filled orders, in seq order; unfilled orders are not kept in a result. LONG pays p* per unit filled; SHORT pays band - p*.</caption>
         <thead>
           <tr>
             <th scope="col" className="num collapse-sm">Seq</th>

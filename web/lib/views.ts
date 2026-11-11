@@ -8,6 +8,8 @@ export interface BookRow {
   seq: number;
   owner: string;
   lock: string;
+  /** The commit fee held with it, burned at clearing (SPEC 6.2). */
+  fee: string;
   state: WireCommit["state"];
   /** The sealed commit hash. */
   hash: string | null;
@@ -20,7 +22,7 @@ export function bookRows(round: WireRound | null): BookRow[] {
   if (!round) return [];
   return [...round.commits]
     .sort((a, b) => a.seq - b.seq)
-    .map((c) => ({ seq: c.seq, owner: c.owner, lock: c.lock, state: c.state, hash: c.hash ?? null, side: c.order?.side ?? null, size: c.order?.size ?? null, price: c.order?.price ?? null }));
+    .map((c) => ({ seq: c.seq, owner: c.owner, lock: c.lock, fee: c.fee, state: c.state, hash: c.hash ?? null, side: c.order?.side ?? null, size: c.order?.size ?? null, price: c.order?.price ?? null }));
 }
 
 export interface BookTotals {
@@ -30,17 +32,24 @@ export interface BookTotals {
   sealed: number;
   /** micro-USDC, decimal string. */
   locked: string;
+  /** Commit fees held in the round, micro-USDC: burned when it is cleared. */
+  fees: string;
 }
 
 export function bookTotals(rows: BookRow[]): BookTotals {
   let locked = 0n;
-  for (const r of rows) locked += toBig(r.lock) ?? 0n;
+  let fees = 0n;
+  for (const r of rows) {
+    locked += toBig(r.lock) ?? 0n;
+    fees += toBig(r.fee) ?? 0n;
+  }
   return {
     commits: rows.length,
     revealed: rows.filter((r) => r.state === "Revealed").length,
     void: rows.filter((r) => r.state === "Void").length,
     sealed: rows.filter((r) => r.state === "Committed").length,
     locked: locked.toString(),
+    fees: fees.toString(),
   };
 }
 
@@ -75,7 +84,8 @@ export function fillRows(result: WireResult | null, band: number | null): FillRo
     });
 }
 
-/** Orders of a round for the step chart: revealed, not void. From a result, with fills. */
+/** Orders of a cleared round for the step chart. A result lists only the filled orders (SPEC 12), so
+ * this is the part of each curve that traded; the unfilled orders of a past round are not kept. */
 export function stepOrdersFromResult(result: WireResult | null): StepOrder[] {
   return (result?.fills ?? []).map((f) => ({ seq: f.seq, owner: f.owner, side: f.side, size: f.size, price: f.price, filled: f.filled }));
 }
@@ -94,6 +104,8 @@ export interface ResultSummary {
   /** Commits that did not take part: void or never revealed. */
   outside: number;
   forfeited: string;
+  /** Commit fees burned at clearing, micro-USDC. */
+  fees: string;
   clearedAt: number;
 }
 
@@ -106,6 +118,7 @@ export function summarize(result: WireResult, floor: number | null): ResultSumma
     commits: result.commits,
     outside: Math.max(0, result.commits - result.orders),
     forfeited: result.forfeited,
+    fees: result.fees,
     clearedAt: result.cleared_at,
   };
 }
@@ -171,7 +184,8 @@ export interface ReporterRow {
 export interface PrintView {
   bucket: number;
   price: number | null;
-  final: boolean;
+  /** Open: still taking reports. Final: decided with a price. NoPrint: decided without one, for good. */
+  state: WirePrint["state"];
   reporters: ReporterRow[];
   /** The reporter whose report is the median, or both middle ones for an even count. */
   middle: string[];
@@ -182,7 +196,7 @@ export function printView(p: WirePrint | null): PrintView | null {
   const sorted = [...p.reports].sort((a, b) => a.price - b.price || (a.reporter < b.reporter ? -1 : 1));
   const n = sorted.length;
   const middle = n === 0 ? [] : n % 2 ? [sorted[(n - 1) / 2]!.reporter] : [sorted[n / 2 - 1]!.reporter, sorted[n / 2]!.reporter];
-  return { bucket: p.bucket, price: p.price, final: p.final, reporters: sorted, middle };
+  return { bucket: p.bucket, price: p.price, state: p.state, reporters: sorted, middle };
 }
 
 /** Median of prices as the contract takes it: mean of the two middle values rounded down. */
@@ -200,11 +214,11 @@ export function average(acc: { sum: string; count: number } | null): number | nu
   return sum === null ? null : Number(sum / BigInt(acc.count));
 }
 
-/** Sum of get_totals' five terms, micro-USDC. */
-export function totalsSum(t: { free: string; locked: string; sets_backing: string; pools: string; unredeemed: string } | null): bigint | null {
+/** Sum of get_totals' five terms, micro-USDC (SPEC 11, invariant 1). */
+export function totalsSum(t: { free: string; locked: string; sets_backing: string; unredeemed: string; burned: string } | null): bigint | null {
   if (!t) return null;
   let s = 0n;
-  for (const v of [t.free, t.locked, t.sets_backing, t.pools, t.unredeemed]) {
+  for (const v of [t.free, t.locked, t.sets_backing, t.unredeemed, t.burned]) {
     const b = toBig(v);
     if (b === null) return null;
     s += b;

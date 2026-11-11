@@ -1,22 +1,41 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
+import { Mark } from "@/components/logo.tsx";
+import { layoutDies } from "@/lib/wafer.ts";
+import { layoutDots } from "@/lib/dotmatrix.ts";
 import { LINKS } from "@/lib/nav.ts";
 
+// The 404: a wafer under test where the only dies that pass spell 404, and the heatsink looks
+// up from behind it. The dies light once, one after another; under reduced motion they are lit.
+const G = { cx: 240, cy: 132, r: 126, pitch: 12 };
+const DIES = layoutDies(G);
+const LIT = (() => {
+  const { width, dots } = layoutDots("404");
+  // Grid cell (i, j) relative to the wafer's centre, the text centred on it.
+  return new Set(dots.map(([c, r]) => `${c - Math.floor(width / 2)}:${r - 3}`));
+})();
+
 export default function NotFound() {
+  let i = 0;
   return (
     <main id="main">
       <div className="wrap">
         <section className="lost">
           <div className="lost-text">
-            <span className="eyebrow">404</span>
+            <span className="eyebrow">404 · No such page</span>
             <h1>No page at this address</h1>
-            <p className="sub">The level runs out here. Every page on the site is listed below; the index is the place to start.</p>
+            <p className="sub">Every die on this wafer was probed and none of them is the page you asked for. Every page on the site is listed below; the index is the place to start.</p>
           </div>
-          <svg className="lost-art" viewBox="0 0 480 170" aria-hidden="true" focusable="false">
-            <path className="lost-level" pathLength={1} d="M0 40H150L162.5 81.7L175 40L187.5 81.7L200 40H320" fill="none" stroke="var(--ink)" strokeWidth={8} strokeMiterlimit={2} />
-            <path className="lost-drop" d="M320 40V150H480" fill="none" stroke="var(--ink-3)" strokeWidth={2} strokeDasharray="4 6" />
-            <text x="336" y="138" className="lost-404">
-              404
-            </text>
+          <svg className="lost-art" viewBox="100 2 324 264" aria-hidden="true" focusable="false">
+            <circle cx={G.cx} cy={G.cy} r={G.r} fill="var(--sheet)" stroke="var(--rule)" />
+            {DIES.map((d) => {
+              const key = `${Math.round((d.x + G.pitch / 2 - G.cx) / G.pitch)}:${Math.round((d.y + G.pitch / 2 - G.cy) / G.pitch)}`;
+              const on = LIT.has(key);
+              return <rect key={key} x={d.x + 1.2} y={d.y + 1.2} width={G.pitch - 2.4} height={G.pitch - 2.4} className={on ? "die-on" : "die-off"} style={on ? ({ "--i": i++ } as CSSProperties) : undefined} />;
+            })}
+            <g className="lost-sink" color="var(--ink)">
+              <Mark x={340} y={190} width={72} height={72} size={72} />
+            </g>
           </svg>
         </section>
         <nav aria-label="All pages" className="lost-links">
