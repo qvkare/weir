@@ -20,25 +20,36 @@ redeemed, and prints (58 lines; excerpt):
 
 ```
 Weir sim, H100, hourly (demo) (h100-fast): each hour of delivery is auctioned the hour before, in 3+2 min rounds. Seed 7: 20 buyers, 5 sellers, 2 makers, 3 noise. Prices per H100-hour.
-Every commit burns a $0.02 fee, so taking a slot in a round always costs something and filling rounds to keep others out is not free.
+Every commit burns a $0.10 fee, so taking a slot in a round always costs something and filling rounds to keep others out is not free.
 series round  commits revealed  LONG price  forward  volume  forfeits
-     0     0       32       32      $0.458   $2.963      81     $0.00
-     0     1       32       32      $0.445   $2.950      75     $0.00
-     0     2       32       32      $0.475   $2.980      81     $0.00
+     0     0       15       15      $0.419   $2.924      68     $0.00
+     0     1       18       18      $0.434   $2.939      84     $0.00
+     0     2       17       17      $0.470   $2.975      82     $0.00
      ...
-     1     7       28       28      $0.395   $2.900      64     $0.00
+     1     7       15       15      $0.395   $2.900      69     $0.00
 20 of 20 rounds traded. Series 0 fixed at $2.874, LONG paid $0.369. Series 1 fixed at $2.981, LONG paid $0.476.
-Burned: $12.24 in commit fees and $0.00 in forfeits ($12.24 in all; burned dollars belong to nobody).
-Money check: deposits $3090.00 = free $3077.76 + locked $0.00 + sets $0.00 + unredeemed $0.00 + burned $12.24.
+Burned: $31.70 in commit fees and $0.00 in forfeits ($31.70 in all; burned dollars belong to nobody).
+Money check: deposits $3090.00 = free $3058.30 + locked $0.00 + sets $0.00 + unredeemed $0.00 + burned $31.70.
 agent       role    LONG  SHORT      paid  received   fees   result
-buyer-01    buyer     37      0    $15.60    $15.58  $0.28   -$0.31
-buyer-02    buyer    105      0    $42.63    $43.56  $0.42   +$0.51
+buyer-01    buyer     26      0     $9.21    $11.20  $0.20   +$1.78
+buyer-02    buyer    112      0    $45.12    $47.32  $1.00   +$1.19
 ...
-seller-05   seller     0    359   $171.10   $168.01  $0.42   -$3.52
-maker-01    maker     61      0    $20.83    $22.50  $0.84   +$0.83
-maker-02    maker      0      0     $0.00     $0.00  $0.84   -$0.84
-noise-01    noise     24     34    $29.35    $26.83  $0.26   -$2.78
+seller-05   seller     0    359   $171.31   $168.01  $2.10   -$5.40
+maker-01    maker    172     17    $70.67    $74.67  $4.20   -$0.21
+maker-02    maker      0      0     $0.00     $0.00  $4.20   -$4.20
+noise-01    noise     39     19    $27.14    $24.14  $0.80   -$3.81
 paid: auction fills; received: payout at settlement; fees: commit fees and forfeits burned; result: balance now minus deposit.
+```
+
+With `--void` the reporters sit out series 0's delivery window, so it cannot reach
+`min_prints` and settles void (SPEC section 10): every position is unwound at the average
+price its auctions traded at. The closing lines then read:
+
+```
+20 of 20 rounds traded. Series 0 void, unwound at $0.421 per LONG (its average traded price). Series 1 fixed at $2.981, LONG paid $0.476.
+Burned: $32.20 in commit fees and $0.00 in forfeits ($32.20 in all; burned dollars belong to nobody).
+Money check: deposits $3090.00 = free $3057.80 + locked $0.00 + sets $0.00 + unredeemed $0.00 + burned $32.20.
+Series 0 is void: the reporters were silent through its delivery, so every position was unwound at $0.421 per LONG and $0.461 per SHORT.
 ```
 
 `LONG price` is the uniform clearing price `p*` (SPEC section 7); `forward` is `floor + p*`,
@@ -47,16 +58,17 @@ before its delivery starts. A buyer gains when the index ends above where it hed
 loses when below, and the sellers mirror it. That is the hedge working, not a profit or a
 loss on compute: both sides fixed their price in the auction.
 
-Headline numbers with the defaults (`h100-fast`, seed 7): 20 of 20 rounds traded, 71.1
-GPU-hours per round on average, 29.3 commits per round, no forfeits, both series settled,
-$12.24 burned in commit fees, every dollar accounted for.
+Headline numbers with the defaults (`h100-fast`, seed 7): 20 of 20 rounds traded, 71.2
+GPU-hours per round on average, 15.2 commits per round, no forfeits, both series settled,
+$31.70 burned in commit fees, every dollar accounted for. On a weekly market, for example
+`--market h200-weekly --rounds 168`: 168 of 168 rounds traded, $266.00 burned in fees.
 
 ## Files
 
 | File | What it is |
 |---|---|
 | `src/strategy.ts` | `Intent`, `Strategy`, `AgentView`; the shared forecast; `fit`, which puts every order on the tick, strictly inside the band, within `max_order_size` and within the free balance. |
-| `src/strategies/` | `buyer`, `seller`, `maker`, `noise`: 20 to 26 lines each. |
+| `src/strategies/` | `buyer`, `seller`, `maker`, `noise`: 22 to 26 lines each. |
 | `src/swarm.ts` | `tick` (any `WeirPort`) and `tickSync` (the model's `SyncWeir`), one generator behind both; `OrderStore`, `MemoryStore`, `rebuildOrder`. |
 | `src/sim.ts` | `createSimulation`, `MARKETS`, `PRESETS`, `SIM_T0`, `agentReports`, `burned`. |
 | `src/presets.ts` | The two parameter sets, as `new(params)` JSON, and the `MARKETS` built on them. |
@@ -75,20 +87,22 @@ a random walk, and nothing cleverer is claimed. As a LONG price it is
 `clamp(forecast - floor, 0, band)`.
 
 - **buyer** (need N GPU-hours, premium q): each round bids LONG for its unhedged hours
-  spread over the rounds left (at least the smallest order that reaches `min_lock`), at up
-  to fair value plus q of the band.
+  spread over the rounds left, at up to fair value plus q of the band. When that even share
+  is below the smallest order worth its fee, it bids that smallest order with probability
+  share / smallest, so on average it still spreads its hedge over the rounds.
 - **seller** (capacity N, premium q): the mirror image, SHORT at a LONG price down to fair
   value minus q of the band.
 - **maker** (spread s, share h): LONG at fair minus s/2 and SHORT at fair plus s/2, each
   side sized to h of its free balance.
 - **noise**: a uniform random view within 10% of the band around fair value; bids 3 to 10
-  GPU-hours at that view, LONG if above fair, SHORT if below.
+  GPU-hours (at least the smallest order worth its fee) at that view, LONG if above fair,
+  SHORT if below.
 
 `fit` makes sure the free balance covers every order's lock, which is exactly what the
 order can cost (`size × price` for LONG, `size × (band − price)` for SHORT), plus the commit
 fee of each order. **Fee rule:** no order locks less than 50 commit fees (or `min_lock`, if
-that is more), so the fee is never more than 2% of what an order puts up; with the $0.02 fee
-that is $1.00, the same as `min_lock`.
+that is more), so the fee is never more than 2% of what an order puts up; with the 10-cent
+fee that is a $5.00 minimum lock (12 units at a LONG price of $0.44).
 
 ## The swarm
 
@@ -137,14 +151,19 @@ const sim = createSimulation({ seed: 7, buyers: 20, sellers: 5, makers: 2, noise
 sim.runRounds(5); sim.skipToClearing(); sim.step(600); sim.settleAll(); sim.balances();
 ```
 
-It registers and funds the agents (buyers $60, sellers $200, makers $400, noise $30), runs
+It registers and funds the agents, runs
 three reporters that post the index at every print (at -0.1%, exact and +0.1%; with all
 three reporting, each print is their median, the exact value), and drives every phase through `ModelWeir`
 with the same `tickSync` the live swarm uses (and a `MemoryStore`), at the preset's cadence (60 s fast, 15 min
 weekly). The index is a seeded random walk scaled to about 6% volatility per delivery
 period with an 8 to 15% jump about once every four periods, or an explicit array of prices
 (`prices`, micro-USD, one per print) to replay real history. Same seed, same events, byte
-for byte. Additions to the requested API: `log` (every event), `settleAll()`, the
+for byte. Agents' needs and capacities are GPU-hours per delivery period: on the fast
+preset as drawn (buyers 20 to 60, sellers 120 to 240), on a weekly market 8.4 times that (a
+buyer uses 1 to 3 GPUs all week, a seller rents out 6 to 12); deposits (buyers $60, sellers
+$200, makers $400, noise $30 on `h100-fast`) scale the same way and with the chip's price.
+`silentSeries` (the CLI's `--void`) makes the reporters sit out one series' delivery window.
+Additions to the requested API: `log` (every event), `settleAll()`, the
 `deposit` of each `SimAgent`, `prices` in `SimConfig`, and `agentReports(sim)`.
 
 ## Markets
@@ -167,7 +186,9 @@ simulation's random index starts.
 
 Both are exported as `PRESETS` in the contract's `new(params)` JSON. Deployment replaces only
 `usdc`, `reporters` and `t0`. The commit fee is there so that taking a slot in a round always
-costs something: filling rounds to keep others out is not free.
+costs something: filling rounds to keep others out is not free. It is ten cents because the
+audit showed that filling every slot of a round cost $1.28 a round at two cents; at ten
+cents it costs $6.40 a round, about $1,075 for a week of a weekly market.
 
 | Parameter | `weekly` | `fast` |
 |---|---|---|
@@ -184,7 +205,7 @@ costs something: filling rounds to keep others out is not free.
 | `band_bps` | 1500 (from `backtest/results/summary.md`) | 1500 |
 | `tick` | 1000 ($0.001) | 1000 |
 | `max_spread_bps` | 200 | 200 |
-| `commit_fee` | 20000 ($0.02) | 20000 |
+| `commit_fee` | 100000 ($0.10) | 100000 |
 | `forfeit_bps` | 100 | 100 |
 | `min_lock` | 1000000 ($1) | 1000000 |
 | `max_commits` | 64 | 64 |
@@ -213,16 +234,19 @@ pnpm --filter @weir/agents typecheck   # tsc --noEmit
   fast series on `ModelWeir`: zero forfeits and failures, every commit revealed, every lock
   exactly its order's requirement, all 12 rounds of each series cleared, both settled, every
   position redeemed, no tick over 200 calls; idempotence; a gap over a reveal window puts
-  each forfeit in the log and their sum in the bonus pool; a store wiped between commit and
+  each forfeit in the log and their sum in the round's `forfeited` and in `burned`; an
+  account's `max_round_lock` trims orders, and the trim is logged; a store wiped between commit and
   reveal gives "cannot reveal" and a logged forfeit with recovery off, and rebuilt reveals
   with it on; a small budget stops and resumes.
 - `sim.test.ts`: two runs with one seed give identical logs (and another seed does not); at
   every step deposits equal the five terms of `get_totals` (free, locked, sets, unredeemed,
   burned), fees and forfeits add up to `burned` per agent and in total, and after settlement every
   agent's free balance sums to `free` with nothing locked; 20 buyers and 5 sellers alone
-  trade in 24 of 24 rounds with seed 7 (asserted: at least 20), volumes 14 to 73 per round;
-  price replay; the weekly preset; every market checked against every rule of SPEC section
-  3 plus Weir's own choices; each chip's index starting at its level.
+  trade in 23 of 24 rounds with seed 7 (asserted: at least 20); the default agents trade in
+  24 of the first 24 rounds on every market (asserted: at least 20); price replay; the weekly
+  preset; every market checked against every rule of SPEC section 3 (including a majority
+  quorum) plus Weir's own choices; each chip's index starting at its level; a void series
+  unwound at its average traded price with the money check balanced.
 - `portable.test.ts`.
 
 ## Not proven

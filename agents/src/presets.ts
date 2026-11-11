@@ -22,9 +22,10 @@ const common = {
   max_spread_bps: 200,
   forfeit_bps: 100,
   min_lock: "1000000",
-  // Two cents burned per commit: taking a slot in a round always costs something, so filling
-  // rounds to keep others out is not free.
-  commit_fee: "20000",
+  // Ten cents burned per commit: taking a slot in a round always costs something. The audit
+  // found that filling a whole round to keep others out cost $1.28 at two cents; at ten cents
+  // it costs $6.40 a round, about $1,075 for a week of a weekly market.
+  commit_fee: "100000",
   max_commits: 64,
   max_order_size: 10_000,
   reporters: ["reporter-a", "reporter-b", "reporter-c"],

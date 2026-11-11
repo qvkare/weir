@@ -50,14 +50,15 @@ export const ONE_YOCTO = 1n;
  * measurements in `integration/RESULTS.md`: every simple method burns under 3.7 Tgas, so 10
  * leaves at least 2.7x; `clear` burns 25.5 Tgas at 64 commits and 51.25 at 128, so 150;
  * `withdraw` needs 24 (it reserves gas for the transfer and its callback), so 50; the token
- * deposit keeps 100 because the real USDC's needs are unmeasured. `settle` gets 100 because
- * in 0.4 it may first decide a whole delivery window of undecided buckets (not yet measured). */
+ * deposit keeps 100 because the real USDC's needs are unmeasured. `commit` gets 15: evicting
+ * from a full round burnt 4.11. `settle` gets 15: deciding two pending buckets burnt 3.12; a
+ * settle that decides many pending buckets is not measured. */
 export const GAS_TGAS: { readonly [M in PortChange]: number } = {
   register: 10,
   deposit: 100,
   withdraw: 50,
   set_guard: 10,
-  commit: 10,
+  commit: 15,
   reveal: 10,
   clear: 150,
   mint: 10,
@@ -66,7 +67,7 @@ export const GAS_TGAS: { readonly [M in PortChange]: number } = {
   report: 10,
   finalize_print: 10,
   prune_print: 10,
-  settle: 100,
+  settle: 15,
   redeem: 10,
   prune_result: 10,
 };

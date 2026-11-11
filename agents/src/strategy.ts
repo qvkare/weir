@@ -102,4 +102,15 @@ export function fit(v: AgentView, intents: Intent[]): Intent[] {
 export const minSize = (v: AgentView, unit: number): number =>
   Math.max(1, Math.ceil(Number(minWorthwhileLock(v)) / Math.max(1, unit)));
 
+/** How much of `unhedged` to bid this round: an even share over the rounds left. When that
+ * share is below the smallest worthwhile order (`minSize`), it bids the smallest worthwhile
+ * order with probability share / minimum instead, so it still spreads its hedge over the
+ * rounds on average. Never more than `unhedged`; 0 means no order this round. */
+export function roundShare(v: AgentView, unhedged: number, unit: number, rng: () => number): number {
+  const share = Math.ceil(unhedged / Math.max(1, v.roundsLeft));
+  const min = minSize(v, unit);
+  if (share >= min) return Math.min(unhedged, share);
+  return rng() < share / min ? Math.min(unhedged, min) : 0;
+}
+
 export const pct = (bps: number): string => `${+(bps / 100).toFixed(2)}%`;

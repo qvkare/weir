@@ -95,11 +95,12 @@ test("every market satisfies every rule of SPEC section 3", () => {
     assert.equal(p.period_secs % p.print_interval_secs, 0, id);
     assert.ok(p.reporters.length >= 1 && p.reporters.length <= 9 && new Set(p.reporters).size === p.reporters.length, id);
     assert.ok(p.quorum >= 1 && p.quorum <= p.reporters.length, id);
+    assert.ok(p.quorum * 2 > p.reporters.length, `${id}: the quorum is a majority`);
     assert.ok(BigInt(p.min_lock) >= 0n && BigInt(p.commit_fee) >= 0n, id);
     // Weir's own choices: back-to-back auction windows, whole rounds, the agreed numbers.
     assert.equal(p.lead_secs, p.period_secs + p.cutoff_secs, id);
     assert.equal(rounds, Math.floor(rounds), id);
-    assert.deepEqual([p.band_bps, p.max_spread_bps, p.commit_fee], [1500, 200, "20000"], id);
+    assert.deepEqual([p.band_bps, p.max_spread_bps, p.commit_fee], [1500, 200, "100000"], id);
   }
   assert.deepEqual(
     Object.values(MARKETS).map((m) => [m.id, m.chip, m.underlying, m.preset]),
@@ -130,4 +131,31 @@ test("both presets satisfy SPEC section 3: t0 and period_secs are multiples of p
     assert.ok(p.cutoff_secs < p.lead_secs);
     assert.equal(p.lead_secs, p.period_secs + p.cutoff_secs);
   }
+});
+
+test("default agents trade in most rounds on every market, with the 10-cent fee", (t) => {
+  for (const id of Object.keys(MARKETS) as (keyof typeof MARKETS)[]) {
+    const s = createSimulation({ ...DEFAULT, market: id });
+    const clears = s.runRounds(24).filter((e) => e.kind === "clear");
+    const traded = clears.filter((e) => (e.data as { volume: number }).volume > 0).length;
+    t.diagnostic(`${id}: traded in ${traded} of ${clears.length} rounds`);
+    assert.ok(traded >= 20, `${id} traded in only ${traded} of ${clears.length}`);
+  }
+});
+
+test("a void series: reporters silent through its delivery, unwound at its average traded price, money check balances", () => {
+  const s = createSimulation({ ...DEFAULT, silentSeries: 0 });
+  s.runRounds(14);
+  s.settleAll();
+  const series = s.market.getSeries(0)!;
+  const settlement = series.settlement!;
+  assert.equal(settlement.void, true);
+  assert.equal(settlement.longPayout, Number(series.tradedValue / BigInt(series.tradedUnits)));
+  assert.equal(settlement.fixing, series.floor + settlement.longPayout);
+  assert.ok(s.log.some((e) => e.kind === "settle" && e.text.includes("void, unwound at")));
+  const t = s.market.getTotals();
+  const deposits = s.agents.reduce((sum, a) => sum + BigInt(a.deposit), 0n);
+  assert.equal(t.locked + t.setsBacking + t.unredeemed, 0n);
+  assert.equal(t.free + t.burned, deposits);
+  assert.equal(s.market.getSeries(1)!.settlement!.void, false, "the next series prints again and settles normally");
 });

@@ -46,8 +46,8 @@ signed transactions on a second `Market`, and requires identical transcripts.
 | `withdraw` | 50 Tgas | 1 yoctoNEAR |
 | `set_guard` | 10 Tgas | 1 yoctoNEAR |
 | `transfer_position` | 10 Tgas | 1 yoctoNEAR |
-| `commit`, `reveal`, `mint`, `merge`, `report`, `finalize_print`, `prune_print`, `redeem`, `prune_result` | 10 Tgas | none |
-| `settle` | 100 Tgas | none |
+| `commit`, `settle` | 15 Tgas | none |
+| `reveal`, `mint`, `merge`, `report`, `finalize_print`, `prune_print`, `redeem`, `prune_result` | 10 Tgas | none |
 | `clear` | 150 Tgas | none |
 | token `storage_deposit` | 10 Tgas | 0.00125 NEAR, `registration_only: true` |
 | token `mint` | 10 Tgas | none |
@@ -56,8 +56,9 @@ The gas is one table, `GAS_TGAS` in `src/weir.ts`, from the sandbox measurements
 `integration/RESULTS.md`: every simple method burns at most 3.7 Tgas (10 leaves 2.7x);
 `clear` burns 25.5 Tgas at 64 commits and 51.25 at 128 (150 leaves 2.9x at the maximum);
 `withdraw` needs 24 (50); the deposit stays at 100 because the real USDC's needs are
-unmeasured. `settle` keeps 100 because in 0.4 it may first decide every undecided bucket of a
-delivery window; its real figure is still to be measured. Unused gas is refunded, and a key's
+unmeasured. `commit` gets 15 because evicting from a full round burnt 4.11 Tgas (only 2.4x
+at 10). `settle` gets 15: deciding two pending buckets burnt 3.12 Tgas, but the worst case, a
+settle that decides many pending buckets of a delivery window, is not measured. Unused gas is refunded, and a key's
 allowance is charged about the gas burnt.
 
 ## Dependencies

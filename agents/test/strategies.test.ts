@@ -40,25 +40,28 @@ test("forecast: the last print before delivery, then known prints plus the last 
 });
 
 test("buyer: forecast plus its premium, its unhedged need spread over the rounds left", () => {
-  const b = buyer("b", { need: 40, premiumBps: 500 });
-  // fair 400_000 + 5% of 800_000 = 440_000; 40 hours over 10 rounds = 4.
-  assert.deepEqual(b.decide(view(), Math.random), [{ side: "Long", size: 4, price: 440_000 }]);
-  // 37 already hedged: 3 left over 10 rounds rounds up to 1, raised to the smallest order that locks $1 (3 x $0.44).
-  assert.deepEqual(b.decide(view({ position: { long: 37, short: 0 } }), Math.random), [{ side: "Long", size: 3, price: 440_000 }]);
-  assert.deepEqual(b.decide(view({ position: { long: 39, short: 0 }, roundsLeft: 1 }), Math.random), [], "1 hour is below min_lock");
-  assert.deepEqual(b.decide(view({ position: { long: 40, short: 0 } }), Math.random), []);
-  // Only $1.40 free: room for 3 units at $0.44, locking exactly $1.32, plus the $0.02 fee.
-  assert.deepEqual(b.decide(view({ free: 1_400_000n }), Math.random), [{ side: "Long", size: 3, price: 440_000 }]);
-  assert.deepEqual(b.decide(view({ free: 900_000n }), Math.random), [], "2 units would lock $0.88, below min_lock");
+  const b = buyer("b", { need: 400, premiumBps: 500 });
+  // fair 400_000 + 5% of 800_000 = 440_000; 400 hours over 10 rounds = 40.
+  assert.deepEqual(b.decide(view(), Math.random), [{ side: "Long", size: 40, price: 440_000 }]);
+  // A share of 4 is below the smallest order worth its 10-cent fee ($5 / $0.44 = 12 units):
+  // it bids 12 with probability 4/12.
+  const small = buyer("b", { need: 40, premiumBps: 500 });
+  assert.deepEqual(small.decide(view(), () => 0.2), [{ side: "Long", size: 12, price: 440_000 }]);
+  assert.deepEqual(small.decide(view(), () => 0.5), []);
+  assert.deepEqual(small.decide(view({ position: { long: 35, short: 0 }, roundsLeft: 1 }), () => 0), [], "5 hours lock $2.20, under 50 fees");
+  assert.deepEqual(small.decide(view({ position: { long: 40, short: 0 } }), () => 0), []);
+  // $10 free: after the fee, room for 22 units at $0.44; $5 free leaves 11 units, $4.84, too small.
+  assert.deepEqual(b.decide(view({ free: 10_000_000n }), Math.random), [{ side: "Long", size: 22, price: 440_000 }]);
+  assert.deepEqual(b.decide(view({ free: 5_000_000n }), Math.random), []);
   // A premium rounding off the tick rounds down for a LONG: never pays more than asked.
-  assert.deepEqual(buyer("b", { need: 40, premiumBps: 333 }).decide(view(), Math.random)[0]!.price, 426_000);
+  assert.deepEqual(buyer("b", { need: 400, premiumBps: 333 }).decide(view(), Math.random)[0]!.price, 426_000);
 });
 
 test("seller: forecast minus its premium, rounded up for a SHORT, symmetric to the buyer", () => {
-  const s = seller("s", { capacity: 200, premiumBps: 500 });
-  assert.deepEqual(s.decide(view(), Math.random), [{ side: "Short", size: 20, price: 360_000 }]);
-  assert.deepEqual(seller("s", { capacity: 200, premiumBps: 333 }).decide(view(), Math.random)[0]!.price, 374_000);
-  assert.deepEqual(s.decide(view({ position: { long: 0, short: 200 } }), Math.random), []);
+  const s = seller("s", { capacity: 2000, premiumBps: 500 });
+  assert.deepEqual(s.decide(view(), Math.random), [{ side: "Short", size: 200, price: 360_000 }]);
+  assert.deepEqual(seller("s", { capacity: 2000, premiumBps: 333 }).decide(view(), Math.random)[0]!.price, 374_000);
+  assert.deepEqual(s.decide(view({ position: { long: 0, short: 2000 } }), Math.random), []);
   // A forecast at the floor would ask for a LONG price of 0: kept one tick inside the band.
   assert.deepEqual(s.decide(view({ lastPrint: { bucket: 0, price: 1_500_000 } }), Math.random)[0]!.price, 1000);
 });
@@ -69,9 +72,11 @@ test("maker quotes both sides around fair value; noise follows its random view",
   assert.deepEqual(bid, { side: "Long", size: 40, price: 360_000 });
   assert.deepEqual(ask, { side: "Short", size: 40, price: 440_000 });
   const n = noise("n", { viewBps: 1000, minSize: 2, maxSize: 8 });
-  const values = [0.9, 0.5]; // view +8% of the band above fair, size 2 + floor(0.5 * 7) = 5
+  // View +8% of the band above fair; drawn size 2 + floor(0.5 * 7) = 5, raised to the smallest
+  // order worth its fee: $5 / $0.464 = 11.
+  const values = [0.9, 0.5];
   const orders = n.decide(view(), () => values.shift()!);
-  assert.deepEqual(orders, [{ side: "Long", size: 5, price: 464_000 }]);
+  assert.deepEqual(orders, [{ side: "Long", size: 11, price: 464_000 }]);
 });
 
 test("5,000 random views: every order is on the tick, strictly inside the band, within max size, and the balance covers every lock and its fee", () => {
@@ -113,18 +118,16 @@ test("5,000 random views: every order is on the tick, strictly inside the band, 
 });
 
 test("fit drops what it cannot make valid and gives earlier intents the balance first", () => {
-  // The fee rule: an order must lock at least 50 commit fees. With a 10-cent fee that is $5.
-  const pricey = view({ params: { ...params, commit_fee: "100000" } });
-  assert.deepEqual(fit(pricey, [{ side: "Long", size: 40, price: 100_000 }]), []);
-  assert.deepEqual(fit(pricey, [{ side: "Long", size: 50, price: 100_000 }]), [{ side: "Long", size: 50, price: 100_000 }]);
-  const v = view({ free: 5_000_000n });
+  // The fee rule: an order must lock at least 50 commit fees; with the 10-cent fee, $5.
+  assert.deepEqual(fit(view(), [{ side: "Long", size: 40, price: 100_000 }]), []);
+  assert.deepEqual(fit(view(), [{ side: "Long", size: 50, price: 100_000 }]), [{ side: "Long", size: 50, price: 100_000 }]);
+  const v = view({ free: 15_000_000n });
   const out = fit(v, [
-    { side: "Long", size: 30, price: 100_000 },
-    { side: "Short", size: 30, price: 700_000 },
+    { side: "Long", size: 60, price: 100_000 },
+    { side: "Short", size: 100, price: 700_000 },
     { side: "Long", size: Number.NaN, price: 1 },
   ]);
-  // $3.00 and a $0.02 fee for the LONG leave $1.98; less the next fee, 19 SHORT at $0.10 each.
-  assert.deepEqual(out, [{ side: "Long", size: 30, price: 100_000 }, { side: "Short", size: 19, price: 700_000 }]);
-  assert.deepEqual(fit(v, [{ side: "Long", size: 3, price: 100_000 }]), [], "$0.30 is below min_lock");
-  assert.deepEqual(fit(v, [{ side: "Long", size: 2000, price: -5 }]), [{ side: "Long", size: 2000, price: 1000 }]);
+  // $6.00 and a $0.10 fee for the LONG leave $8.90; less the next fee, 88 SHORT at $0.10 each.
+  assert.deepEqual(out, [{ side: "Long", size: 60, price: 100_000 }, { side: "Short", size: 88, price: 700_000 }]);
+  assert.deepEqual(fit(v, [{ side: "Long", size: 5000, price: -5 }]), [{ side: "Long", size: 5000, price: 1000 }]);
 });

@@ -15,9 +15,11 @@ const tp = timeParams(params);
 function setup(): { model: ModelWeir; store: MemoryStore; ctx: SwarmContext<WeirPort, OrderStore>; report: (t: number) => Promise<void> } {
   const model = new ModelWeir(new Market(paramsFromWire(params), auctionOpen(tp, 0) - 300), "keeper");
   const agents = [
-    buyer("buyer-1", { need: 40, premiumBps: 400 }),
-    buyer("buyer-2", { need: 30, premiumBps: 600 }),
-    seller("seller-1", { capacity: 80, premiumBps: 300 }),
+    // Needs large enough that every share is above the smallest order worth its fee, so each
+    // agent commits in every round.
+    buyer("buyer-1", { need: 400, premiumBps: 400 }),
+    buyer("buyer-2", { need: 300, premiumBps: 600 }),
+    seller("seller-1", { capacity: 900, premiumBps: 300 }),
     maker("maker-1", { spreadBps: 400, shareBps: 1000, maxSize: 20 }),
     noise("noise-1", { viewBps: 1000, minSize: 3, maxSize: 8 }),
   ];
@@ -25,7 +27,7 @@ function setup(): { model: ModelWeir; store: MemoryStore; ctx: SwarmContext<Weir
   for (const a of agents) {
     ports[a.id] = model.as(a.id);
     model.as(a.id).sync.change("register", {});
-    model.as(a.id).sync.change("deposit", { amount: "200000000" });
+    model.as(a.id).sync.change("deposit", { amount: "1000000000" });
   }
   const walk = mulberry32(3);
   let price = 2_000_000;
@@ -99,7 +101,7 @@ test("ticked every 60 s through two full series: no forfeits, every round cleare
   assert.equal(checked, commits);
   const totals = await model.get_totals({});
   assert.deepEqual([totals.locked, totals.sets_backing, totals.unredeemed], ["0", "0", "0"]);
-  assert.equal(BigInt(totals.free) + BigInt(totals.burned), 5n * 200_000_000n);
+  assert.equal(BigInt(totals.free) + BigInt(totals.burned), 5n * 1_000_000_000n);
   assert.equal(BigInt(totals.burned), BigInt(commits) * BigInt(params.commit_fee), "only fees were burned");
   assert.ok(maxCalls <= 200, `a tick made ${maxCalls} calls`);
 });
@@ -197,7 +199,7 @@ test("a small budget stops the tick and says so; the next tick picks up the rest
 
 test("an account's max_round_lock is respected when sizing, and the trim is logged", async () => {
   const { model, ctx, report } = setup();
-  await model.as("seller-1").set_guard({ max_round_lock: "1500000" });
+  await model.as("seller-1").set_guard({ max_round_lock: "6000000" });
   const open = auctionOpen(tp, 0);
   model.setTime(open - 300);
   await report(open - 300);
@@ -207,7 +209,7 @@ test("an account's max_round_lock is respected when sizing, and the trim is logg
   assert.ok(trim, "trim logged");
   const book = (await model.get_round({ series: 0, round: 0 }))!;
   const locked = book.commits.filter((c) => c.owner === "seller-1").reduce((sum, c) => sum + BigInt(c.lock), 0n);
-  assert.ok(locked > 0n && locked <= 1_500_000n, `locked ${locked}`);
+  assert.ok(locked > 0n && locked <= 6_000_000n, `locked ${locked}`);
   assert.deepEqual(log.entries.filter((e) => e.status === "failed"), []);
 });
 

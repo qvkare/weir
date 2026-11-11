@@ -2,7 +2,7 @@
 // post an index path, and a swarm of agents (buyers, sellers, makers, noise traders) trades
 // through every phase, all through `ModelWeir`: the same swarm code that runs on chain.
 // Same seed, same events, byte for byte. Browser-safe.
-import { auctionClose, auctionOpen, deliveryEnd, Market, roundCount, roundSecs, sha256Hex, wireEvent, type WeirEvent } from "@weir/engine";
+import { auctionClose, auctionOpen, deliveryEnd, deliveryStart, Market, roundCount, roundSecs, sha256Hex, wireEvent, type WeirEvent } from "@weir/engine";
 import { ModelWeir, paramsFromWire, type SyncWeir } from "@weir/chain";
 import { MARKETS, type MarketDef, type MarketId, type PresetName } from "./presets.ts";
 import { mulberry32 } from "./random.ts";
@@ -24,6 +24,10 @@ export interface SimConfig {
   /** Index prices to replay, in micro-USD per GPU-hour, one per print; the last one repeats.
    * Without it the index is a seeded random walk with occasional jumps. */
   prices?: readonly number[];
+  /** A series whose delivery window the reporters sit out, so it cannot reach `min_prints`
+   * and settles void (SPEC section 10): its positions are unwound at the average price its
+   * auctions traded at. */
+  silentSeries?: number;
 }
 
 export interface SimAgent {
@@ -99,22 +103,28 @@ const usd = (micro: bigint | string | number, digits = 2): string => {
   return `${v < 0 ? "-" : ""}$${Math.abs(v).toFixed(digits)}`;
 };
 
-function makeAgents(config: SimConfig): { strategy: Strategy; deposit: bigint }[] {
+/** The agents. Needs and capacities are GPU-hours per delivery period: on the fast preset's
+ * one-hour period as drawn, on a week 8.4 times that (a buyer then uses 1 to 3 GPUs all week,
+ * a seller rents out 6 to 12). Deposits scale with that and with the chip's price level. */
+function makeAgents(config: SimConfig, def: MarketDef): { strategy: Strategy; deposit: bigint }[] {
   const rng = mulberry32(config.seed);
   const int = (lo: number, hi: number) => lo + Math.floor(rng() * (hi - lo + 1));
+  const scale = def.params.period_secs >= 7 * 86_400 ? 8.4 : 1;
+  const hours = (lo: number, hi: number) => Math.round(int(lo, hi) * scale);
+  const dollars = (base: number) => BigInt(Math.ceil(base * scale * Math.max(1, def.startPrice / 2_900_000))) * 1_000_000n;
   const id = (role: string, i: number) => `${role}-${String(i + 1).padStart(2, "0")}`;
   const out: { strategy: Strategy; deposit: bigint }[] = [];
   for (let i = 0; i < config.buyers; i++) {
-    out.push({ strategy: buyer(id("buyer", i), { need: int(20, 60), premiumBps: int(2, 8) * 100 }), deposit: 60_000_000n });
+    out.push({ strategy: buyer(id("buyer", i), { need: hours(20, 60), premiumBps: int(2, 8) * 100 }), deposit: dollars(60) });
   }
   for (let i = 0; i < config.sellers; i++) {
-    out.push({ strategy: seller(id("seller", i), { capacity: int(120, 240), premiumBps: int(2, 8) * 100 }), deposit: 200_000_000n });
+    out.push({ strategy: seller(id("seller", i), { capacity: hours(120, 240), premiumBps: int(2, 8) * 100 }), deposit: dollars(200) });
   }
   for (let i = 0; i < config.makers; i++) {
-    out.push({ strategy: maker(id("maker", i), { spreadBps: int(4, 8) * 100, shareBps: 1000, maxSize: 40 }), deposit: 400_000_000n });
+    out.push({ strategy: maker(id("maker", i), { spreadBps: int(4, 8) * 100, shareBps: 1000, maxSize: Math.round(40 * scale) }), deposit: dollars(400) });
   }
   for (let i = 0; i < config.noise; i++) {
-    out.push({ strategy: noise(id("noise", i), { viewBps: 1000, minSize: 3, maxSize: 10 }), deposit: 30_000_000n });
+    out.push({ strategy: noise(id("noise", i), { viewBps: 1000, minSize: 3, maxSize: 10 }), deposit: dollars(30) });
   }
   return out;
 }
@@ -163,7 +173,10 @@ function describe(e: WeirEvent, band: (series: number) => { floor: number; band:
     case "prune_result":
       return { text: `result of round ${e.data.round} of series ${e.data.series} pruned` };
     case "settle":
-      return { text: `series ${e.data.series} settled at ${per(e.data.fixing)}: LONG pays ${usd(e.data.longPayout, 3)}, SHORT ${usd(e.data.shortPayout, 3)}${e.data.void ? " (void)" : ""}` };
+      if (e.data.void) {
+        return { text: `series ${e.data.series} void, unwound at ${usd(e.data.longPayout, 3)} per LONG (the average its auctions traded at), ${usd(e.data.shortPayout, 3)} per SHORT` };
+      }
+      return { text: `series ${e.data.series} settled at ${per(e.data.fixing)}: LONG pays ${usd(e.data.longPayout, 3)}, SHORT ${usd(e.data.shortPayout, 3)}` };
     case "redeem":
       return { agent, text: `${agent} redeemed ${usd(e.data.amount)}` };
     case "guard":
@@ -182,7 +195,7 @@ export function createSimulation(config: SimConfig): Simulation {
   const secret = `weir-sim-${config.seed}`;
   const store = new MemoryStore();
 
-  const funded = makeAgents(config);
+  const funded = makeAgents(config, def);
   const strategies = funded.map((f) => f.strategy);
   const ports: Record<string, SyncWeir> = {};
   for (const { strategy, deposit } of funded) {
@@ -223,7 +236,8 @@ export function createSimulation(config: SimConfig): Simulation {
   const actAt = (t: number): SimEvent[] => {
     market.setTime(t);
     lastTick = t;
-    if (t % params.print_interval_secs === 0) {
+    const silent = config.silentSeries !== undefined && deliveryStart(tp, config.silentSeries) <= t && t < deliveryEnd(tp, config.silentSeries);
+    if (t % params.print_interval_secs === 0 && !silent) {
       const price = indexAt((t - start) / params.print_interval_secs);
       for (const r of reporters) {
         const p = Math.round(price * r.skew);
