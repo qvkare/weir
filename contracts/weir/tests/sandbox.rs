@@ -280,10 +280,15 @@ async fn a_fresh_commit_phase(chain: &Chain, t: &Timing, margin: u64) -> anyhow:
     Ok(round)
 }
 
+/// The first multiple of `interval` at or after `at`: t0 sits on the print grid.
+fn on_grid(at: u64, interval: u64) -> u64 {
+    at.div_ceil(interval) * interval
+}
+
 fn lifecycle_timing(now: u64) -> Timing {
     let lead = 1_260;
     Timing {
-        t0: now + lead + 60,
+        t0: on_grid(now + lead + 60, 60),
         period: 1_200,
         lead,
         cutoff: 60,
@@ -363,14 +368,29 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     );
     assert_books_balance(&chain, &weir).await?;
 
-    // Bob redeems for Alice; Carol for herself.
+    // Units still move after settlement: Carol gives Bob 2 of her 8 SHORT.
+    carol
+        .call(weir.id(), "transfer_position")
+        .args_json(json!({ "series": 0, "to": bob.id(), "long": 0, "short": 2 }))
+        .deposit(ONE_YOCTO)
+        .transact()
+        .await?
+        .into_result()?;
+    assert_eq!(position(&weir, &carol).await?, (0, 6));
+    assert_eq!(position(&weir, &bob).await?, (0, 2));
+
+    // Bob redeems for Alice and for himself; Carol for herself.
     bob.call(weir.id(), "redeem").args_json(json!({ "series": 0, "account_id": alice.id() })).transact().await?.into_result()?;
+    bob.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
     carol.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
     let alice_free = 500 * DOLLAR - 8 * 210_000 + 8 * (250_000 + 6_250);
-    let carol_free = 500 * DOLLAR - 8 * 190_000 - 100_000 + 8 * (150_000 + 6_250);
+    let carol_free = 500 * DOLLAR - 8 * 190_000 - 100_000 + 6 * (150_000 + 6_250);
     assert_eq!(free(&weir, &alice).await?, alice_free);
+    assert_eq!(free(&weir, &bob).await?, 500 * DOLLAR + 2 * (150_000 + 6_250));
     assert_eq!(free(&weir, &carol).await?, carol_free);
-    assert_eq!(position(&weir, &alice).await?, (0, 0));
+    for who in [&alice, &bob, &carol] {
+        assert_eq!(position(&weir, who).await?, (0, 0));
+    }
     assert_books_balance(&chain, &weir).await?;
 
     // Alice takes everything out.
@@ -435,7 +455,7 @@ async fn a_function_call_key_trades_but_cannot_move_money() -> anyhow::Result<()
     let other = chain.trader(&weir, 10 * DOLLAR).await?;
 
     // The agent's key, limited as section 15 says.
-    let methods = ["commit", "reveal", "clear", "mint", "merge", "redeem"];
+    let methods = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"];
     let key = SecretKey::from_random(KeyType::ED25519);
     owner
         .batch(owner.id())
@@ -495,13 +515,29 @@ async fn a_function_call_key_trades_but_cannot_move_money() -> anyhow::Result<()
     }
     assert_eq!(position(&weir, &other).await?, (0, 0));
     assert_eq!(free(&weir, &owner).await?, 100 * DOLLAR - 4 * u128::from(BAND));
+
+    // The same key settles the series once delivery is over, and redeems.
+    let first = on_grid(t.t0, t.interval);
+    chain.warp_to(first).await?;
+    chain.print(&weir, &t, PRICE).await?;
+    chain.warp_to(first + 600).await?;
+    chain.print(&weir, &t, PRICE).await?;
+    chain.warp_to(t.end() + t.grace).await?;
+    agent.call(weir.id(), "settle").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
+    let s = view(&weir, "get_series", json!({ "series": 0 })).await?["settlement"].clone();
+    assert_eq!((s["fixing"].as_u64(), s["void"].as_bool()), (Some(PRICE), Some(false)));
+    agent.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
+    // 4 sets at 0.40 each, nothing forfeited: every dollar is back.
+    assert_eq!(free(&weir, &owner).await?, 100 * DOLLAR);
+    assert_eq!(position(&weir, &owner).await?, (0, 0));
+    assert_books_balance(&chain, &weir).await?;
     Ok(())
 }
 
 fn gas_timing(now: u64) -> Timing {
     let lead = 7_260;
     Timing {
-        t0: now + lead + 3_600,
+        t0: on_grid(now + lead + 3_600, 60),
         period: 7_200,
         lead,
         cutoff: 60,

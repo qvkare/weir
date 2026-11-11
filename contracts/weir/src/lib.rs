@@ -45,6 +45,8 @@ pub const ERR_FORFEIT_BPS: &str = "forfeit_bps must be at most 10000";
 pub const ERR_MAX_COMMITS: &str = "max_commits must be 1 to 128";
 pub const ERR_MAX_ORDER_SIZE: &str = "max_order_size must be at least 1";
 pub const ERR_CUTOFF: &str = "cutoff_secs must be below lead_secs";
+pub const ERR_BUCKET_GRID: &str =
+    "t0 and period_secs must be multiples of print_interval_secs";
 pub const ERR_MIN_PRINTS: &str = "min_prints must be at least 1";
 pub const ERR_REPORTERS: &str = "reporters must be 1 to 9 accounts with no duplicates";
 pub const ERR_QUORUM: &str = "quorum must be 1 to the number of reporters";
@@ -164,6 +166,12 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
     ];
     if let Some(&(_, err)) = checks.iter().find(|(ok, _)| !ok) {
         return Err(err);
+    }
+    // A delivery window is a whole number of print buckets, so its last bucket's
+    // report window closes exactly when `settle` becomes possible.
+    let interval = params.print_interval_secs;
+    if !params.t0.is_multiple_of(interval) || !params.period_secs.is_multiple_of(interval) {
+        return Err(ERR_BUCKET_GRID);
     }
     let reporters = &params.reporters;
     let distinct = reporters

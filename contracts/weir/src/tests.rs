@@ -309,6 +309,8 @@ fn new_refuses_bad_params() {
         (|p| p.max_order_size = 0, ERR_MAX_ORDER_SIZE),
         (|p| p.cutoff_secs = p.lead_secs, ERR_CUTOFF),
         (|p| p.min_prints = 0, ERR_MIN_PRINTS),
+        (|p| p.t0 += 5, ERR_BUCKET_GRID),
+        (|p| p.period_secs = 1_005, ERR_BUCKET_GRID),
         (|p| p.reporters.clear(), ERR_REPORTERS),
         (|p| p.reporters = (0..10).map(|i| id(&format!("r{i}.near"))).collect(), ERR_REPORTERS),
         (|p| p.reporters = vec![id(R1), id(R2), id(R1)], ERR_REPORTERS),

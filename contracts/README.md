@@ -1,6 +1,6 @@
 # Weir contracts
 
-The NEAR side of Weir, written from `docs/SPEC.md` (version 0.2). Section numbers
+The NEAR side of Weir, written from `docs/SPEC.md` (version 0.3). Section numbers
 below refer to it.
 
 ## Files
@@ -18,7 +18,7 @@ below refer to it.
 | `weir/src/events.rs` | Section 13: NEP-297 events, standard `weir`, version `1.0.0` |
 | `weir/src/tests.rs` | Unit tests of every method, in near-sdk's mocked VM. Calls run like transactions: a panic rolls state back |
 | `weir/tests/properties.rs` | Proptest: invariants 3 and 4 over random books; invariants 1, 2 and 5 over random call sequences |
-| `weir/tests/sandbox.rs` | The real wasm in near-sandbox with `mock-usdc`: a whole life, a failed withdraw, function-call keys, gas of a full `clear` |
+| `weir/tests/sandbox.rs` | The real wasm in near-sandbox with `mock-usdc`: a whole life (with a position moved after settlement), a failed withdraw, an agent's function-call key (trades, settles and redeems; refused on `withdraw`, `set_guard`, `transfer_position`), gas of a full `clear` |
 | `weir/tests/vectors.rs` | Writes or checks `../vectors/*.json`, the shared test vectors for the TypeScript engine |
 | `mock-usdc/src/lib.rs` | A NEP-141 test dollar, `tUSDC`, 6 decimals, with an open `mint` faucet. Testnet and tests only |
 
@@ -55,8 +55,8 @@ SHORT, which is the most work a round can hold.
 
 | `max_commits` | Tgas burnt by the whole transaction |
 |---|---|
-| 64 | 26.35 |
-| 128 | 51.15 |
+| 64 | 26.36 |
+| 128 | 51.25 |
 
 ## Error messages
 
@@ -71,6 +71,7 @@ Every panic the contract raises on purpose is one of these (`weir::ERR_*`):
 | `ERR_MAX_COMMITS` | `max_commits must be 1 to 128` |
 | `ERR_MAX_ORDER_SIZE` | `max_order_size must be at least 1` |
 | `ERR_CUTOFF` | `cutoff_secs must be below lead_secs` |
+| `ERR_BUCKET_GRID` | `t0 and period_secs must be multiples of print_interval_secs` |
 | `ERR_MIN_PRINTS` | `min_prints must be at least 1` |
 | `ERR_REPORTERS` | `reporters must be 1 to 9 accounts with no duplicates` |
 | `ERR_QUORUM` | `quorum must be 1 to the number of reporters` |
