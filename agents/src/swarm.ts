@@ -223,7 +223,7 @@ class Planner<P, S> {
         const l = live(s);
         if (l?.phase === "Reveal") yield* this.#reveal(params, l);
       }
-      for (let s = first; s <= newest; s++) yield* this.#clearSettleRedeem(params, tp, s, status.now, live(s)?.round ?? null);
+      for (let s = first; s <= newest; s++) yield* this.#clearSettleRedeem(params, tp, s, status.now);
       if (this.#ctx.trade === false) return;
       for (let s = first; s <= newest; s++) {
         const l = live(s);
@@ -274,17 +274,22 @@ class Planner<P, S> {
     }
   }
 
-  *#clearSettleRedeem(params: WireParams, tp: TimeParams, series: number, now: number, current: number | null): Plan<void> {
+  *#clearSettleRedeem(params: WireParams, tp: TimeParams, series: number, now: number): Plan<void> {
     const rec = yield* this.#view("get_series", { series });
     if (!rec) return;
     let settled = rec.settlement !== null;
     if (!settled) {
-      let pending = rec.pending_rounds;
-      // The round in progress is pending too, but it is not over: do not look for it below.
-      if (current !== null && pending > 0 && (yield* this.#view("get_round", { series, round: current }))) pending--;
-      for (let round = roundsOver(tp, series, now) - 1; round >= 0 && pending > 0; round--) {
+      // `pending_rounds` lists, oldest first, the rounds holding commits not yet cleared. Clear
+      // every one that is over; the round in progress stays pending.
+      const over = roundsOver(tp, series, now);
+      let pending = rec.pending_rounds.length;
+      for (const round of rec.pending_rounds) {
+        if (round >= over) continue;
         const book = yield* this.#view("get_round", { series, round });
-        if (!book) continue;
+        if (!book) {
+          pending--; // cleared by someone else since get_series
+          continue;
+        }
         for (const c of book.commits.filter((x) => x.state === "Committed")) {
           const forfeit = (BigInt(c.lock) * BigInt(params.forfeit_bps)) / 10_000n;
           const whose = this.#mine.has(c.owner) ? "" : " (not ours)";

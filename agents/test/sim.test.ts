@@ -72,3 +72,14 @@ test("the weekly preset runs: hourly rounds, a series opening on the first commi
   assert.ok(events.every((e, i) => i === 0 || e.at >= events[i - 1]!.at));
   assert.equal(s.now() % 3600, 0);
 });
+
+test("both presets satisfy SPEC section 3: t0 and period_secs are multiples of print_interval_secs, cutoff < lead", async () => {
+  const { PRESETS, SIM_T0 } = await import("../src/mod.ts");
+  for (const p of Object.values(PRESETS)) {
+    assert.equal(p.t0, SIM_T0);
+    assert.equal(p.t0 % p.print_interval_secs, 0);
+    assert.equal(p.period_secs % p.print_interval_secs, 0);
+    assert.ok(p.cutoff_secs < p.lead_secs);
+    assert.equal(p.lead_secs, p.period_secs + p.cutoff_secs);
+  }
+});

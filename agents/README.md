@@ -87,7 +87,7 @@ order whose lock is below `min_lock`.
 
 `tick(ctx)` is meant to be called about once a minute. It is stateless and idempotent: it
 reads `get_status`, and for every agent does what is due now, most urgent first: reveal
-every commit it holds in a reveal phase; clear every round that is over (and log, per
+every commit it holds in a reveal phase; clear every round in the series' `pending_rounds` that is over, oldest first (and log, per
 commit, any forfeit it finds); settle a series once its delivery and report window are
 over and it has `min_prints` (or the void rule applies); redeem positions on settled
 series; commit in a commit phase if the agent has no commit in this round yet. It stops at

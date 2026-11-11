@@ -67,7 +67,7 @@ test("three hours of the fast market, ticked every minute", async () => {
     const s = await w.model.get_series({ series });
     assert.ok(s?.settlement, `series ${series} settled`);
     assert.equal(s.settlement.void, false);
-    assert.equal(s.pending_rounds, 0);
+    assert.deepEqual(s.pending_rounds, []);
     for (const a of AGENTS) assert.deepEqual(await w.model.get_position({ series, account_id: a.account_id }), { long: 0, short: 0 });
   }
   const traded = (await w.model.get_results({ series: 0, from_round: 0, limit: 100 })).filter(([, r]) => r.volume > 0).length;

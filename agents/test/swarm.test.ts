@@ -78,7 +78,7 @@ test("ticked every 60 s through two full series: no forfeits, every round cleare
   for (const series of [0, 1]) {
     const s = await model.get_series({ series });
     assert.ok(s?.settlement, `series ${series} settled`);
-    assert.equal(s.pending_rounds, 0);
+    assert.deepEqual(s.pending_rounds, []);
     const results = await model.get_results({ series, from_round: 0, limit: 100 });
     assert.equal(results.length, 12, `all 12 rounds of series ${series} cleared`);
     assert.ok(results.filter(([, r]) => r.volume > 0).length >= 10);

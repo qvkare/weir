@@ -10,7 +10,7 @@ import type { Role, Strategy } from "./strategy.ts";
 import { buyer, maker, noise, seller } from "./strategies/mod.ts";
 import { MemoryStore, newestSeries, tickSync, timeParams, type LogEntry } from "./swarm.ts";
 
-export { PRESETS, type PresetName } from "./presets.ts";
+export { PRESETS, SIM_T0, type PresetName } from "./presets.ts";
 
 export interface SimConfig {
   seed: number;

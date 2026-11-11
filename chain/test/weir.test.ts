@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { commitHash, Market, type WireParams } from "@weir/engine";
 import { NearAccount, NearRpc } from "../src/near.ts";
 import { base58Encode, KeyPair } from "../src/tx.ts";
-import { CallFailed, CHANGE_METHODS, ChainWeir, ModelWeir, paramsFromWire, VIEW_METHODS, type WeirPort } from "../src/weir.ts";
+import { AGENT_KEY_METHODS, CallFailed, CHANGE_METHODS, ChainWeir, ModelWeir, paramsFromWire, VIEW_METHODS, type WeirPort } from "../src/weir.ts";
 import { fakeNear } from "./fake_near.ts";
 
 const T0 = 1_767_571_200;
@@ -110,6 +110,11 @@ test("ChainWeir sends each state change with the spec's argument names, the READ
   assert.deepEqual(fake.sent.slice(-3).map((s) => s.args), [{}, { series: 4 }, {}]);
   await port.deposit({ amount: "7" });
   assert.deepEqual(fake.sent.at(-1)!.args, { receiver_id: "weir.testnet", amount: "7", msg: "" });
+});
+
+test("an agent key's methods are SPEC section 15's list, and none of them attaches a deposit", () => {
+  assert.deepEqual([...AGENT_KEY_METHODS], ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"]);
+  for (const m of AGENT_KEY_METHODS) assert.equal(SPEC_CHANGES[m]!.deposit, 0n, m);
 });
 
 test("ChainWeir sends each view with the spec's argument names", async () => {
@@ -253,14 +258,14 @@ test("a failed chain call throws CallFailed carrying the outcome and the bare pa
 });
 
 test("ModelWeir hands out JSON copies and shares one market and clock between accounts", async () => {
-  const model = new ModelWeir(new Market(paramsFromWire(PARAMS), T0), "a");
-  const b = model.as("b");
+  const model = new ModelWeir(new Market(paramsFromWire(PARAMS), T0), "alice.testnet");
+  const b = model.as("bob.testnet");
   await model.register({});
   b.advance(5);
   assert.equal(model.now(), T0 + 5);
   const params = await b.get_params({});
   params.reporters.push("mutated");
   assert.deepEqual((await model.get_params({})).reporters, PARAMS.reporters);
-  assert.equal(model.sync.view("get_account", { account_id: "a" })!.balance, "0");
+  assert.equal(model.sync.view("get_account", { account_id: "alice.testnet" })!.balance, "0");
   assert.throws(() => model.sync.change("register", {}), /already registered/);
 });

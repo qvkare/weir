@@ -66,6 +66,10 @@ export const CALLS: { readonly [M in PortChange]: { readonly gas: bigint; readon
   prune_result: { gas: 50n * TGAS, deposit: 0n },
 };
 
+/** What an agent's function-call key may call (SPEC section 15). Everything else either
+ * needs 1 yoctoNEAR (withdraw, set_guard, transfer_position) or is not an agent's business. */
+export const AGENT_KEY_METHODS = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"] as const satisfies readonly PortChange[];
+
 const VIEWS: { readonly [M in ViewMethod]: true } = {
   get_params: true,
   get_status: true,
