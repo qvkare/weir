@@ -1,6 +1,6 @@
 # Weir specification
 
-Version 0.5. This file is the source of truth. The NEAR contract (`contracts/weir`) and
+Version 0.6. This file is the source of truth. The NEAR contract (`contracts/weir`) and
 the TypeScript engine (`engine/`) are written from it independently and must agree
 on every number. Where code and this file differ, the code is wrong.
 
@@ -278,7 +278,8 @@ They are burned rather than shared so that nobody can profit from another accoun
 forfeit, and so that taking a slot in a round always costs something.
 
 `V*` is added to the series' `open_sets`, and the series' record of what its auctions
-traded gains `traded_units += V*` and `traded_value += V* * p*`. The contract stores a result for the round
+traded gains `traded_units += V*` and `traded_value += V* * p*`. That record is for
+readers (the average traded price of a series); no rule depends on it. The contract stores a result for the round
 (section 12) and deletes the round's book.
 
 Every matched LONG unit and SHORT unit together paid `p* + (band - p*) = band`, so
@@ -378,18 +379,19 @@ It first decides every undecided bucket of the delivery window that has reports
 - if `count >= min_prints`: `fixing = sum / count` (rounded down), `void = false`, and
   `long_payout = min(max(fixing - floor, 0), band)`;
 - else if `now >= delivery_end + void_after_secs`: the series is **void** and is
-  unwound at the average price its own auctions traded at:
-  `long_payout = traded_value / traded_units` (rounded down) if `traded_units > 0`,
-  otherwise `band / 2`; `fixing = floor + long_payout`; `void = true`;
+  cancelled at the centre of its band: `long_payout = band / 2`,
+  `fixing = floor + band / 2`, `void = true`;
 - else it panics with `not enough prints yet`.
 
 In every case `short_payout = band - long_payout`.
 
-A void series pays each side, on average, what that side paid in the auctions, so a
-series the index failed to price is undone and not decided by a stale number. It
-also means that stopping the index from printing cannot be turned into a payout: the
-most it does is cancel the hedge. Sets that were minted and never traded are split
-evenly when nothing was traded at all.
+A void series pays every LONG and every SHORT the same half of the band, whatever
+prints exist and whatever was traded. Nothing a trader does can move that number,
+and no partial set of prints can either. It is close to a refund when the auctions
+cleared near the centre of the band, which is where the index stood when the series
+opened; a participant who paid more than half the band for a side gets less than
+they paid back, and one who paid less gets more. Section 15 says who can cause a
+void.
 
 `redeem(series, account_id?)`. Anyone may call it for any account after settlement.
 It credits `long * long_payout + short * short_payout` to that account's free balance
@@ -510,8 +512,9 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
   doing that selectively it can shift a fixing by the difference between the
   average of all buckets and the average of those it lets through, as long as at
   least `min_prints` remain; by doing it more often it makes the series void, which
-  unwinds it at its auction prices (section 10) and so cancels the hedge without
-  paying the reporter anything. Every report carries the hash of the raw data
+  pays both sides half the band (section 10). A reporter who also trades can profit
+  from that when auction prices have moved away from the centre of the band, by
+  holding the side that cost less than half and then causing the void. Every report carries the hash of the raw data
   behind it, which is published so anyone can recompute it. Reporters cannot take
   funds. The remedy for all of this is more reporters run by independent parties,
   which this deployment does not have.
