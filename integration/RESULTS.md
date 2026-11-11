@@ -1,249 +1,214 @@
 # Integration results
 
-Run on 2026-11-12, Apple-silicon laptop, Node 22.23, near-sandbox 2.14.0 (protocol 88), the wasm
-built by `contracts/build.sh` from the tree as it is (`weir.wasm` sha256 `376ca8f1…05a5`,
-`mock_usdc.wasm` `2c1654c1…48a8`). Wall time 384 s: lifecycle 85 s, full book 34 s, keeper 263 s.
-The full record is `out/run.json`.
+Second run, specification 0.4, on 2026-11-12: Apple-silicon laptop, Node 22.23, near-sandbox
+2.14.0 (protocol 88), the wasm rebuilt by `contracts/build.sh` from the tree at commit
+`ceaec38`. Wall time 449 s: lifecycle 96 s, full book 37 s, keeper 314 s. The full record is
+`out/run.json`.
 
 ## Verdict
 
-**188 of 188 checks pass. The contract and the model agree on every return value, every event
-and every view; they disagree on the wording of 20 panic messages.** `e2e` exits 1 because of
-those 20 messages, as a parity difference must: nothing is waived.
+**238 of 239 checks pass. The contract and the model agree on everything: every return value,
+every event (byte for byte), every view, and now every refusal text.** The one failing check is
+a keeper finding (below, finding 1): with a second market, the single housekeeping key cannot
+reach the second contract. `e2e` therefore exits 1. With the keeper on `h100-fast` alone
+(`WEIR_E2E_SECOND=0`) the same run has no failure; see "One market" at the end.
 
-- 860 state changes were made through `ChainWeir` and replayed on `ModelWeir` at the block time
-  the contract ran them. 839 match exactly: same result (or same panic text) and the same
-  NEP-297 log lines, byte for byte. The other 21 calls were refused by both, in different words.
-- 1,504 view calls at 10 checkpoints (every view of SPEC section 12, including `get_results` and
-  `get_prints` over their limits, never-opened series, unknown accounts and `commit_hash`)
+- 995 state changes went through `ChainWeir` and were replayed on `ModelWeir` at the block time
+  the contract ran them: every one matches. That includes 60 refused calls, compared word for
+  word with no exceptions (52 distinct method and message pairs).
+- 1,542 view calls at 10 checkpoints (every view of section 12, `get_pending_prints` and
+  `get_print.state` included, limits exceeded, unknown series and accounts, pruned buckets)
   returned identical JSON from the contract and the model.
 
 ## What was proven
 
-1. **Lifecycle through the client** (`src/lifecycle.ts`, 147 checks). Fast preset with only
-   `usdc`, `reporters`, `t0` replaced (`get_params` returns exactly that). Token storage, faucet,
-   registration (fee charged, no more), `ft_transfer_call` deposits (including one for another
-   account), three reporters (quorum, the even-count median, a 25% move that needs all three, a
-   repeat report on a final print returning `false`), a series opening on the print (anchor
-   2.000, floor 1.700, band 0.600), six commits, a guard voiding a LONG at reveal, the clearing
-   price 0.310 at the smallest |D − S|, forfeits of unrevealed and under-locked commits (0.02),
-   mint and merge, ten prints in the delivery window, settlement (fixing 2.155, bonus 714 a side,
-   8 carried), a transfer after settlement, redemption by third parties, pruning, a full
-   withdrawal. Free balances, positions, `get_totals` and token balances asserted exactly at
-   every step; `get_totals` summed equals the contract's token balance at 7 points.
-2. **Parity**: above, and the table of messages below.
-3. **Errors**: every refusal the spec names is refused by the contract and thrown by `ChainWeir`
-   as an error carrying the contract's message: stale index (commit and mint), round is full,
-   not enough prints yet, nothing to redeem (twice), a missing or extra yoctoNEAR (`withdraw`,
-   `set_guard`, `transfer_position`, each with 0 and 2 yocto), an under-locked reveal, a
-   wrong-hash reveal, an unregistered account (commit, set_guard, transfer target, deposit
-   beneficiary, which keeps "0"). Plus 31 more: phases, double reveal/clear/settle/prune,
-   non-owner reveal, bad hash/salt/bundle/bucket, report windows, non-reporter, self-transfer,
-   a token that is not `usdc` (refunded in full, "0" kept), pending rounds at settlement.
-4. **Agent keys**: an account whose only key is a function-call key for Weir limited to
-   `AGENT_KEY_METHODS` (checked with `view_access_key_list`) committed, minted, merged, revealed,
-   cleared, settled the series and redeemed. Refusals, as `ChainWeir` surfaces them (an
-   `RpcError` thrown before any code runs):
-   - `withdraw`, `set_guard`, `transfer_position`, `register`, and `deposit` (to the token):
-     `INVALID_TRANSACTION … {"InvalidAccessKeyError":"DepositWithFunctionCall"}`. The client
-     attaches 1 yocto (or the fee), and the node checks that before the method name.
-   - `report`: `… {"InvalidAccessKeyError":{"MethodNameMismatch":{"method_name":"report"}}}`.
-5. **Gas**: table below.
-6. **Keeper and swarm**: below.
-7. **Concurrency**: ten calls fired at once through one client landed in nonce order (10 of 10,
-   consecutive nonces, seqs 0 to 9); two clients on one key, five calls each at once, got 5
-   `InvalidNonce` replies, retried, and landed 10 of 10 with no duplicate; twenty accounts at once,
-   20 of 20 in 0.39 s. Every call's effect was visible in a `final` view the moment it returned.
-   64 commits, 64 reveals and 16 redemptions were also sent concurrently, then replayed on the
-   model in the order the chain ran them.
-
-## Parity: the 20 messages that differ
-
-The contract's message is the `ERR_*` table in `contracts/README.md`; the model's is
-`engine/src/market.ts`. 23 other refusals have identical text in both (`index is stale`, `round
-is full`, `not enough prints yet`, `nothing to redeem`, `account is not registered`, …).
-
-| Method | Contract | Model (`market.ts` line) |
-|---|---|---|
-| `withdraw` | `free balance is too low` | `balance is too low` (300) |
-| `commit` | `free balance is too low` | `balance does not cover lock` (327) |
-| `commit` | `not in a commit phase` | `series is not in a commit phase` (325) |
-| `reveal` | `not in the reveal phase` | `round is not in its reveal phase` (371) |
-| `reveal` | `revealed values do not match the hash` | `revealed order does not match the hash` (378) |
-| `reveal` | `caller does not own this commit` | `commit belongs to another account` (367) |
-| `mint` | `sets must be above zero` | `sets must be at least 1` (454, via `count`) |
-| `merge` | `position is too small` | `not enough units to merge` (477) |
-| `transfer_position` | `position is too small` | `not enough units to transfer` (495) |
-| `transfer_position` | `cannot transfer a position to yourself` | `cannot transfer to yourself` (490) |
-| `transfer_position` | `long + short must be at least 1` | `nothing to transfer` (493) |
-| `transfer_position` | `account is not registered` | `receiver is not registered` (489) |
-| `report` | `bucket must be a multiple of print_interval_secs` | `bucket is not a multiple of print_interval_secs` (513) |
-| `report` | `outside the report window of this bucket` | `bucket is outside its report window` (515) |
-| `settle` | `the report window of the delivery has not closed` | `report window of the delivery is still open` (561) |
-| `settle` | `a round of the series is waiting to be cleared` | `series has rounds waiting to be cleared` (562) |
-| `settle` | `series is settled` | `series is already settled` (559, 769) |
-| `settle` (never-opened series) | `series not found` | `series is not open` (558, 768) |
-| `redeem` (never-opened series) | `series not found` | `series is not settled` (605: the model has no unknown-series check) |
-| `prune_result` | `result not found` | `no result for this round` (621) |
+1. **Lifecycle** (`src/lifecycle.ts`, 177 checks), fast preset with only `usdc`, `reporters`
+   and `t0` replaced. Exact free balances, positions, totals and token balances at every step;
+   `get_totals` equal to the contract's token balance at 7 points; at the end every dollar
+   deposited is free or burned (2,600,000,000 = 2,599,820,000 + 180,000).
+   - **Commit fee**: 0.02 taken with every commit (`get_round` shows it per commit); a lock
+     equal to the free balance is refused because the fee must fit too; the round's 6 fees
+     burned at clearing with the 0.02 of forfeits (`burned` 140,000), the agent's 2 later.
+   - **Void order keeps its fee**: Eve's LONG voided at reveal; her lock came back at once,
+     her 0.02 did not.
+   - **Guard fixed at commit**: Eve widened her guard from 0.005 to 0.05 after committing
+     (enough to pass at reveal); the order was still void, by the guard and reference recorded
+     at commit.
+   - **Round lock limit**: Bob's `max_round_lock` of 2.00, holding 1.50, a further 1.00 refused
+     with `over the round lock limit`; with a lock above his balance the balance is refused
+     first, the order section 6.2 gives.
+   - **Every way a bucket is decided**: by all three reporters (the two first reports return
+     `false`); two reports agreeing within 2% decided by `finalize_print` after the window
+     (mean 2.010; refused while open, refused twice, refused with no reports); two agreeing
+     decided by a later report (events `report`, then `print` of the earlier bucket); two 10%
+     apart decided by `finalize_print` as `NoPrint`; one report below quorum decided by a
+     later report as `no_print`; two pending buckets decided by `settle` (events `print`,
+     `print`, `settle`; `get_pending_prints` empty afterwards). Fixing 2.097 on 10 prints.
+   - **Pruning releases storage**: `prune_result` freed 234 bytes of the contract's storage,
+     `prune_print` 348 for a final print and some for a `NoPrint` one; pruned buckets read
+     null; the last print and the accumulator are unchanged. Refused too early, with no
+     reports, and on an undecided bucket.
+   - No bonus: payouts are `long_payout` and `short_payout` only.
+2. **Parity**: above.
+3. **Errors**: every refusal the spec names, as before (stale index, round is full, not enough
+   prints yet, nothing to redeem, a missing or extra yoctoNEAR, under-locked and wrong-hash
+   reveals, unregistered accounts), plus the new ones: `over the round lock limit`, `too many
+   sets`, `the report window of this bucket has not closed`, `bucket has no reports`, `bucket
+   is already decided`, `bucket is not decided`, `a print can be pruned two periods after its
+   bucket`.
+4. **Agent key**: an account whose only key holds `AGENT_KEY_METHODS` committed, minted,
+   merged, revealed, cleared, settled (deciding two buckets) and redeemed. Refused before any
+   code runs: `withdraw`, `set_guard` (with `max_round_lock`), `transfer_position`, `register`
+   and `deposit` with `DepositWithFunctionCall` (the client attaches 1 yocto or the fee);
+   `report`, `finalize_print`, `prune_print`, `prune_result` with `MethodNameMismatch`.
+5. **Full book** (`src/fullbook.ts`, 36 checks): 64 commits from 64 accounts; a 65th with an
+   equal lock refused (`round is full`); a larger one evicts the latest of the smallest, and the
+   `evict` event and the balance show **lock and fee returned**; 64 reveals, a clear of 64 fills
+   (25.68 Tgas) burning the 64 fees and nothing else. **The cap on sets**: minting exactly up to
+   the cap passes the cap check and stops at the balance; with 5.4e21 micro-dollars of test
+   money one account then minted 9,007,199,247,060,991 - 320 sets, `open_sets` reached the cap
+   (2^53 - 1 less 64 x 10,000 x 12), one more set was refused with `too many sets`, positions
+   stayed safe JSON integers, and the series still settled void and redeemed. Concurrency as
+   before. A series with no delivery prints: `not enough prints yet`, then void at floor +
+   band/2.
+6. **Keeper**: below.
+7. **Concurrency**: ten calls at once through one client landed in nonce order (consecutive
+   nonces, seqs 0 to 9); two clients on one key, five calls each: 5 `InvalidNonce` replies,
+   all retried, 10 of 10 landed, none twice; twenty accounts at once, 20 of 20 in 0.39 s.
 
 ## Gas
 
-Total gas burnt by the transaction and all its receipts, for every successful call this run
-made (Tgas). "Attached" is `CALLS` in `chain/src/weir.ts` and `TOKEN_CALLS` in
-`chain/src/token.ts`. No method has a margin under 2x; every one attaches more than 10x what it
-burns. The least gas that still works was found by bisection for the two calls that reserve
-static gas for further calls: `withdraw` needs 24 Tgas (it reserves 10 + 10), a deposit through
-the test token 14 Tgas. With 6 Tgas a deposit fails loudly (`Exceeded the prepaid gas.`), not
-as a silent "0".
+Total gas burnt by the transaction and all its receipts, every successful call of the run,
+against `GAS_TGAS` in `chain/src/weir.ts` (and `TOKEN_CALLS`). No margin is under 2x.
 
-| Method | Calls | Burnt min / median / max | Attached | Margin | Proposed |
+| Method | Calls | Burnt min / median / max (Tgas) | `GAS_TGAS` | Margin | Proposal |
 |---|---|---|---|---|---|
-| `clear`, 64 commits from 64 accounts, all filled | 1 | 25.50 | 300 | 11.8x | |
-| `clear`, keeper's books (6 to 9 commits) | 25 | 4.17 / 4.57 / 4.92 | 300 | 61x | |
-| `clear`, lifecycle books | 2 | 2.96 / 3.65 | 300 | 82x | |
-| `clear`, 40 unrevealed commits | 1 | 6.98 | 300 | 43x | |
-| `clear` (any book) | | | 300 | | **150** |
-| `commit` | 274 | 2.59 / 2.67 / 3.60 | 50 | 13.9x | **10** |
-| `reveal` | 231 | 2.47 / 2.54 / 3.33 | 50 | 15.0x | **10** |
-| `report` | 79 | 2.22 / 2.29 / 2.73 | 50 | 18.3x | **10** |
-| `redeem` | 27 | 2.48 / 2.49 / 2.52 | 50 | 19.8x | **10** |
-| `mint`, `merge` | 2 + 2 | 2.60 to 2.65 | 50 | 19x | **10** |
-| `transfer_position` | 1 | 2.49 | 50 | 20.1x | **10** |
-| `prune_result` | 1 | 2.24 | 50 | 22.3x | **10** |
-| `settle` | 3 | 2.32 / 2.32 / 2.33 | 100 | 42.9x | **10** |
-| `register` | 76 | 2.19 / 2.20 / 2.23 | 30 | 13.5x | **10** |
-| `set_guard` | 1 | 2.23 | 30 | 13.4x | **10** |
-| `withdraw` | 1 | 6.74 (needs 24) | 100 | 14.8x | **50** |
-| `deposit` (`ft_transfer_call`) | 78 | 6.60 / 6.61 / 6.85 (needs 14 on the test token) | 100 | 14.6x | **100, unchanged** |
-| token `storage_deposit` | 9 | 1.91 / 1.94 / 1.95 | 30 | 15.4x | **10** |
-| token `mint` | 16 | 2.01 / 2.03 / 2.04 | 30 | 14.7x | **10** |
+| `commit` | 296 | 2.77 / 2.96 / **4.11** (an evicting commit into a full round) | 10 | 2.44x | **15** |
+| `reveal` | 249 | 2.41 / 2.51 / 3.50 | 10 | 2.86x | 10 |
+| `clear`, 64 commits, all filled | 1 | 25.68 | 150 | 5.84x | 150 |
+| `clear`, keeper's books | 27 | 3.42 / 4.66 / 5.05 | 150 | 29.7x | 150 (sized for 128) |
+| `clear`, 40 unrevealed commits | 1 | 7.10 | 150 | 21x | |
+| `report`, deciding a bucket | 39 | 2.53 / 2.74 / 2.89 | 10 | 3.46x | 10 |
+| `report`, not deciding | 87 | 2.24 / 2.31 / 2.34 | 10 | 4.27x | 10 |
+| `finalize_print` | 3 | 2.26 / 2.46 / 2.61 | 10 | 3.84x | 10 |
+| `settle`, deciding 2 pending buckets | 1 | 3.12 | 100 | 32x | **15** |
+| `settle`, nothing pending | 2 | 2.32 / 2.35 | 100 | 42.6x | |
+| `prune_print` | 6 | 2.22 / 2.43 / 2.43 | 10 | 4.12x | 10 |
+| `prune_result` | 13 | 2.30 / 2.34 / 2.34 | 10 | 4.27x | 10 |
+| `mint`, `merge` | 3 + 2 | 2.61 to 2.70 | 10 | 3.7x | 10 |
+| `redeem` | 28 | 2.49 / 2.50 / 2.54 | 10 | 3.93x | 10 |
+| `register` | 79 | 2.20 / 2.21 / 2.25 | 10 | 4.45x | 10 |
+| `set_guard` | 3 | 2.25 / 2.26 / 2.26 | 10 | 4.43x | 10 |
+| `transfer_position` | 1 | 2.50 | 10 | 4.0x | 10 |
+| `withdraw` | 1 | 6.77 (needs 24, bisected) | 50 | 7.4x | 50 |
+| `deposit` (`ft_transfer_call`) | 82 | 6.62 / 6.62 / 6.86 (needs 14 on the test token) | 100 | 14.6x | 100 (real USDC unmeasured) |
+| token `storage_deposit`, `mint` | 10, 17 | 1.91 to 2.05 | 10 | 4.9x | 10 |
 
-Reasons for the proposals: 10 Tgas is at least 2.7x every simple method's worst case. `clear`
-grows with the book: 25.5 Tgas at 64 commits here, 51.25 at 128 in the contract's own sandbox
-test, and 128 is the most `max_commits` allows, so 150 covers any deployment with 2.9x. `withdraw`
-at 50 is twice its floor. The deposit stays at 100 because the gas the official testnet USDC
-needs for `ft_transfer_call` is not something the test token can tell us.
+`commit` is the one figure to raise: an evicting commit scans the round for its smallest lock,
+and at 64 commits that already burns 4.11 Tgas; at the 128 the contract allows it will burn more
+(not measured here), and 10 would fall below 2x. `settle` deciding buckets costs about 0.4 Tgas
+a bucket over the 2.3 base, and `contracts/README.md` bounds what it can meet at about 6, so 15
+covers it with room; 100 is 32x. Allowances are charged about the gas burnt (the housekeeping
+key: 0.016 NEAR for the series; the busiest agent 0.027), so the high figures cost nothing but
+headroom.
 
-What over-attaching costs: measured here, a function-call key's allowance is charged about the
-gas actually burnt (the first agent's key: 79 transactions, 257.7 Tgas burnt, 0.0240 NEAR of
-allowance used, against 10,250 Tgas attached), so the generous figures do not drain agents'
-allowances. A key must still hold at least the attached gas's price at submission (0.03 NEAR for
-a 300 Tgas `clear` at the minimum gas price).
+## Keeper
 
-## Keeper and swarm
-
-`runTick` from `keeper/` with its own `nearChain` (so its own `ChainWeir`, `NearAccount` and
-metered fetch), default budget of 40 requests, an in-memory store, a lease clock that follows
-chain time, three reporters, six agents (two buyers, two sellers, a maker, a noise trader) whose
-only keys are function-call keys, and a fetch that serves `index/test/fixtures/` for the six
-sources and refuses anything but the sandbox (nothing else was asked for). Three ticks per
-five-minute round (20, 110 and 200 s in) from series 0's auction opening to its settlement and
-redemption: 78 ticks, 406 transactions, every one also made on the model with no difference.
+`runTick` from `keeper/` (commit `01f30a7`), its own `nearChain`, default budget 40, an
+in-memory store, a lease clock following chain time. Market `h100-fast` from `MARKETS` (its
+parameters checked equal to the preset), three reporters with `REPORTER_KEY_METHODS` keys, six
+agents (two buyers, two sellers, a maker, a noise trader) whose only key holds
+`AGENT_KEY_METHODS`, a housekeeping account whose only key holds `KEEPER_KEY_METHODS`, a fetch
+serving the index package's per-chip fixtures and refusing everything else (nothing else was
+asked for). Three ticks per five-minute round from series 0's auction opening to two periods
+after it, 84 ticks, 509 transactions, every fast-market transaction replayed on the model with
+no difference.
 
 | | |
 |---|---|
-| Prints | final in all 25 buckets from the auction's opening to delivery end (52 reports) |
-| Rounds of series 0 | 12 of 12 cleared, 12 traded, 306 GPU-hours; every commit revealed; zero forfeits |
-| Settlement | normal (12 prints, fixing 2.760), settled by the first agent's function-call key |
-| Redemption | all six agents, series 0 positions zero afterwards |
+| Prints | final in all 25 buckets from the auction's opening to delivery end, all 12 delivery buckets counted |
+| Missing reporter | the third reporter left out for one bucket: two reports, decided by the housekeeping account's `finalize_print` once the window closed |
+| Rounds of series 0 | 12 of 12 cleared, zero forfeits, every commit revealed |
+| Settlement | normal, 12 prints, fixing 2.900 (the fixtures' H100 index), settled by the housekeeping key |
+| Redemption | all six agents, positions zero |
+| Fees | `burned` (3,360,000) equals the fees of every cleared round, equals the keeper's own cost report (fees + forfeits), and with the fees still held in open rounds equals 0.02 x the 175 agent commits |
+| Pruning | 12 `prune_result` (each freed 239 to 440 bytes) and 4 `prune_print` (348 bytes each), every one releasing contract storage |
 | Books | `get_totals` equals the contract's token balance and the agents' deposits |
-| RPC calls per tick | median 17, 90th percentile 34, max 40 (the budget); 1,745 in all, plus 156 source fetches |
-| Wall time per tick | median 2.6 s, 90th percentile 3.0 s, max 3.3 s (the twin's own replay: 23 ms a tick) |
-| Budget | 27 of 78 ticks left work for the next tick (commits, or redemption), all done within the round |
-| Store writes | 599 |
-| Allowance used per agent | 0.006 to 0.024 NEAR for the series |
+| RPC calls per tick | median 27, 90th percentile 34, max 40 (the budget) in 31 of 84 ticks; 2,187 in all, plus 186 source fetches |
+| Wall time per tick | median 2.9 s, 90th percentile 3.0 s, max 4.5 s, at about 0.3 s per transaction |
 
-The wall times are for sandbox blocks of 0.06 s (about 0.3 s per transaction, waited to
-`FINAL`). On testnet a transaction takes about 2 to 3 s to be final, so the busiest tick (8
-transactions) would take some 20 to 25 s: inside the minute, not inside a few seconds.
+**Two markets sharing the budget.** For the first 90 minutes an `h200-weekly` market (another
+chip, its own three reporters and three agents, the same keeper) ran alongside: 64 ticks spent
+the one budget on both (for example 23 requests for `h100-fast`, 10 for `h200-weekly`, 7 for the
+index), the weekly market acted on its own minute, got H200 prints from its chip's bundle, and
+its agents committed and revealed. Its rounds were never cleared: finding 1.
 
 ## Findings
 
-1. **Panic messages: spec ambiguity, fixed in the engine.** (Evidence: the 20 rows above, 21
-   calls.) SPEC 0.3 quotes only a few messages (`index is stale`, `round is full`, `not enough
-   prints yet`, `nothing to redeem`) and the two implementations, written independently, chose
-   their own words for the rest. Both are faithful to the spec; neither is wrong by it. But
-   `chain/README.md` promises that `CallFailed` carries "the same text `ModelWeir` throws", and
-   code matches on these texts (finding 2), so they must be one set. Suggested fix: take the
-   contract's `ERR_*` table (it is deployed code, documented in `contracts/README.md`), add it
-   to the spec as the normative list, and change the 19 strings in `engine/src/market.ts` listed
-   above to the contract's, plus a `series not found` check at the top of `redeem` (and of
-   `pruneResult`) before `series is not settled`. Then this run has no differences.
-2. **Keeper: a settle race on chain is logged as a failure. Classification: keeper.**
-   `keeper/src/keeper.ts`, `const ALREADY = /commit is already revealed|round is already
-   cleared|series is already settled/`, written against the model's text; the contract says
-   `series is settled`. When another caller settles between the keeper's read and its
-   transaction, the keeper counts an error instead of "done by another caller first". Not
-   triggered in this run (the race needs a second settler); the evidence is the contract's
-   message, measured above. Patch: `/commit is already revealed|round is already cleared|series
-   is (already )?settled/`. The other texts the keeper and swarm match (`already reported`,
-   `nothing to redeem`) are the same on chain.
-3. **Chain client gas table: every figure is more than 10x the gas used. Classification: chain
-   client.** Not dangerous (allowances are charged on gas burnt), but the table's comment calls
-   the figures guesses to be replaced by measurements; the proposed column is that measurement.
-4. **Chain client: function-call-key refusals are `RpcError`, not `CallFailed`, and read
-   `DepositWithFunctionCall`. Classification: chain client, documentation.** Because `ChainWeir`
-   always attaches the 1 yoctoNEAR, the node refuses the transaction for the deposit before it
-   looks at the method name; the Rust test's `MethodNameMismatch` appears only without a deposit.
-   The error is clear and nothing is sent, but code that tells a contract refusal (`CallFailed`)
-   from a node refusal (`RpcError`) should know this; worth a line in `chain/README.md`.
-5. **Keeper README is behind the spec. Classification: keeper, documentation.** It says SPEC
-   section 15 limits an agent key to six methods without `settle` and that the first agent's key
-   "must also allow settle". SPEC 0.3 and `AGENT_KEY_METHODS` include `settle`; the test settled
-   with exactly those seven.
-6. **`NearAccount` retries `InvalidNonce` once.** Two writers on one key were fine (5 collisions,
-   all retried). Three or more concurrent writers could exhaust the single retry; the call then
-   fails with a clear `InvalidNonce` error, never silently. Not tested with more than two; the
-   keeper's lease is meant to keep it at one.
-7. **Sandbox only: block production stalls at an epoch boundary.** With
-   `max_block_production_delay` raised (to make fast-forwarding cheap), near-sandbox 2.14.0
-   stopped producing blocks at the first block of an epoch after a few fast-forwards, twice
-   (heights 361 and 2,041, epoch length 60). A one-million-block epoch avoids it. Test harness
-   only; no effect on Weir.
+1. **Keeper: one housekeeping key cannot serve two markets. Classification: keeper.**
+   Evidence: with `KEEPER` set, the keeper signs `clear`, `settle`, `finalize_print` and the
+   prunes for every market with that one account. A function-call key names one receiver, so a
+   key holding `KEEPER_KEY_METHODS` for `weir-h100-fast` is refused on `weir-h200-weekly`:
+   `INVALID_TRANSACTION … {"ReceiverMismatch":{"ak_receiver":"weir-h100-fast.test.near",
+   "tx_receiver":"weir-h200-weekly.test.near"}}`, 7 times (every turn after the round ended,
+   2 requests each), and the weekly market's round was never cleared or settled. The README asks
+   for "a function-call key for `KEEPER_KEY_METHODS` on each market's contract", which one
+   secret key cannot be. The same holds for an agent configured for several markets (the
+   default of `markets` is all of them): its one key reaches one contract. Not run here; the
+   agents were given one market each. Suggested fix: let `KEEPER` (and each agent) name its
+   markets, or take one entry per market (`{ "h100-fast": {account_id, secret_key}, … }`), use
+   the housekeeper only where its key's receiver is the market's contract, and fall back to the
+   first agent and first reporter elsewhere, as without `KEEPER`; and treat
+   `ReceiverMismatch` as a configuration error logged once, not retried every turn.
+2. **Chain client gas: `commit` at 2.44x. Classification: chain client.** Measured above;
+   propose 15 Tgas. `settle` at 100 is 32x what deciding two buckets costs; propose 15.
+3. **Sandbox only:** the epoch-boundary stall of the first run still applies to the harness's
+   settings and is still avoided with a one-million-block epoch.
 
-No contract bug was found: no result, balance, event or view differs from the model, the
-invariants held at every check, and the full round clears in 25.5 Tgas.
+No contract, engine or agents finding: no result, event, view or refusal differs, every
+invariant checked held, and the audit's rules (fee, burn, guard at commit, round lock, the cap,
+the index rules, pruning) behave on chain as the spec says.
+
+The first run's findings are closed: refusal texts are identical (the engine now uses the
+contract's `ERR` table); the keeper's "already settled" pattern and README were fixed by its
+agent (not exercised here: no other caller settled first); `GAS_TGAS` follows the measurements;
+`NearAccount` retries `InvalidNonce` three times (two writers: 5 collisions, all retried).
 
 ## Changes made in `chain/`
 
-- `src/tx.ts`: `AnyTransaction` and `SetupAction` (create account, deploy contract, transfer, add
-  a full-access or function-call key) and their borsh encoding; `encodeTransaction`,
-  `encodeSignedTransaction` and `signTransaction` accept them. `Transaction` (function calls
-  only) is unchanged, so nothing that uses it changes.
-- `test/tx_actions.test.ts`: 200 random transactions mixing every setup action with function
-  calls, encoded and signed byte-identically to `@near-js/transactions` 2.5.1; out-of-range
-  deposit, allowance and key length refused.
-- `README.md`: the two additions above, and a pointer here.
-
-No bug in `chain/` was exposed: `ChainWeir`, `Token`, `NearRpc` and `NearAccount` worked
-unchanged for every call, including the keeper's.
+None in this run. (First run: `AnyTransaction` and the setup actions in `src/tx.ts`, with
+`test/tx_actions.test.ts` against `@near-js`.)
 
 ## What the sandbox cannot tell us about testnet
 
-- **Latency.** Sandbox transactions were final in about 0.3 s; testnet takes seconds, and the
-  `send_tx` timeout-then-poll path was never exercised here.
-- **Rate limits and failover.** One local node, never busy: no HTTP 429, 5xx or node timeouts,
-  so `NearRpc` failover and the keeper's charging of retries were not tested. The keeper made up
-  to 40 requests a tick (median 17), roughly 1,000 to 1,300 an hour at one tick a minute for
-  the fast market, which public RPC limits have to allow.
-- **Real accounts.** Here `test.near` created every account and paid every fee. On testnet the
-  agents, reporters and the contract need funded accounts (faucet), the registration fee, and
-  function-call keys added by their owners.
-- **The official token.** Every deposit here went through `mock_usdc` with its open `mint`. Real
-  testnet USDC has no faucet `mint`, may require a different storage deposit, and its
-  `ft_transfer_call` gas needs are unknown: the 100 Tgas deposit figure is unverified against it.
-- **Gas price and protocol.** Gas price stayed at the minimum and the protocol is 88 as in this
-  binary; allowance charging was measured only here.
-- **Live index sources.** The keeper read saved fixtures; real responses, failures and their
-  effect on reporting were not exercised.
-- **Cloudflare.** The keeper ran in Node, not as a Worker: no CPU limit, KV or cron timing.
+Latency (transactions here were final in about 0.3 s; testnet takes seconds, so a 7-transaction
+tick takes 15 to 25 s, and the `send_tx` timeout path was never taken); RPC rate limits and
+failover (one quiet local node; the keeper asks up to 40 requests a minute); real accounts and
+funding (here `test.near` paid for everything); the official USDC (no `mint`; its
+`ft_transfer_call` gas and storage are unmeasured); gas price movements; live index sources;
+Cloudflare's CPU, KV and cron behaviour.
 
 ## Not done
 
-- `pnpm --filter @weir/integration run e2e` does not work yet: `integration` must be added to
-  the root `pnpm-workspace.yaml` (a root file I was not to change). `node integration/src/e2e.ts`
-  and `pnpm --dir integration run e2e` work now.
-- The weekly preset was not run; nor more than 32 live series (`get_status`'s limit); nor
-  `withdraw_failed` through the client (the contract's own sandbox test covers it).
-- No minimal-gas bisection for `clear` at 128 commits on this run; the 51.25 Tgas figure comes
-  from `contracts/README.md`.
+- `commit` and `settle` gas at their worst cases (128 commits; six pending buckets) were not
+  measured: the fast preset holds 64 commits and the run left at most two buckets for `settle`.
+- The weekly preset was not run through a whole series; the second market ran 90 minutes.
+- An agent configured for two markets with one key (finding 1) was reasoned, not run.
+
+## One market
+
+`WEIR_E2E_SECOND=0` runs the keeper on `h100-fast` alone; everything else is identical.
+That run, right after the two-market one: **235 of 235 checks passed, `e2e` exited 0**, 977
+calls and 1,542 views compared with no difference, the keeper 84 ticks and 490 transactions with
+no failed entry, 436 s in all. `out/run.json` keeps the two-market run.
+
+## First run, specification 0.3
+
+2026-11-12, 384 s: 188 of 188 checks passed; 860 calls and 1,504 views compared, results,
+events and views identical; 20 refusal texts differed (engine against contract, since made one
+table, spec section 16). Findings then: the refusal texts (spec ambiguity), the keeper's
+`series is already settled` pattern, every gas figure over 10x (the table was then set from the
+measurements), function-call-key refusals arriving as `RpcError`, the keeper README behind the
+spec on `settle`, `NearAccount` retrying a nonce only once, and the sandbox's epoch stall. The
+keeper ran one fast series in 78 ticks (406 transactions, RPC calls per tick median 17, max 40;
+median 2.6 s a tick); `clear` of a full 64-commit round burned 25.5 Tgas.

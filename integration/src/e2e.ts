@@ -38,7 +38,7 @@ try {
   // The reporters of the lifecycle serve the other deployments too.
   const reporters = await Promise.all(["rep-x", "rep-y", "rep-z"].map((n) => w.root.createAccount(n)));
   await run("full-book", () => fullBook(w, reporters));
-  await run("swarm", () => swarm(w, reporters));
+  await run("swarm", () => swarm(w, reporters, { second: process.env.WEIR_E2E_SECOND !== "0" }));
 } catch (e) {
   fatal = e instanceof Error ? (e.stack ?? e.message) : String(e);
   console.error(fatal);
@@ -54,11 +54,19 @@ function countBy(xs: string[]): Record<string, number> {
 
 /** Clears are told apart by how full their book was. */
 function tagOf(r: { method: string; scenario: string; args: unknown; chain: { events: string[] } }): string | null {
+  if (r.method === "settle") {
+    const decided = r.chain.events.filter((e) => /"event":"(print|no_print)"/.test(e)).length;
+    return decided > 0 ? `deciding ${decided} pending bucket${decided > 1 ? "s" : ""}` : "nothing pending";
+  }
+  if (r.method === "report") {
+    const decided = r.chain.events.filter((e) => /"event":"(print|no_print)"/.test(e)).length;
+    return decided > 0 ? "deciding" : "not deciding";
+  }
   if (r.method !== "clear") return null;
   const round = (r.args as { round: number }).round;
   if (r.scenario === "full-book" && round === 0) return "64 commits, all filled";
   if (r.scenario === "full-book") return "unrevealed commits only";
-  return r.scenario === "swarm" ? "swarm books" : "lifecycle books";
+  return r.scenario.startsWith("swarm") ? "keeper books" : "lifecycle books";
 }
 
 const w = world;

@@ -103,7 +103,7 @@ export class World {
    * a storage record at the token so it can receive dollars. */
   async deployWeir(name: string, params: WireParams): Promise<{ id: string; signer: Signer }> {
     const signer = await this.root.createAccount(name, { balance: 30n * NEAR, code: this.wasm.weir.bytes, init: { method: "new", args: { params } } });
-    this.tokenOk("storage_deposit", await this.token.storageDeposit(this.root.near(), signer.accountId), 30n * 10n ** 12n);
+    this.tokenOk("storage_deposit", await this.token.storageDeposit(this.root.near(), signer.accountId), 10n * 10n ** 12n);
     return { id: signer.accountId, signer };
   }
 
@@ -118,7 +118,7 @@ export class World {
 
   /** Mints test dollars to `who` with the token's faucet. */
   async mint(signer: NearAccount, accountId: string, amount: bigint): Promise<void> {
-    this.tokenOk("mint", await this.token.mint(signer, accountId, amount.toString()), 30n * 10n ** 12n);
+    this.tokenOk("mint", await this.token.mint(signer, accountId, amount.toString()), 10n * 10n ** 12n);
   }
 
   async usdcBalance(accountId: string): Promise<bigint> {
@@ -128,7 +128,7 @@ export class World {
   /** Invariant 1 against the token's own ledger: the contract holds exactly what it owes. */
   async booksBalance(name: string, contractId: string): Promise<void> {
     const t = await new ChainWeir({ rpc: this.sandbox.rpc, contractId }).get_totals({});
-    const owed = [t.free, t.locked, t.sets_backing, t.pools, t.unredeemed].reduce((s, x) => s + BigInt(x), 0n);
+    const owed = [t.free, t.locked, t.sets_backing, t.unredeemed, t.burned].reduce((s, x) => s + BigInt(x), 0n);
     this.eq(`${name}: get_totals adds up to the contract's token balance`, owed, await this.usdcBalance(contractId));
   }
 }

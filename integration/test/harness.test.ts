@@ -65,11 +65,13 @@ test("the gas table flags margins under 2x and over 10x", () => {
     n: 0, scenario: "unit", account: "a", method, args: {}, model: null, same: true,
     chain: side({ gas_burnt: tgas * 1e12, receipts: [{ executor: "weir.test", gas_burnt: tgas * 0.8e12 }] }),
   });
-  const rows = gasTable([call("commit", 2), call("commit", 4), call("clear", 200), call("settle", 20)], [], () => null);
+  // Attached (GAS_TGAS): commit 10, redeem 10, clear 150, settle 100.
+  const rows = gasTable([call("commit", 2), call("commit", 4), call("redeem", 0.5), call("clear", 200), call("settle", 20)], [], () => null);
   const by = Object.fromEntries(rows.map((r) => [r.method, r]));
   assert.equal(by.commit!.max_tgas, 4);
-  assert.equal(by.commit!.margin, 12.5);
-  assert.equal(by.commit!.flag, "over 10x");
+  assert.equal(by.commit!.margin, 2.5);
+  assert.equal(by.commit!.flag, "");
+  assert.equal(by.redeem!.flag, "over 10x");
   assert.equal(by.clear!.flag, "margin under 2x");
   assert.equal(by.settle!.flag, "");
   assert.equal(by.commit!.proposed_tgas, 10);

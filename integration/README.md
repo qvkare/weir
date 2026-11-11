@@ -1,6 +1,6 @@
 # @weir/integration
 
-The end-to-end test of Weir on a local NEAR sandbox node: the real `weir.wasm` and
+The end-to-end test of Weir (specification 0.4) on a local NEAR sandbox node: the real `weir.wasm` and
 `mock_usdc.wasm`, the TypeScript chain client (`ChainWeir`, `Token`), the trading agents and
 the keeper, with the engine's `ModelWeir` run alongside and compared call by call. Nothing
 here touches testnet or mainnet: no account, key or transaction leaves the machine.
@@ -20,17 +20,17 @@ The machine-readable record of a run goes to `out/run.json` (git-ignored).
 ```sh
 contracts/build.sh
 cargo test --manifest-path contracts/Cargo.toml -p weir --test sandbox   # once, downloads the sandbox binary
-pnpm --filter @weir/integration run e2e      # see "Workspace" below
+pnpm --filter @weir/integration run e2e      # everything
 node integration/src/e2e.ts                  # the same, without pnpm
 WEIR_E2E_ONLY=lifecycle node integration/src/e2e.ts   # one scenario: lifecycle, full-book, swarm
+WEIR_E2E_SECOND=0 node integration/src/e2e.ts         # the keeper with the h100-fast market only
 WEIR_E2E_VERBOSE=1 node integration/src/e2e.ts        # prints every keeper tick
 pnpm --dir integration test                  # offline tests of the harness itself
 ```
 
-A full run takes about six and a half minutes on an Apple-silicon laptop (lifecycle 85 s, full
-book 35 s, the keeper's series 265 s). It exits non-zero if any check fails or the contract and
-the model differ anywhere, including in the wording of a panic message: as of the last run it
-exits 1 for that reason alone (see `RESULTS.md`).
+A full run takes about seven and a half minutes on an Apple-silicon laptop (lifecycle 100 s,
+full book 37 s, the keeper 320 s). It exits non-zero if any check fails or the contract and the
+model differ anywhere, refusal texts included. See `RESULTS.md` for the last run's outcome.
 
 ## How it works
 
@@ -54,16 +54,19 @@ exits 1 for that reason alone (see `RESULTS.md`).
   or panic message and the NEP-297 events the contract logged against the model's `eventLog`
   output. Concurrent calls are replayed on the model in the order the chain ran them.
   `checkpoint` compares every view of SPEC section 12 (about 90 to 130 per checkpoint).
-- Scenarios: `src/lifecycle.ts` (whole life with exact balances, every refusal, the
-  function-call-key agent, minimal gas of the cross-contract calls), `src/fullbook.ts` (a round
-  at `max_commits`, eviction, the fullest clear, nonces under concurrency, a void settlement),
-  `src/swarm.ts` (the keeper's `runTick` with its own `nearChain` for a whole fast series).
+- Scenarios: `src/lifecycle.ts` (whole life with exact balances; commit fees, the round lock
+  limit, a guard changed after commit; every way a bucket is decided: all three reporters,
+  `finalize_print`, a later report, disagreement, below quorum, `settle`; `prune_result` and
+  `prune_print` with the contract's storage read before and after; every refusal; the
+  function-call-key agent; minimal gas of the cross-contract calls), `src/fullbook.ts` (a round
+  at `max_commits`, eviction returning lock and fee, the fullest clear, the cap on sets reached
+  with real test money, nonces under concurrency, a void settlement), `src/swarm.ts` (the
+  keeper's `runTick` with its own `nearChain` for a whole `h100-fast` series: three reporters,
+  six agents, a housekeeping account, one bucket with a reporter missing; and, for the first
+  hour and a half, an `h200-weekly` market alongside).
   `src/gas.ts` builds the gas table from every outcome.
 
 ## Workspace
 
-`pnpm --filter @weir/integration run e2e` needs `integration` listed in the root
-`pnpm-workspace.yaml`, a root file this package was not allowed to change. Add the line
-`  - integration` there; until then use `node integration/src/e2e.ts` or
-`pnpm --dir integration run e2e`. The sources import the other packages by relative path
-(`../../chain/src/mod.ts`), so no install is needed either way.
+`integration` is listed in the root `pnpm-workspace.yaml`. The sources import the other
+packages by relative path (`../../chain/src/mod.ts`), so no install is needed.

@@ -55,7 +55,10 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   const open = auctionOpen(tp, 0);
   await w.sandbox.warpTo(open + 2);
   const reps = reporters.map((r) => twin.port(r.near()));
-  for (const r of reps) if (await r.call("report", { bucket: open, price: 2_000_000, bundle: BUNDLE })) break;
+  // All three report, so the opening print is decided at once.
+  for (const r of reps) await r.call("report", { bucket: open, price: 2_000_000, bundle: BUNDLE });
+  w.eq("the opening print is final", (await view.get_print({ bucket: open }))?.state, "Final");
+  const FEE = BigInt(params.commit_fee);
   const round = 0;
   const order = (i: number): { side: Side; price: number } => (i % 2 === 0 ? { side: "Long", price: 310_000 } : { side: "Short", price: 290_000 });
   const hash = (t: Signer, r: number, side: Side, size: number, price: number) => commitHash({ series: 0, round: r, accountId: t.accountId, side, size, price, salt: SALT });
@@ -79,7 +82,8 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   const evictOrder = order(evictedIndex);
   const evictRecord = twin.replay(await evictor.send("commit", { series: 0, hash: hash(traders[evictorIndex]!, round, evictOrder.side, 10, evictOrder.price), lock: "3200000" }));
   w.eq("a larger lock evicts the latest of the smallest", evictRecord.chain.events.map((e) => JSON.parse(e.slice(11)).event), ["evict", "commit"]);
-  w.eq("the evicted account has its lock back", (await view.get_account({ account_id: evicted }))?.balance, (20n * DOLLAR).toString());
+  w.eq("the evict event returns lock and fee", JSON.parse(evictRecord.chain.events[0]!.slice(11)).data.fee, FEE.toString());
+  w.eq("the evicted account has its lock and its fee back", (await view.get_account({ account_id: evicted }))?.balance, (20n * DOLLAR).toString());
   w.eq("the round still holds 64 commits", (await view.get_round({ series: 0, round }))?.commits.length, N);
   await twin.checkpoint("full book committed", { tp, series: [0], accounts: traders.map((t) => t.accountId) });
 
@@ -105,7 +109,8 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   w.eq("full book: volume 320 and 64 fills", result && [result.volume, result.fills.length, result.fills.every((f) => f.filled === 10)], [320, 64, true]);
   const clearTgas = (clear.chain.gas_burnt ?? 0) / 1e12;
   w.check("full book: clear fits in 300 Tgas with room", clear.chain.ok && clearTgas < 150, { tgas: clearTgas });
-  (clear as Pending & { tag?: string }).tag = "full";
+  w.eq("full book: the 64 fees are burned, nothing forfeited", result && [result.fees, result.forfeited], [(64n * FEE).toString(), "0"]);
+  w.eq("burned after the full clear", (await view.get_totals({})).burned, (64n * FEE).toString());
   await w.booksBalance("after the full clear", weir);
   await twin.checkpoint("full book cleared", { tp, series: [0], accounts: traders.map((t) => t.accountId) });
 
@@ -163,19 +168,37 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   w.eq("round 1 holds exactly the commits that resolved", book2?.commits.length, burstOk.length + okCount + 20);
   w.eq("round 1 seqs are 0..n-1 with no gap", book2?.commits.map((c) => c.seq), Array.from({ length: book2?.commits.length ?? 0 }, (_, i) => i));
 
+  // Section 8: the cap on sets. The cap is 2^53 - 1 less what the series' auctions can still
+  // add; a whale mints right up to it (5.4e15 dollars of test money), one more set is refused.
+  const rounds = Math.floor((params.lead_secs - params.cutoff_secs) / (params.commit_secs + params.reveal_secs));
+  const cap = Number.MAX_SAFE_INTEGER - params.max_order_size * params.max_commits * rounds;
+  const openSets = (await view.get_series({ series: 0 }))!.open_sets;
+  const whaleSets = cap - openSets;
+  const band = BigInt((await view.get_series({ series: 0 }))!.band);
+  const whale = ports[40]!;
+  await w.rejects("mint up to the cap passes the cap check and stops at the balance", () => whale.call("mint", { series: 0, sets: whaleSets }), /^mint by .* free balance is too low$/);
+  const whaleCost = BigInt(whaleSets) * band;
+  await w.mint(funders[0]!.near(), funders[0]!.accountId, whaleCost);
+  await twin.port(funders[0]!.near()).call("deposit", { amount: whaleCost.toString(), msg: traders[40]!.accountId });
+  await whale.call("mint", { series: 0, sets: whaleSets });
+  w.eq("open_sets is at the cap", (await view.get_series({ series: 0 }))?.open_sets, cap);
+  await w.rejects("one set past the cap: too many sets", () => whale.call("mint", { series: 0, sets: 1 }), /^mint by .* too many sets$/);
+  w.check("every unit count is still a safe JSON integer", Number.isSafeInteger((await view.get_position({ series: 0, account_id: traders[40]!.accountId })).long));
+
   // Scenario 3: these commits are never revealed, so the series cannot settle until they are
   // cleared; and with no prints in the delivery window, it settles only as void.
   await w.sandbox.warpTo(deliveryEnd(tp, 0) + params.report_grace_secs + 1);
   await w.rejects("settle with a round waiting to be cleared is refused", () => ports[0]!.call("settle", { series: 0 }), /waiting to be cleared/);
   await ports[0]!.call("clear", { series: 0, round: r1 });
   const r1Result = await view.get_result({ series: 0, round: r1 });
-  w.eq("round 1 forfeits 1% of every unrevealed lock", r1Result?.forfeited, ((BigInt(book2?.commits.length ?? 0) * 1_000_000n * 100n) / 10_000n).toString());
+  const n1 = BigInt(book2?.commits.length ?? 0);
+  w.eq("round 1 burns 1% of every unrevealed lock and every fee", r1Result && [r1Result.forfeited, r1Result.fees], [((n1 * 1_000_000n * 100n) / 10_000n).toString(), (n1 * FEE).toString()]);
   await w.rejects("settle with too few prints: not enough prints yet", () => ports[0]!.call("settle", { series: 0 }), /not enough prints yet/);
   await w.sandbox.warpTo(deliveryEnd(tp, 0) + params.void_after_secs + 1);
   await ports[0]!.call("settle", { series: 0 });
   const s = (await view.get_series({ series: 0 }))?.settlement;
   w.eq("void settlement with no prints fixes at floor + band / 2", s && [s.void, s.prints, s.fixing], [true, 0, 1_700_000 + 300_000]);
-  await twin.batch(ports.slice(0, 16).map((p) => () => p.send("redeem", { series: 0 })));
+  await twin.batch([...ports.slice(0, 16), whale].map((p) => () => p.send("redeem", { series: 0 })));
   await w.rejects("nothing to redeem after redeeming", () => ports[0]!.call("redeem", { series: 0 }), /nothing to redeem/);
   await w.booksBalance("after the void settlement", weir);
   await twin.checkpoint("void settlement", { tp, series: [0], accounts: traders.map((t) => t.accountId) });
