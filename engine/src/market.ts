@@ -106,7 +106,8 @@ export interface SeriesView {
   openedAt: number;
   openSets: number;
   bonusPool: bigint;
-  pendingRounds: number;
+  /** Rounds, ascending, that hold commits and have not been cleared. */
+  pendingRounds: number[];
   settlement: SettlementView | null;
 }
 
@@ -225,6 +226,11 @@ interface PrintRecord {
 
 const PRINTS_LIMIT = 200;
 const RESULTS_LIMIT = 100;
+const STATUS_LIMIT = 32;
+
+/** NEAR's account id rule: 2 to 64 characters of lowercase letters and digits, with `-`, `_`
+ * and `.` as separators that cannot start, end or repeat. */
+export const isAccountId = (s: string): boolean => /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/.test(s);
 
 export class Market {
   readonly params: Readonly<Params>;
@@ -270,16 +276,17 @@ export class Market {
   // Section 5: accounts and dollars
 
   register(accountId: string): void {
-    if (accountId.length === 0) throw new Error("account id is empty");
+    if (!isAccountId(accountId)) throw new Error("account id is not valid");
     if (this.#accounts.has(accountId)) throw new Error("account is already registered");
     this.#accounts.set(accountId, { balance: 0n, guard: null });
     this.#emit({ event: "register", data: { accountId } });
   }
 
-  /** Models `ft_on_transfer`. Returns the amount sent back: all of it when `accountId` is not registered. */
+  /** Models `ft_on_transfer`. Returns the amount sent back: all of it when `accountId` is not
+   * a valid account id or not registered. */
   deposit(accountId: string, amount: bigint): bigint {
     positive("amount", amount);
-    const account = this.#accounts.get(accountId);
+    const account = isAccountId(accountId) ? this.#accounts.get(accountId) : undefined;
     if (!account) return amount;
     account.balance += amount;
     this.#emit({ event: "deposit", data: { accountId, amount } });
@@ -480,6 +487,7 @@ export class Market {
   transferPosition(caller: string, series: number, to: string, long: number, short: number): void {
     this.#account(caller);
     this.#account(to, "receiver is not registered");
+    if (to === caller) throw new Error("cannot transfer to yourself");
     uint("long", long);
     uint("short", short);
     if (long + short === 0) throw new Error("nothing to transfer");
@@ -551,7 +559,7 @@ export class Market {
     if (record.settlement) throw new Error("series is already settled");
     const end = deliveryEnd(this.params, series);
     if (this.#now < end + this.params.reportGraceSecs) throw new Error("report window of the delivery is still open");
-    if (this.#pendingRounds(series) > 0) throw new Error("series has rounds waiting to be cleared");
+    if (this.#pendingRounds(series).length > 0) throw new Error("series has rounds waiting to be cleared");
     const acc = this.getAccumulator(series);
     const outcome = settleSeries({
       floor: record.floor,
@@ -621,7 +629,7 @@ export class Market {
 
   getStatus(): Status {
     const now = this.#now;
-    const live = liveSeries(this.params, now).map((series) => {
+    const live = liveSeries(this.params, now).slice(0, STATUS_LIMIT).map((series) => {
       const info = phaseAt(this.params, series, now);
       return {
         series,
@@ -783,8 +791,8 @@ export class Market {
     return book;
   }
 
-  #pendingRounds(series: number): number {
-    return this.#books.get(series)?.size ?? 0;
+  #pendingRounds(series: number): number[] {
+    return [...(this.#books.get(series)?.keys() ?? [])].sort((a, b) => a - b);
   }
 
   #position(series: number, accountId: string): Position {
@@ -835,7 +843,11 @@ function validateParams(p: Params): void {
   if (p.cutoffSecs >= p.leadSecs) throw new Error("cutoff_secs must be below lead_secs");
   if (p.minPrints < 1) throw new Error("min_prints must be at least 1");
   if (p.minLock < 0n) throw new Error("min_lock must not be negative");
-  if (p.usdc.length === 0) throw new Error("usdc must be an account id");
+  if (!isAccountId(p.usdc)) throw new Error("usdc must be an account id");
+  if (!p.reporters.every(isAccountId)) throw new Error("reporters must be account ids");
+  if (p.t0 % p.printIntervalSecs !== 0 || p.periodSecs % p.printIntervalSecs !== 0) {
+    throw new Error("t0 and period_secs must be multiples of print_interval_secs");
+  }
   if (p.reporters.length < 1 || p.reporters.length > 9) throw new Error("there must be 1 to 9 reporters");
   if (new Set(p.reporters).size !== p.reporters.length) throw new Error("reporters must not repeat");
   if (p.quorum < 1 || p.quorum > p.reporters.length) throw new Error("quorum must be 1 to the number of reporters");

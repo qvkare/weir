@@ -17,7 +17,7 @@ const PARAMS: Params = {
   cutoffSecs: 200,
   commitSecs: 60,
   revealSecs: 30,
-  printIntervalSecs: 60,
+  printIntervalSecs: 50,
   reportGraceSecs: 60,
   voidAfterSecs: 600,
   maxAnchorAgeSecs: 1200,

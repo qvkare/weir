@@ -50,7 +50,7 @@ export interface WireLiveSeries {
   phase_ends_at: number | null;
 }
 
-/** `get_status` (section 12). */
+/** `get_status` (section 12): at most 32 series, lowest first. */
 export interface WireStatus {
   now: number;
   live: WireLiveSeries[];
@@ -77,7 +77,8 @@ export interface WireSeries {
   opened_at: number;
   open_sets: number;
   bonus_pool: U128;
-  pending_rounds: number;
+  /** Rounds, ascending, that hold commits and have not been cleared. */
+  pending_rounds: number[];
   settlement: WireSettlement | null;
 }
 

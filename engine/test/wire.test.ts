@@ -39,6 +39,7 @@ test("a scripted market through callChange, checked view by view", () => {
   assert.equal(callChange(m, USDC, "deposit", { sender_id: "alice", amount: "10000000", msg: "" }), "0");
   assert.equal(callChange(m, USDC, "deposit", { sender_id: "carol", amount: "10000000", msg: "bob" }), "0");
   assert.equal(callChange(m, USDC, "deposit", { sender_id: "alice", amount: "7", msg: "zed" }), "7");
+  assert.equal(callChange(m, USDC, "deposit", { sender_id: "alice", amount: "7", msg: "Not An Id" }), "7");
   assert.throws(() => callChange(m, "fake.near", "deposit", { sender_id: "alice", amount: "1", msg: "" }), /usdc/);
   assert.throws(() => callChange(m, USDC, "deposit", { sender_id: "alice", amount: "1e6", msg: "" }), /decimal string/);
   callChange(m, "alice", "set_guard", { guard: 300_000 });
@@ -147,7 +148,7 @@ test("a scripted market through callChange, checked view by view", () => {
     opened_at: 96_400,
     open_sets: 10,
     bonus_pool: "0",
-    pending_rounds: 0,
+    pending_rounds: [],
     settlement: {
       fixing: 2_100_000,
       long_payout: 300_000,

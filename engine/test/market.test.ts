@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Market, type Params, type Totals } from "../src/mod.ts";
+import { isAccountId, Market, type Params, type Totals } from "../src/mod.ts";
 import { BUNDLE, PARAMS, print, revealSecret, sealedCommit } from "./fixtures.ts";
 
 const sum = (t: Totals) => t.free + t.locked + t.setsBacking + t.pools + t.unredeemed;
@@ -27,7 +27,7 @@ test("a round from commit to redeem", () => {
   const opened = m.getSeries(0)!;
   assert.deepEqual(
     [opened.anchor, opened.floor, opened.band, opened.openedAt, opened.pendingRounds],
-    [2_000_000, 1_800_000, 400_000, 96_400, 1],
+    [2_000_000, 1_800_000, 400_000, 96_400, [0]],
   );
 
   m.setTime(96_520);
@@ -295,7 +295,7 @@ test("settle waits for pending rounds; forfeits are shared as bonus and the rest
   sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1_000_005n);
   m.setTime(106_000);
   assert.throws(() => m.settle(0), /waiting to be cleared/);
-  assert.equal(m.getSeries(0)!.pendingRounds, 1);
+  assert.deepEqual(m.getSeries(0)!.pendingRounds, [0]);
   // Forfeit 100_000 (rounded down from 100_000.5) over 3 sets: 33_333 per set, carry 1.
   assert.equal(m.clear(0, 0).forfeited, 100_000n);
   const s = m.settle(0);
@@ -374,10 +374,47 @@ test("status lists every live series and its phase", () => {
 
 test("params are validated", () => {
   assert.throws(() => new Market({ ...PARAMS, quorum: 4 }), /quorum/);
-  assert.throws(() => new Market({ ...PARAMS, reporters: ["a", "a"], quorum: 1 }), /repeat/);
+  assert.throws(() => new Market({ ...PARAMS, reporters: ["ra", "ra"], quorum: 1 }), /repeat/);
   assert.throws(() => new Market({ ...PARAMS, cutoffSecs: 3600 }), /cutoff/);
   assert.throws(() => new Market({ ...PARAMS, bandBps: 10_000 }), /band_bps/);
   assert.throws(() => new Market({ ...PARAMS, maxCommits: 129 }), /max_commits/);
   assert.throws(() => new Market({ ...PARAMS, commitSecs: 0 }), /commitSecs/);
   assert.throws(() => new Market({ ...PARAMS, tick: 0 }), /tick/);
+  assert.throws(() => new Market({ ...PARAMS, t0: 100_050 }), /multiples of print_interval_secs/);
+  assert.throws(() => new Market({ ...PARAMS, periodSecs: 3650, leadSecs: 3650 }), /multiples of print_interval_secs/);
+  assert.throws(() => new Market({ ...PARAMS, reporters: ["R0"], quorum: 1 }), /reporters/);
+  assert.throws(() => new Market({ ...PARAMS, usdc: "USDC" }), /usdc/);
+  new Market({ ...PARAMS, cutoffSecs: 0 });
+});
+
+test("pending rounds are listed ascending until cleared", () => {
+  const m = setup();
+  sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, 1000n);
+  m.setTime(96_400 + 2 * 180);
+  sealedCommit(m, "alice", 0, 2, "Long", 1, 1000, 1000n);
+  assert.deepEqual(m.getSeries(0)!.pendingRounds, [0, 2]);
+  m.clear(0, 0);
+  assert.deepEqual(m.getSeries(0)!.pendingRounds, [2]);
+});
+
+test("account ids, deposits to bad ids, withdrawing zero, transfer to yourself", () => {
+  for (const ok of ["ab", "alice", "alice.near", "a-b_c.d1", "0x", "a".repeat(64)]) assert.ok(isAccountId(ok), ok);
+  for (const bad of ["", "a", "Alice", "a..b", ".a", "a.", "a-", "-a", "a b", "a@b", "a".repeat(65)]) {
+    assert.ok(!isAccountId(bad), bad);
+  }
+  const m = setup();
+  assert.throws(() => m.register("Bad"), /account id/);
+  assert.equal(m.deposit("a..b", 5n), 5n);
+  assert.equal(m.deposit("A", 5n), 5n);
+  assert.throws(() => m.withdraw("alice", 0n), /above zero/);
+  m.mint("alice", 0, 1);
+  assert.throws(() => m.transferPosition("alice", 0, "alice", 1, 0), /yourself/);
+});
+
+test("status lists at most 32 series", () => {
+  // A lead of 40 periods puts series 1 to 40 in auction at t0.
+  const m = new Market({ ...PARAMS, t0: 200_000, leadSecs: 40 * 3600 }, 200_000);
+  const live = m.getStatus().live.map((l) => l.series);
+  assert.equal(live.length, 32);
+  assert.deepEqual([live[0], live.at(-1)], [1, 32]);
 });
