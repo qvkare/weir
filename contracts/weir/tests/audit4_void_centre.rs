@@ -181,10 +181,10 @@ impl H {
 fn audit4_a_non_reporter_cannot_move_the_void_payout() {
     let mut h = H::with(params());
     h.open_series();
-    for (who, amt) in [("bob.near", 100 * DOLLAR), ("m1.near", 5_000 * DOLLAR), ("m2.near", 100 * DOLLAR)] {
+    for (who, amt) in [("bob.near", 100 * DOLLAR), ("m1.near", 5_000 * DOLLAR), ("m2.near", 5_000 * DOLLAR)] {
         h.fund(who, amt);
     }
-    let deposits = 5_200 * DOLLAR;
+    let deposits = 10_100 * DOLLAR;
     // Round 0: m1 buys 100 LONG from Bob at 0.150 (below half the band, 0.200).
     let b = h.commit(0, "bob.near", Side::Short, 100, 150_000, 30 * DOLLAR).unwrap();
     let m = h.commit(0, "m1.near", Side::Long, 100, 150_000, 15 * DOLLAR).unwrap();
@@ -219,7 +219,7 @@ fn audit4_a_non_reporter_cannot_move_the_void_payout() {
         h.ok(STRANGER, |w| w.redeem(0, Some(id(who))));
     }
     let bob = h.balance("bob.near") as i128 - 100 * DOLLAR as i128;
-    let mallory = (h.balance("m1.near") + h.balance("m2.near")) as i128 - 5_100 * DOLLAR as i128;
+    let mallory = (h.balance("m1.near") + h.balance("m2.near")) as i128 - 10_000 * DOLLAR as i128;
     let t = h.view(|w| w.get_totals());
     let traded = h.view(|w| w.get_series(0)).unwrap();
     println!(

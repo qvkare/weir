@@ -3,13 +3,16 @@
 ## Who did this, and what it is
 
 An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in
-three passes on 2026-11-12:
+four passes, all on 2026-11-12:
 
-- the first pass against specification 0.3;
-- the second pass against 0.4;
-- the third pass against 0.5.
+| Pass | Specification |
+|---|---|
+| 1 | 0.3 |
+| 2 | 0.4 |
+| 3 | 0.5 |
+| 4 | 0.6 |
 
-After each of the first two passes, the authors changed the rules. The reviewer worked from
+After each of the first three passes, the authors changed the rules. The reviewer worked from
 `docs/SPEC.md`, the Rust source, and tests it wrote itself.
 
 This is **not** an audit by a security firm. It is **not** a formal verification. No
@@ -37,179 +40,212 @@ did not find it within the scope and time below. It does not mean the problem is
    `get_totals`.
 3. Wrote unit tests that drive the contract through its public methods in near-sdk's mocked
    VM. Each call runs like a transaction: a panic rolls the state back.
-   - `contracts/weir/tests/audit_findings.rs`: first pass.
-   - `contracts/weir/tests/audit2_findings.rs`: second pass.
-   - `contracts/weir/tests/audit3_void.rs`: third pass.
 
-   The authors now own the first two files and have rewritten or renamed their tests.
+   | File | Pass | Owner now |
+   |---|---|---|
+   | `contracts/weir/tests/audit_findings.rs` | 1 | the authors |
+   | `contracts/weir/tests/audit2_findings.rs` | 2 | the authors |
+   | `contracts/weir/tests/audit3_void.rs` | 3 | the authors |
+   | `contracts/weir/tests/audit4_void_centre.rs` | 4 | the reviewer |
+
+   The authors rewrote or renamed the tests in the first three files after each pass.
    - `audit*` tests assert that a finding is closed.
-   - `limit_*` tests keep demonstrating something the specification now states as a known limit.
+   - `limit_*` tests keep demonstrating something the specification states as an open limit.
 4. The real wasm was **not** run for this review. The sandbox and integration runs in the
    repository were made by the authors. Gas figures for anything other than `clear` were not
    measured.
 
-## Deployed parameters used for the numbers below
+## Deployed parameters
 
 The `weekly` preset in `agents/src/presets.ts`:
 
 | Parameter | Value |
 |---|---|
-| Reporters | 3, quorum 2 |
+| Reporters | 3, quorum 2; all run by one operator |
 | `max_spread_bps` | 200 |
 | `min_prints` | 126 of 168 hourly buckets (75%) |
-| `band_bps` | 1500, so a band of 0.60 $ on a 2.00 $ index |
+| `band_bps` | 1500, so on a 2.00 $ anchor the band is 0.60 $ and half the band is 0.30 $ |
 | `commit_fee` | 0.10 $ |
 | `forfeit_bps` | 100 |
 | `max_commits` | 64 |
 | Rounds per series | 168 |
 
-## Third pass (spec 0.5)
+## History
 
-### The void unwinding is not sound
+**First pass.** It found that one reporter could ratchet the index and one could freeze it,
+that `clear` could overflow, that forfeits could be steered to an accomplice, that eviction
+was free, and that the guard could be changed after commit. Specification 0.4 closed most of
+these.
 
-Spec 0.5 settles a void series at `traded_value / traded_units`, the average price its
-auctions traded at. Spec section 10 says that "stopping the index from printing cannot be
-turned into a payout". That is false.
+**Second pass.** It found that, when one reporter was absent, a single dishonest reporter
+could force a void settlement at mid-band. Specification 0.5 replaced that rule.
 
-The average can be moved by wash trades between two accounts one person controls. Such
-trades cost nothing but commit fees, because the sets they create pay `band` in total
-whatever the payout split is. The person can also block the round they wash in, so that no
-honest order trades at the wash price. At the deployed fee, blocking a round costs 6.40 $.
+**Third pass.** The 0.5 rule paid a void series at the average price its own auctions had
+traded at. **That fix was faulty.** Wash trades between two accounts of one person, in a
+round they alone used, set the average anywhere in the band for the price of commit fees.
+In the test, a trading reporter took 19.40 $ of a counterparty's 20 $. It was a worse hole
+than the one it replaced.
 
-`audit3_void.rs::audit3_wash_trades_set_the_void_payout`:
+**Fourth pass.** Specification 0.6 withdrew the 0.5 rule. It now pays a void series half the
+band on each side, and this pass checks that rule.
 
-| | |
+## Fourth pass (spec 0.6)
+
+### The centre-of-band rule is sound against traders who are not reporters
+
+`settlement::settle` sets `long_payout = band / 2` and `short_payout = band - band / 2`.
+
+- **Rounding.** `band` is always even, because `settlement::band` builds it as
+  `half.checked_mul(2)`. So `band / 2` is exact, and each set pays exactly `band`.
+- **The old fields are inert.** `traded_units` and `traded_value` are still added up in
+  `clear` and returned by `get_series`, but nothing reads them. They cannot overflow: the
+  traded units of a series are at most its auction capacity, below `2^52`.
+
+`audit4_void_centre.rs::audit4_a_non_reporter_cannot_move_the_void_payout` tries everything
+a trader can do before a void:
+- an honest trade below half the band;
+- wash trades of 10,000 units at both extremes (0.399 and 0.001 on a 0.40 band);
+- minting 500 sets and merging 200;
+- moving positions both ways.
+
+Then the index fails on its own, with no reports in the delivery window.
+
+| Check | Result |
 |---|---|
-| Test parameters | band 0.40 $, fee 0.10 $ |
-| Honest trade | Mallory buys 100 LONG from Bob at 0.200, the fair price; the index stays at 2.000 throughout |
-| Wash trade | Mallory's two accounts trade 10,000 units with each other at 0.399 |
-| How the series goes void | Mallory is reporter R1. R3 is absent. She disagrees with R2 in every bucket, so the series has 0 prints and goes void |
-| `long_payout` | 0.397029. A normal settlement would pay 0.200000 |
-| Bob | loses 19.80 $ of his 20 $ stake |
-| Mallory | gains 19.40 $ after fees |
-| Solvency | still exact: free + burned = deposits, and nothing else remains |
+| `settle` at delivery end + grace | refused (`not enough prints yet`) |
+| `settle` after `void_after_secs` | void, 0.200 / 0.200 |
+| Bob | lost exactly 100 × (0.250 − 0.200) plus his fee: −5.10 $ |
+| Mallory | gained exactly 100 × (0.200 − 0.150) minus five fees: +4.50 $ |
+| Wash trades, mints, merges, transfers | contributed exactly nothing |
+| After redeeming everything | free + burned = deposits, with nothing left locked, backing or unredeemed |
 
-What this means:
-- **The ceiling.** A trader who can bring about a void, or who is simply present when one
-  happens, can set the void payout anywhere in `(0, band)`. The most they gain is
-  `band - tick - p` per unit of honest position they hold, where `p` is the price they paid
-  for it. At the deployed band that is up to about 0.30 $ per unit bought at mid-band. The
-  counterparty can lose its whole stake.
-- **A free option for everyone.** Without any reporter power, every holder can wash-trade
-  in advance at the extreme that favours them. It costs only fees, it is worth it if the
-  index later fails, and it is harmless to them otherwise.
-- **Who wins.** When both sides do this, the side with more capital sets the average:
-  `band` per wash unit, at most 320,000 units a round.
-- **The authors' test is too narrow.**
-  `audit2_forcing_the_void_fixing_no_longer_pays_the_reporter` passes only because its
-  series has one trade, so the average is the reporter's own price.
+This confirms the coordinator's statement. A trader who is not a reporter gains from a void
+only by having bought a side for less than half the band. That is ordinary price risk.
 
-The other paths I checked are sound:
-- **Mints** are not counted in the average. That is harmless: a minted set pays `band`
-  whatever the split.
-- **A late `clear`** cannot change the average after settlement, because `settle` refuses
-  while any round is pending.
-- **Rounding** goes down on LONG. The remainder of less than 1 micro-dollar per unit goes to
-  SHORT, and each set still pays exactly `band`.
+There is no on-chain way to trade on the knowledge that a void is coming:
+- auctions and `mint` close before delivery starts;
+- `merge` is neutral;
+- `transfer_position` moves units but sets no price.
 
-Nobody can force a series out of the void path, because the one way to do so is by making
-prints.
+One indirect path remains, found by reading and not tested (4.1). Prints can stop if the
+contract runs out of NEAR for storage. Anyone can add storage to the contract (commits,
+positions), but at today's costs this is expensive: about 6.40 $ of fees for 8 KB of book
+storage. It matters only if the operator lets the NEAR balance run down.
 
-### The majority rule
+### What remains for a reporter, at deployed parameters
 
-`quorum * 2 > reporters.len()` closes the lone-reporter print: 1 of 3 is refused. It does
-nothing about the case that matters at the deployed size. With 3 reporters and one absent,
-the other two must agree, so each of them can veto any bucket, which reaches the void path
-above. The only remedy is more independent reporters, which this deployment does not have.
+Both cases need one of the three reporters to be absent, or the operator to control two of
+them. With one operator running all three, that operator can set the fixing outright, so
+these numbers measure what a single compromised reporter key can do.
 
-## Every finding, status under 0.5
+| Case | Size | Test |
+|---|---|---|
+| **Choosing which buckets print** | Up to about 0.029 $ a unit, about 4.8% of the band (details below). | `limit_one_reporter_selects_which_buckets_print`, which shows the mechanism with ±5% hourly swings: fixing 2.121 against a true 2.000. |
+| **Forcing a void while holding the cheap side** | Gain over price paid: `band/2 − price` per unit, up to 0.299 $ (49.8% of the band). Against the true settlement, up to 0.30 $ (50%). It needs 43 of 168 buckets without a print. | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` and `limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side` |
 
-| # | Severity | Finding | Status under 0.5 | Test (current name) |
+How the 0.029 $ for choosing which buckets print is made up:
+- **Leaning each print:** up to `max_spread/2` = 1% of the index, about 0.020 $ a unit
+  (3.3% of the band).
+- **Dropping hours:** up to 42 of 168 hours (25%). That adds about 0.42σ, where σ is the
+  hourly spread of the index. At σ = 1% of the index this is about 0.009 $. I assumed σ; I
+  did not measure it.
+- **Together:** about 0.029 $ a unit, about 4.8% of the band.
+
+These are acceptable on a testnet with test dollars and one known operator: that operator
+already holds full power over the fixing, and nothing real is at stake.
+
+They are not acceptable for real dollars. That needs at least:
+- reporters run by independent parties;
+- enough reporters that one absence does not leave two, each able to veto any bucket;
+- a published policy, or a mechanism, for what happens to a reporter who causes no-prints.
+
+## Every finding, status under 0.6
+
+"Open" means the weakness exists in the deployed contract today. The test named
+demonstrates it. Numbers are at deployed parameters.
+
+| # | Severity | Finding | Status under 0.6 | Test |
 |---|---|---|---|---|
-| 1.1 | Critical | One reporter ratcheted the index through the two-report mean. | Closed: no move rule, and a full set of reports gives the median (9). | `audit_one_reporter_can_no_longer_steer_the_index` |
+| 1.1 | Critical | One reporter ratcheted the index through the two-report mean. | Closed: no move rule, and a full set of reports gives the median (spec 9). | `audit_one_reporter_can_no_longer_steer_the_index` |
 | 1.2 | High | One silent reporter froze the index after a large move. | Closed: no move limit (9). | `audit_a_silent_reporter_can_no_longer_freeze_the_index` |
 | 1.3 | Critical on testnet | Minting `u64::MAX` sets made `clear` overflow and froze the series. | Closed: the `mint` cap (8). | `audit_open_sets_can_no_longer_overflow` |
-| 1.4 | High | A function-call agent forfeited an account's balance to an accomplice. | Theft closed: forfeits are burned (7.3). Destruction is a stated limit: see 2.4. | `audit_function_call_agent_can_no_longer_drain_a_guarded_account` |
-| 1.5 | High | Evicting every rival from a round was free. | Stated limit, see 2.3. | `audit_eviction_griefing_now_costs_a_fee_per_slot` |
+| 1.4 | High | A function-call agent forfeited an account's balance to an accomplice. | Closed for theft: forfeits are burned (7.3). The burning that remains is 2.4. | `audit_function_call_agent_can_no_longer_drain_a_guarded_account` |
+| 1.5 | High | Evicting every rival from a round was free. | Open as 2.3. | `audit_eviction_griefing_now_costs_a_fee_per_slot` |
 | 1.6 | Medium | Changing the guard after commit cancelled an order for free. | Closed: the commit records the guard and reference (6.2, 6.4). | `audit_guard_change_after_commit_no_longer_cancels` |
 | 1.7 | Medium | Out-of-order reports bypassed the move limit. | Closed: nothing compares prints (9). | `audit_reporting_out_of_order_no_longer_bypasses_anything` |
-| 1.8 | Medium | Storage the contract pays for grew without bound. | Partly closed: results keep only fills, and anyone may prune. Stated limit: nobody is paid to prune or to send NEAR (14, 15). | `audit_storage_bytes_per_object_and_pruning` |
-| 1.9 | Note | Missing parameter checks, a missing event, the bonus pool, an unchecked add in the mock. | Closed, except the parameter checks (2.7). | none |
-| 2.1 | High | With one reporter absent, one dishonest reporter chooses which buckets print, and leans every print by up to `max_spread/2`. Test: true average 2.000, fixing 2.121. | **Open.** At deployed parameters it can drop up to 25% of hours and lean every print 1% (0.02 $ on 2.00 $, 3.3% of the band per unit). Below 126 prints it reaches the void path, where 3.1 applies. | `limit_one_reporter_selects_which_buckets_print` |
-| 2.2 | High | One reporter forced a void settlement at mid-band. | Replaced by 3.1, which is worse: the void payout is now chosen by whoever trades the most. | `audit2_forcing_the_void_fixing_no_longer_pays_the_reporter` (passes, but only for a single trade) |
-| 2.3 | High | Blocking a round costs `max_commits * commit_fee`. | **Open** at deployed parameters: 6.40 $ a round, 1,075 $ a week for all 168 rounds, plus capital above the largest honest lock. It also lets the blocker choose the price of every trade in that round, which feeds 3.1. The test uses a 0.02 $ fixture: 1.28 $. | `limit_blocking_a_round_costs_1_28_dollars` |
-| 2.4 | Medium | With `max_round_lock` unset (the default), an agent burns 1% plus the fee per round: 100 $ fell to 90.25 $ in 10 rounds. | Stated limit (15). The deployment tool sets it for the agents it creates. Accounts made any other way are unprotected. | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
-| 2.5 | Medium | Not revealing changes others' fills, which gives a last look. | Stated limit (15). Invariant 6 is restated as "burned stays burned". Cost of a look: 1% of the lock plus 0.10 $. | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
-| 2.6 | Low | On testnet, one account can take the whole mint cap. | Stated limit (8). | `limit_one_account_can_take_the_whole_mint_cap` |
-| 2.7 | Medium | Dangerous parameters were accepted. | Quorum of 1 in 3 closed (3). A 100% spread, 2 reporters, no fee with no forfeit, and grace = period are still accepted (15). | `audit2_a_quorum_of_one_in_three_is_refused`, `limit_unwise_parameters_are_still_accepted` |
-| 2.8 | Low | Large grace: many pending buckets in the root state, and `settle` decides them all in one call. Recoverable through `finalize_print`. | Open; found by reading, not measured. | none |
+| 1.8 | Medium | Storage the contract pays for grew without bound. | Partly closed: results keep only fills, and anyone may prune. Open: nobody is paid to prune or to send NEAR (14, 15). | `audit_storage_bytes_per_object_and_pruning` |
+| 1.9 | Note | Missing parameter checks, a missing event, the bonus pool, an unchecked add in the mock. | Closed, except some parameter checks (2.7). | none |
+| 2.1 | High | With one reporter absent, one dishonest reporter chooses which buckets print and leans each print. | **Open:** about 0.029 $ a unit (about 4.8% of the band) at an assumed 1% hourly σ. | `limit_one_reporter_selects_which_buckets_print` |
+| 2.2 | High | Forcing a void paid mid-band (0.4). | Replaced in 0.5 by 3.1, then by the centre-of-band rule in 0.6. **Open** as a reporter gain: see 3.2. | `limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side` |
+| 2.3 | High | Blocking a round costs `max_commits × commit_fee`. | **Open:** 6.40 $ a round, about 1,075 $ a week, plus capital above the largest honest lock. | `limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee` |
+| 2.4 | Medium | With `max_round_lock` unset (the default), an agent burns 1% plus the fee per round. | Open (stated limit, 15): 100 $ became 90.25 $ in 10 rounds. The deployment tool sets the limit for the agents it creates. | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
+| 2.5 | Medium | Not revealing changes others' fills, which gives a last look. | Open (stated limit, 15). A look costs 1% of the lock plus 0.10 $. Invariant 6 now reads "burned stays burned". | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
+| 2.6 | Low | On testnet, one account can take the whole mint cap. | Open (stated limit, 8). | `limit_one_account_can_take_the_whole_mint_cap` |
+| 2.7 | Medium | Dangerous parameters were accepted. | Quorum below a majority is closed (3). A 100% spread, 2 reporters, no fee with no forfeit, and grace = period are still accepted (15). | `audit2_a_quorum_of_one_in_three_is_refused`, `limit_unwise_parameters_are_still_accepted` |
+| 2.8 | Low | Large grace: many pending buckets in the root state, and `settle` decides them all in one call. Recoverable through `finalize_print`. | Open; found by reading. | none |
 | 2.9 | Low | `prune_print` can delete delivery reports before a late settlement. | Open; found by reading. | none |
-| 2.10 | Note | The guard reference has no age check and lags 1 to 2 intervals with two reporters. | Open; found by reading. | none |
-| 2.11 | Note | `get_prints` scans 4096 words; it can miss prints after pruning. | Open; found by reading (view only). | none |
-| 3.1 | Critical | The void payout is the traded average, which wash trades in a blocked round set anywhere in `(0, band)` for fees only. A reporter who trades, with another reporter absent, forces the void and takes up to the counterparties' whole stake: 19.40 $ from a 20 $ trade in the test. Without reporter power, it is a free option on any natural void. | **Open.** | `audit3_void.rs::audit3_wash_trades_set_the_void_payout` |
+| 2.10 | Note | The guard reference has no age check and lags 1 to 2 intervals. | Open; found by reading. | none |
+| 2.11 | Note | `get_prints` scans 4096 words and can miss prints after pruning. | Open; found by reading (view only). | none |
+| 3.1 | Critical | The 0.5 void payout (the traded average) was set by wash trades: a trading reporter took 19.40 $ of 20 $. | Closed: a void pays `band/2` on each side, and no rule reads the traded fields (10). | `audit3_wash_trades_no_longer_set_the_void_payout`, `audit4_a_non_reporter_cannot_move_the_void_payout` |
+| 3.2 | High | A reporter who holds the cheap side and forces a void is paid half the band for it. | **Open:** up to 0.299 $ a unit, 49.8% of the band. It needs 43 of 168 buckets without a print. | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
+| 4.1 | Low | A non-reporter can cause a void only indirectly: by exhausting the contract's NEAR so that reports fail. It is expensive unless the balance has been allowed to run low. | Open; found by reading, not tested. | none |
 
 ## Examined and found sound
 
 These were checked by reading. Some are also covered by the authors' property tests or by the
 review tests named.
 
-- **Dollar accounting on every path.** This was checked in all three passes, including the
-  0.5 void path. Solvency stays exact through a void settlement and full redemption
-  (`audit3_wash_trades_set_the_void_payout` asserts free + burned = deposits). Burned
-  dollars are never credited.
+- **Dollar accounting on every path, in all four passes.** This includes the 0.6 void path:
+  `audit4_a_non_reporter_cannot_move_the_void_payout` asserts free + burned = deposits after
+  a full void redemption. Burned dollars are never credited.
+- **The void payout under 0.6** cannot be moved by trades, mints, merges, transfers, or the
+  timing of `clear` and `settle`.
 - **Clearing matches sections 7.1 and 7.2.**
 - **The commit hash** is unambiguous and cannot be replayed.
 - **Access controls** (1 yoctoNEAR, the token check, the single private callback, `new` once)
   are as described.
-- **The recorded guard** decides a void at commit, so changing it later changes nothing.
-- **`max_round_lock`** is counted before eviction and includes void commits.
-- **The sets cap** keeps every unit count at or below `2^53 - 1`.
-- **Pruning:**
-  - A pruned bucket cannot come back (`audit2_a_pruned_bucket_cannot_come_back`).
-  - Pruning does not touch the accumulators or the last print.
+- **The recorded guard**, **`max_round_lock`** and **the sets cap** behave as the specification
+  says.
+- **Pruning:** a pruned bucket cannot come back (`audit2_a_pruned_bucket_cannot_come_back`),
+  and pruning does not touch the accumulators or the last print.
 - **The index with all reporters present** gives the median, which a minority cannot move.
 - **Invariant 7:** I found no state in which `clear` or `settle` fails for a reason other
-  than time, a pending round, missing prints, or the contract's NEAR balance being short.
+  than time, a pending round, missing prints, or a short NEAR balance.
 
-## Residual risks before real money (0.5)
+## Residual risks before real money (0.6)
 
 - **Reporters decide the fixing.**
-  - Two of the three set any price.
-  - One, while another is absent, chooses which hours count and leans each print by 1%.
-  - It can also force a void, and under 0.5 a void pays whatever wash trades made the
-    average (3.1).
+  - All three are run by one operator, who can set any price.
+  - A single compromised reporter key, while another is absent, can lean and select prints
+    (about 0.029 $ a unit, 2.1).
+  - It can also force a void that pays its cheap side up to 0.299 $ a unit (3.2).
   - Nothing on chain checks a report against its published data.
-  - There are three reporters, run by one party.
-- **The void rule can be gamed.** Anyone with capital can pre-position the void payout for
-  the price of commit fees.
 - **A round can be blocked** for 6.40 $, a week of rounds for about 1,075 $.
 - **Agent keys:** bounded only if the owner sets both `guard` and `max_round_lock`. Both
   are off by default.
-- **Parameters:** `new` still accepts parameters that remove protections. Read `get_params`.
-- **Storage:** relies on someone pruning and sending NEAR. Nobody is paid to do either.
+- **Parameters:** `new` accepts parameters that remove protections. Read `get_params`.
+- **Storage:** relies on someone pruning and sending NEAR. Nobody is paid to do either. A
+  low balance stops reports, and with them settlement turns void.
 - **No mainnet history and no upgrade path.** A bug means a new contract.
 
 ## Verdict
 
-**Public testnet:** this contract is fit for a public testnet with test dollars. Its
-accounting has held exact through three passes, every path that moved dollars balanced, and
-the integration run reports the wasm and an independent model agreeing.
+**Public testnet.** Weir 0.6 is fit for a public testnet with test dollars, with its
+reporters run by one known operator and these limits stated where users will read them.
+- Its accounting has stayed exact through four passes.
+- The void rule now in force cannot be moved by traders.
+- Everything that remains concerns the reporters, whom testnet users must trust anyway, or
+  cheap blocking, which costs test dollars only.
 
-**Not for real dollars.** It is not fit for real dollars in its 0.5 form, for three reasons:
-- **The void rule is wrong.** Finding 3.1 lets a trader who can cause a void, or who is
-  merely present for one, take the other side's stake.
-- **The index is too narrow.** With three reporters run by one party and an even-count
-  veto, a single absence turns one dishonest reporter into the decider.
-- **Blocking is cheap.** It costs about 1,075 $ a week, which also supports 3.1.
+**Not for real dollars.** It is not fit for real dollars until, at least:
+- the reporters are independent parties, numerous enough that one absence does not hand
+  every bucket to a two-reporter veto;
+- blocking a round costs something that scales with what it blocks;
+- `max_round_lock` is on by default;
+- the contract's NEAR balance and pruning have a funded owner.
 
-**Before real money, at minimum:**
-- a void rule that cannot be priced by the traders themselves, such as refunding each
-  position its own cost basis, or splitting evenly;
-- more independent reporters;
-- a blocking cost that scales with the lock rather than per slot;
-- `max_round_lock` on by default.
-
-None of these changes has been reviewed here.
+One fix in this review's history was itself found faulty: the 0.5 void rule. Any change made
+to meet the conditions above needs its own review.
 
 ## How to re-run
 
@@ -217,16 +253,18 @@ None of these changes has been reviewed here.
 cargo test --manifest-path contracts/Cargo.toml -p weir --test audit_findings -- --nocapture --test-threads=1
 cargo test --manifest-path contracts/Cargo.toml -p weir --test audit2_findings -- --nocapture --test-threads=1
 cargo test --manifest-path contracts/Cargo.toml -p weir --test audit3_void -- --nocapture --test-threads=1
+cargo test --manifest-path contracts/Cargo.toml -p weir --test audit4_void_centre -- --nocapture --test-threads=1
 contracts/build.sh && cargo test --manifest-path contracts/Cargo.toml --workspace   # everything, including the slow sandbox suite
 ```
 
-On 2026-11-12, against the 0.5 source, all three files passed:
+On 2026-11-12, against the 0.6 source, all four files passed:
 
 | File | Tests passed |
 |---|---|
 | `audit_findings` | 8 |
 | `audit2_findings` | 9 |
-| `audit3_void` | 1 |
+| `audit3_void` | 2 |
+| `audit4_void_centre` | 1 |
 
 A test passing means its stated outcome happens. For `limit_*` tests, that outcome is the
 weakness itself.
