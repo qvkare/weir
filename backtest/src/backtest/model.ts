@@ -64,7 +64,9 @@ export function evaluateWeek(index: Series, week: string, p = PARAMS): WeekVerdi
     }
   }
   if (count < p.minDeliveryPrints) return { ok: false, week, reason: "few_prints" };
-  const { fixing } = fixingOf({ sum, count, minPrints: p.minDeliveryPrints, voidAllowed: false, floor: 0, band: 0, openSets: 0, pool: 0n });
+  // Only the normal case is used: count >= minPrints, so the series is never void, and
+  // the traded units and value (which only set a void series' unwind price) are zero.
+  const { fixing } = fixingOf({ sum, count, minPrints: p.minDeliveryPrints, voidAllowed: false, floor: 0, band: 0, tradedUnits: 0, tradedValue: 0n });
   return { ok: true, core: { week, anchorDay, anchor: index.get(anchorDay)!, prints: count, fixing } };
 }
 

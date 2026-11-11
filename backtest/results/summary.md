@@ -127,5 +127,5 @@ Coverage by band in each regime:
 - **Provider survivorship and composition.** The composite uses whoever is in the sources on a day: the set changed on 243 index days. Providers enter (Akash from 2025-07, Cudo and Vast.ai from 2026-01, others in 2026-10) and change their SKU mix; the median can step when the set changes, without any provider changing price. Providers that left the market before or during the window are not represented.
 - **Gaps.** Days without at least 4 providers have no index value and are never filled. Weeks with fewer than 4 daily values or a stale anchor are dropped, and dropped weeks may not be random (scrapes fail more often when things change).
 - **Daily prints, not the on-chain cadence.** The contract may print more often than once a day; one daily snapshot is a coarse stand-in, taken at whatever hour the source ran.
-- **Usage and fees.** Flat usage of 8 GPUs every hour; no fees, no cost of locked capital, no bonus pool, no forfeits.
+- **Usage and fees.** Flat usage of 8 GPUs every hour; no auction fees or forfeits, no cost of locked capital. Weeks with too few prints are dropped, not settled as void (spec 0.5 unwinds a void series at its auctions' average traded price, and there are no trades here to compute one).
 - **Hyperscalers are excluded from the index** and appear only in the basis-risk table.
