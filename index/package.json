@@ -1,0 +1,20 @@
+{
+  "name": "@weir/index",
+  "version": "0.1.0",
+  "private": true,
+  "description": "H100-OD: the on-demand H100 GPU-hour price index Weir settles on, with recomputable evidence bundles.",
+  "type": "module",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./fetch": "./src/fetch.ts"
+  },
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p .",
+    "fetch": "node --disable-warning=ExperimentalWarning src/cli.ts fetch --out ../evidence/bundles",
+    "verify": "node --disable-warning=ExperimentalWarning src/cli.ts verify"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
