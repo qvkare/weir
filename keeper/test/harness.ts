@@ -8,7 +8,7 @@ import { auctionOpen, Market, type TimeParams, type WireParams } from "@weir/eng
 import { CHIP_IDS, CHIPS, sourcesFor, type ChipId } from "@weir/index";
 import { readSecrets, type AgentSpec, type Deployments, type MarketDeployment, type Secrets } from "../src/config.ts";
 import { runTick, type KeeperEnv, type TickReport } from "../src/keeper.ts";
-import { modelChain } from "../src/model.ts";
+import { modelChain, type ModelKey } from "../src/model.ts";
 import type { Fetch } from "../src/ports.ts";
 import { MemoryStore } from "../src/store.ts";
 
@@ -26,7 +26,10 @@ const T0: Record<MarketId, number> = {
 
 export const IDS = Object.keys(MARKETS) as MarketId[];
 export const contractOf = (id: MarketId) => `weir-${id}.test`;
-export const paramsOf = (id: MarketId): WireParams => ({ ...MARKETS[id].params, usdc: "usdc.test", reporters: [...REPORTERS], t0: T0[id] });
+export const paramsOf = (id: MarketId, preset?: "fast"): WireParams =>
+  preset === "fast"
+    ? { ...MARKETS["h100-fast"].params, underlying: MARKETS[id].underlying, usdc: "usdc.test", reporters: [...REPORTERS], t0: T0["h100-fast"] }
+    : { ...MARKETS[id].params, usdc: "usdc.test", reporters: [...REPORTERS], t0: T0[id] };
 export const tpOf = (id: MarketId): TimeParams => timeParams(paramsOf(id));
 export const FAST: MarketId = "h100-fast";
 export const PARAMS = paramsOf(FAST);
@@ -92,6 +95,7 @@ export class FakeSources {
 export interface World {
   models: Record<MarketId, ModelWeir>;
   model: ModelWeir;
+  chain: ReturnType<typeof modelChain>;
   store: MemoryStore;
   sources: FakeSources;
   secrets: Secrets;
@@ -107,12 +111,25 @@ export interface World {
  * so that three hours later its series 1 settled (at delivery end plus the report grace) five minutes ago. */
 export const START = auctionOpen(TP, 0) + 660;
 
-export function world(opts: { markets?: readonly MarketId[]; start?: number; reporters?: readonly string[]; keeper?: boolean } = {}): World {
+export interface WorldOptions {
+  markets?: readonly MarketId[];
+  start?: number;
+  reporters?: readonly string[];
+  keeper?: boolean;
+  /** Markets run on the fast preset whatever their id. */
+  fast?: readonly MarketId[];
+  /** Secret variables instead of the default ones. */
+  vars?: Record<string, string>;
+  /** Keys the transport enforces, by secret key. */
+  keys?: Record<string, ModelKey>;
+}
+
+export function world(opts: WorldOptions = {}): World {
   const start = opts.start ?? START;
   const ids = opts.markets ?? IDS;
   const models = {} as Record<MarketId, ModelWeir>;
   for (const id of ids) {
-    const model = new ModelWeir(new Market(paramsFromWire(paramsOf(id)), start), "keeper-viewer");
+    const model = new ModelWeir(new Market(paramsFromWire(paramsOf(id, opts.fast?.includes(id) ? "fast" : undefined)), start), "keeper-viewer");
     for (const a of AGENTS) {
       model.as(a.account_id).sync.change("register", {});
       model.as(a.account_id).sync.change("deposit", { amount: a.deposit.toString() });
@@ -121,9 +138,9 @@ export function world(opts: { markets?: readonly MarketId[]; start?: number; rep
   }
   const store = new MemoryStore();
   const sources = new FakeSources();
-  const secrets = readSecrets(secretVars(opts));
+  const secrets = readSecrets(opts.vars ?? secretVars(opts));
   const deployments = deploymentsFor(ids);
-  const chain = modelChain(Object.fromEntries(ids.map((id) => [contractOf(id), models[id]])));
+  const chain = modelChain(Object.fromEntries(ids.map((id) => [contractOf(id), models[id]])), opts.keys ?? {});
   let wall = start;
   const env = (extra: Partial<KeeperEnv> = {}): KeeperEnv => ({
     deployments,
@@ -143,5 +160,5 @@ export function world(opts: { markets?: readonly MarketId[]; start?: number; rep
     setTime(t);
     return runTick(env(extra), t);
   };
-  return { models, model: models[ids[0]!], store, sources, secrets, deployments, env, setTime, at };
+  return { models, model: models[ids[0]!], chain, store, sources, secrets, deployments, env, setTime, at };
 }

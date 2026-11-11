@@ -103,13 +103,37 @@ The chain package's function-call key lists:
 | `AGENT_KEY_METHODS` | `commit`, `reveal`, `clear`, `mint`, `merge`, `settle`, `redeem` | each agent |
 | `KEEPER_KEY_METHODS` | the agent list plus `finalize_print`, `prune_print`, `prune_result` | the optional housekeeping account |
 
-**The housekeeping account** (`KEEPER` secret, optional) holds a function-call key for
-`KEEPER_KEY_METHODS` on each market's contract and nothing else. When it is set it signs
-`clear`, `settle`, `finalize_print`, `prune_print` and `prune_result`, and the agents' keys need
+**One key per contract.** A NEAR function-call key names exactly one receiver contract, so an
+account acting on several markets needs one key per market contract. Every signer therefore
+takes `keys`, a map from contract account to key. A single `secret_key` is used on any contract
+without an entry in `keys`; that is right only for a full-access key (tests, a sandbox), never
+for function-call keys on more than one market (the sandbox run found exactly that:
+`ReceiverMismatch` on the second market). When a signer has no key for a market's contract,
+the keeper sends nothing for it there and logs once per run that it cannot act on that market
+and why.
+
+**Who signs what, in order.** The keeper sends a call only through a signer whose role list
+allows the method and whose key for that contract has not been refused. If one is refused, it
+tries the next:
+- `clear` and `settle`: the housekeeping account, then each agent of that market in
+  configuration order;
+- `finalize_print`: the housekeeping account, then each reporter;
+- `prune_print` and `prune_result`: the housekeeping account only (no other list allows them).
+  Without it, or without its key for a market, pruning is off for that market, and `/status`
+  says so;
+- `report` by each reporter, and `commit`, `reveal` and `redeem` by each agent, for itself.
+
+If nobody may make a call on a market, that is logged once per run.
+
+**Refused keys.** A key the node refuses because of the key itself (`ReceiverMismatch`,
+`MethodNameMismatch`, `NotEnoughAllowance`, `DepositWithFunctionCall`, `AccessKeyNotFound`) is
+never retried in that run. It is logged once with what to fix, listed in `/status` under
+`key_faults`, and set aside for an hour, so a bad key costs two requests an hour, not two every
+turn. The call goes to the next signer in the order above.
+
+**The housekeeping account** (`KEEPER` secret, optional) holds, on each market's contract, a
+function-call key for `KEEPER_KEY_METHODS` and nothing else. With it the agents' keys need
 nothing beyond `AGENT_KEY_METHODS`. It needs no registration and no USDC, only NEAR for gas.
-Without it the first agent signs `clear` and `settle` (allowed by the agent list), the first
-reporter signs `finalize_print`, and nothing is pruned (`/status` says
-`pruning: off: no KEEPER account`).
 
 ## Run it
 
@@ -137,7 +161,7 @@ with `Access-Control-Allow-Origin: *`:
 | `/status` | Last tick, the operator note, the budget used per step, the order markets were served in, what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
 | `/health` | 200 if the last tick is at most 5 minutes old, else 503. |
 
-`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 127.2 KiB, 37.8 KiB gzipped.
+`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 135.3 KiB, 39.9 KiB gzipped.
 
 ### Option 2: Node loop
 
@@ -156,20 +180,27 @@ JSON or plain strings in environment variables (Worker secrets or `.env`). They 
 in `deployments.json`, the log or the routes.
 
 ```jsonc
-// REPORTERS: accounts in the contract's `reporters`; others are ignored for that market.
-[{ "account_id": "reporter-a.example.testnet", "secret_key": "ed25519:<base58>" }]
+// REPORTERS: accounts in the contracts' `reporters`; one key per market contract.
+[{ "account_id": "reporter-a.example.testnet",
+   "keys": { "weir-h100-fast.example.testnet": "ed25519:<key>", "weir-h200-weekly.example.testnet": "ed25519:<key>" } }]
 
-// AGENTS: role is buyer | seller | maker | noise. Optional, with defaults:
+// AGENTS: one entry per agent and market, as the deploy tool writes them.
+// role is buyer | seller | maker | noise. Optional, with defaults:
 //   buyer:  need 40, premium_bps 500         seller: capacity 180, premium_bps 500
 //   maker:  spread_bps 600, share_bps 1000, max_size 40
 //   noise:  view_bps 1000, min_size 3, max_size 10
-//   markets: ["h100-fast"] to trade only some markets (default: all)
-[{ "account_id": "buyer-1.example.testnet", "secret_key": "ed25519:<base58>", "role": "buyer", "need": 40 }]
+// `market` names its market; `markets: [...]` (several) or neither (every market) also work,
+// given a key for each contract.
+[{ "account_id": "buyer-1.example.testnet", "market": "h100-fast", "role": "buyer",
+   "keys": { "weir-h100-fast.example.testnet": "ed25519:<key>" } }]
 
 // SWARM_SECRET: any long random string. Salts of sealed orders derive from it.
 
-// KEEPER (optional): the housekeeping account.
-{ "account_id": "keeper.example.testnet", "secret_key": "ed25519:<base58>" }
+// KEEPER (optional): the housekeeping account, one key per market contract.
+{ "account_id": "keeper.example.testnet", "keys": { "weir-h100-fast.example.testnet": "ed25519:<key>" } }
+
+// Any signer may give "secret_key": "ed25519:<key>" instead of (or besides) "keys": used on
+// every contract not in "keys". Right for a full-access key only.
 ```
 
 Agents must already be registered on each market's contract and funded; the keeper does
@@ -208,7 +239,7 @@ them; neither was tried against an account.)
 ## Tests
 
 ```sh
-pnpm --filter @weir/keeper test        # node --test, offline, 15 tests
+pnpm --filter @weir/keeper test        # node --test, offline, 18 tests
 pnpm --filter @weir/keeper typecheck   # tsc --noEmit
 pnpm --filter @weir/keeper bench
 ```
@@ -243,6 +274,14 @@ on each, the housekeeping account):
   anywhere in `/status`, `/latest.json`, `/health` or the store (recognisable fake keys,
   including the housekeeping account's, plus malformed JSON in a secret), and `src/` free of
   Node imports except `node.ts`.
+- `keys.test.ts`: per-contract function-call keys, enforced by the model transport the way a
+  node does (one receiver, a method list), on two markets:
+  - with keys for both, reports, clears, settles and prunes on both, nothing refused, no key in
+    the store;
+  - with the housekeeping key missing for one market, that market's agents clear and settle,
+    and pruning is skipped with one log line a tick;
+  - with a key naming the wrong contract, one `ReceiverMismatch`, one log line with the fix, no
+    retry for an hour (so two in the two hours), and an agent does the clearing.
 - `node.test.ts`: the directory store under real ticks.
 
 ## Not built
@@ -271,8 +310,9 @@ on each, the housekeeping account):
 
 The earlier, single-market version ran against the real contract on a local sandbox node
 (`integration/RESULTS.md`: 78 ticks, every print final, zero forfeits, settled and redeemed).
-This version, with SPEC 0.4, four markets, three chips, `finalize_print`, pruning and the
-housekeeping account, has only run on `ModelWeir`. Not proven:
+A later sandbox run of the 0.4 version on two markets found the one-key-per-contract bug fixed
+here. This version, with per-contract keys and the signer fallbacks, has only run on `ModelWeir`
+with a transport that enforces keys as a node does. Not proven:
 - the 0.4 contract's behaviour for these calls through `ChainWeir`, including its refusal texts
   matching the engine's `ERR`;
 - function-call keys limited to the three lists, real RPC latency and how much of four markets

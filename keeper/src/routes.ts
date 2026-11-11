@@ -67,6 +67,7 @@ async function route(path: string, query: URLSearchParams, store: KeeperStore, n
       undone: status.undone,
       index: attempt ? JSON.parse(attempt) : null,
       markets: status.markets,
+      key_faults: status.key_faults ?? [],
       log: status.log.slice(-STATUS_LOG),
     });
   }

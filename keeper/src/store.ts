@@ -33,6 +33,7 @@ export const KEYS = {
   latest: "latest",
   indexAttempt: "index/attempt",
   lease: "lease",
+  keyFaults: "key-faults",
   bundle: (hash: string) => `bundles/${hash}.json`,
   params: (contract: string) => `params/${contract}`,
   marks: (contract: string) => `marks/${contract}`,

@@ -15,7 +15,7 @@ import {
 } from "@weir/chain";
 import type { WireParams, WireRound, WireStatus } from "@weir/engine";
 import { Budget, BudgetExhausted } from "./budget.ts";
-import type { MarketDeployment, Signer } from "./config.ts";
+import type { MarketDeployment } from "./config.ts";
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -35,12 +35,27 @@ export interface PortHooks {
   onOutcome(o: { tx_hash: string }): void;
 }
 
+/** An account and the one key it uses on the market being connected. */
+export interface KeyedSigner {
+  account_id: string;
+  secret_key: string;
+}
+
+/**
+ * A transaction the node refused because of the key itself: it names another contract
+ * (`ReceiverMismatch`), does not allow the method (`MethodNameMismatch`), has spent its
+ * allowance (`NotEnoughAllowance`), cannot attach a deposit (`DepositWithFunctionCall`) or is
+ * not on the account (`AccessKeyNotFound`). Retrying cannot help; the key must be changed.
+ */
+export const KEY_REFUSAL = /ReceiverMismatch|MethodNameMismatch|NotEnoughAllowance|DepositWithFunctionCall|AccessKeyNotFound/;
+export const keyRefusal = (e: unknown): string | null => KEY_REFUSAL.exec(e instanceof Error ? e.message : String(e))?.[0] ?? null;
+
 export interface Chain {
   /** True when the ports do not use `hooks.fetch` (the model): the meter then charges each
    * call what it would cost on chain, a view 1 request and a transaction 2. */
   perCall: boolean;
   /** A port for `market` that signs as `signer` (read-only when null). Makes no request. */
-  connect(market: MarketDeployment, signer: Signer | null, hooks: PortHooks): Promise<WeirPort>;
+  connect(market: MarketDeployment, signer: KeyedSigner | null, hooks: PortHooks): Promise<WeirPort>;
 }
 
 /** Requests one call costs on chain: a view is one `query`; a transaction reads the access
@@ -149,8 +164,9 @@ export class Meter {
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
         const sent = this.#lastHash();
-        // A refusal before anything was sent is not a transaction.
-        if (sent !== null || !(e instanceof BudgetExhausted)) {
+        // A refusal before anything was sent, by the budget or by the node because of the key,
+        // is not a transaction: nothing lands on chain.
+        if (sent !== null || (!(e instanceof BudgetExhausted) && keyRefusal(e) === null)) {
           this.txs.push({ method, signer: inner.accountId, tx_hash: sent, ok: false, error });
         }
         throw e;

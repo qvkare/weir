@@ -25,11 +25,22 @@ export interface Deployments {
   markets: MarketDeployment[];
 }
 
-/** One account the keeper signs for. */
+/** One account the keeper signs for. A NEAR function-call key names exactly one contract, so
+ * an account acting on several markets with function-call keys needs one key per contract:
+ * `keys` maps a contract account to its key. `secret_key` is used for any contract without an
+ * entry in `keys`: right for a full-access key (tests, the sandbox), wrong for a function-call
+ * key on more than one market. */
 export interface Signer {
   account_id: string;
-  secret_key: string;
+  secret_key?: string;
+  keys?: Record<string, string>;
 }
+
+/** The key this signer uses on `contract`, or null when it has none. */
+export const keyFor = (s: Signer, contract: string): string | null => s.keys?.[contract] ?? s.secret_key ?? null;
+
+/** Every secret key a signer carries. */
+export const keysOf = (s: Signer): string[] => [...(s.secret_key ? [s.secret_key] : []), ...Object.values(s.keys ?? {})];
 
 /** One trading agent: its account, its strategy and the strategy's settings. */
 export interface AgentSpec extends Signer {
@@ -49,7 +60,9 @@ export interface AgentSpec extends Signer {
   /** maker and noise: order sizes. Defaults: maker max 40; noise 3 to 10. */
   min_size?: number;
   max_size?: number;
-  /** Market ids this agent trades on. Default: every market. */
+  /** The market this agent trades on (the deploy tool's form), or `markets` for several.
+   * Default: every market. */
+  market?: MarketId;
   markets?: MarketId[];
 }
 
@@ -72,11 +85,21 @@ function signerProblem(name: string, i: number, x: unknown): string | null {
   if (typeof x !== "object" || x === null) return `${name}[${i}] is not an object`;
   const o = x as Record<string, unknown>;
   if (typeof o.account_id !== "string" || o.account_id === "") return `${name}[${i}] has no account_id`;
-  if (typeof o.secret_key !== "string" || !o.secret_key.startsWith("ed25519:")) {
-    return `${name}[${i}] (${o.account_id}): secret_key must look like ed25519:<base58>`;
+  const isKey = (k: unknown) => typeof k === "string" && k.startsWith("ed25519:");
+  if (o.secret_key !== undefined && !isKey(o.secret_key)) return `${name}[${i}] (${o.account_id}): secret_key must look like ed25519:<base58>`;
+  if (o.keys !== undefined) {
+    if (typeof o.keys !== "object" || o.keys === null || Array.isArray(o.keys)) return `${name}[${i}] (${o.account_id}): keys must map contract accounts to keys`;
+    for (const [contract, k] of Object.entries(o.keys)) if (!isKey(k)) return `${name}[${i}] (${o.account_id}): the key for ${contract} must look like ed25519:<base58>`;
   }
+  if (o.secret_key === undefined && (o.keys === undefined || Object.keys(o.keys as object).length === 0)) return `${name}[${i}] (${o.account_id}): needs keys (one per contract) or secret_key`;
   return null;
 }
+
+const signerOf = (x: Signer): Signer => ({
+  account_id: x.account_id,
+  ...(x.secret_key !== undefined ? { secret_key: x.secret_key } : {}),
+  ...(x.keys !== undefined ? { keys: { ...x.keys } } : {}),
+});
 
 /** Parses a JSON array without letting the parser quote the input back in its message. */
 function parseList(name: string, text: string | undefined, problems: string[]): unknown[] {
@@ -105,14 +128,14 @@ export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_S
     if (v !== null) {
       const p = signerProblem("KEEPER", 0, v);
       if (p) problems.push(p.replace("KEEPER[0]", "KEEPER"));
-      else keeper = { account_id: (v as Signer).account_id, secret_key: (v as Signer).secret_key };
+      else keeper = signerOf(v as Signer);
     }
   }
   const reporters: Signer[] = [];
   for (const [i, x] of parseList("REPORTERS", vars.REPORTERS, problems).entries()) {
     const p = signerProblem("REPORTERS", i, x);
     if (p) problems.push(p);
-    else reporters.push({ account_id: (x as Signer).account_id, secret_key: (x as Signer).secret_key });
+    else reporters.push(signerOf(x as Signer));
   }
   const agents: AgentSpec[] = [];
   for (const [i, x] of parseList("AGENTS", vars.AGENTS, problems).entries()) {
@@ -146,7 +169,8 @@ export function strategyOf(a: AgentSpec): Strategy {
 /** Replaces every secret in a value that is about to be stored or served. */
 export function redactor(secrets: Pick<Secrets, "reporters" | "agents" | "swarmSecret" | "keeper">): <T>(v: T) => T {
   const needles = [...secrets.reporters, ...secrets.agents, ...(secrets.keeper ? [secrets.keeper] : [])]
-    .flatMap((s) => [s.secret_key, s.secret_key.slice("ed25519:".length)])
+    .flatMap(keysOf)
+    .flatMap((k) => [k, k.slice("ed25519:".length)])
     .concat(secrets.swarmSecret ?? [])
     .filter((s) => s.length >= 8)
     .map((s) => JSON.stringify(s).slice(1, -1));

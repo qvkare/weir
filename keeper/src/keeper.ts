@@ -31,7 +31,8 @@ import type { PortChange, WeirPort } from "@weir/chain";
 import { deliveryEnd, ERR, type TimeParams, type WireParams, type WireStatus } from "@weir/engine";
 import { CHIP_IDS, type ChipId } from "@weir/index";
 import { Budget, BUDGET_MARK, BudgetExhausted, PRIORITY_ORDER, type Priority, type SpentRequest } from "./budget.ts";
-import { redactor, strategyOf, type AgentSpec, type Deployments, type MarketDeployment, type MarketId, type Secrets, type Signer } from "./config.ts";
+import { keyFor, redactor, strategyOf, type AgentSpec, type Deployments, type MarketDeployment, type MarketId, type Secrets, type Signer } from "./config.ts";
+import { KeyGuard, KeyUnusable, NO_KEY_MARK, type KeyFault, type Role } from "./keys.ts";
 import { indexDue, readLatest, refreshIndex, requestsFor, type IndexAttempt, type LatestBundle } from "./indexer.ts";
 import { DEFERRED, Meter, nearChain, type Chain, type Fetch, type TxRecord } from "./ports.ts";
 import { KEYS, orderStore, readJson, renewLease, takeLease, type KeeperStore } from "./store.ts";
@@ -137,6 +138,8 @@ export interface TickReport {
   /** What was left for a later tick, in words, each starting with the market id (or "index"). */
   undone: string[];
   markets: Partial<Record<MarketId, MarketSummary>>;
+  /** Keys the node refused, set aside (not retried) until `until`, each with what to fix. */
+  key_faults: KeyFault[];
 }
 
 /** What the keeper has finished per contract. */
@@ -162,12 +165,13 @@ interface Marks {
 interface MarketRun {
   dep: MarketDeployment;
   meter: Meter;
-  /** Views; and `clear`/`settle` when it signs (the KEEPER account, else the first agent). */
+  /** Views; and `clear`/`settle`, sent by the first signer with a usable key for this
+   * market: the housekeeping account, then each agent of the market. */
   keeper: WeirPort;
   signs: boolean;
-  /** Signs `finalize_print`: the KEEPER account, else the first reporter. */
+  /** Signs `finalize_print`: the housekeeping account, then each reporter. */
   finalizer: WeirPort | null;
-  /** Signs the prunes: the KEEPER account only (agent keys do not allow them). */
+  /** Signs the prunes: the housekeeping account only (agent and reporter keys do not allow them). */
   pruner: WeirPort | null;
   reporters: { signer: Signer; port: WeirPort }[];
   agents: { spec: AgentSpec; strategy: Strategy; port: WeirPort }[];
@@ -193,7 +197,7 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
   const run = env.runId ?? `run-${now}-${Math.random().toString(36).slice(2, 8)}`;
   const redact = redactor(env.secrets);
   const report: TickReport = {
-    now, run, ran: true, order: [], acting: [], budget: { limit: budget.limit, used: 0, by_step: {} }, requests: budget.spent, entries: [], txs: [], undone: [], markets: {},
+    now, run, ran: true, order: [], acting: [], budget: { limit: budget.limit, used: 0, by_step: {} }, requests: budget.spent, entries: [], txs: [], undone: [], markets: {}, key_faults: [],
   };
   const add = (e: Omit<KeeperEntry, "at">) => report.entries.push({ at: now, ...e });
   const fetchM = budget.meter(env.fetch);
@@ -226,7 +230,16 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
   report.order = ordered.map((d) => d.id);
 
   const runs: MarketRun[] = [];
-  const out: Out = { add, report, budget, env, now, undone: (u: string) => report.undone.push(u) };
+  let stored: Record<string, KeyFault> | null = null;
+  try {
+    stored = await readJson<Record<string, KeyFault>>(env.store, KEYS.keyFaults);
+  } catch {
+    stored = null;
+  }
+  const keys = new KeyGuard(stored, now, (text, market, account) =>
+    add({ step: "keeper", ...(market ? { market: market as MarketId } : {}), ...(account ? { agent: account } : {}), action: "key", status: "skipped", text }),
+  );
+  const out: Out = { keys, add, report, budget, env, now, undone: (u: string) => report.undone.push(u) };
 
   try {
     budget.priority = "plan";
@@ -294,7 +307,13 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
     }, acting);
     await step("commit", "commits", (mr) => commits(out, mr), acting);
     await step("settle-redeem", "settle and redeem", (mr) => settleAndRedeem(out, mr), acting);
-    await step("prune", "pruning", (mr) => prune(out, mr), acting);
+    await step("prune", "pruning", async (mr) => {
+      try {
+        await prune(out, mr);
+      } catch (e) {
+        if (!(e instanceof KeyUnusable)) throw e; // said once by the key guard
+      }
+    }, acting);
   } catch (e) {
     add({ step: "keeper", action: "error", status: "failed", text: `tick stopped: ${errorText(e)}` });
   }
@@ -320,6 +339,14 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
       add({ step: "keeper", market: mr.dep.id, action: "store", status: "failed", text: `could not save progress: ${errorText(e)}` });
     }
   }
+  report.key_faults = Object.values(keys.faults);
+  if (keys.changed) {
+    try {
+      await env.store.put(KEYS.keyFaults, JSON.stringify(keys.faults));
+    } catch (e) {
+      add({ step: "keeper", action: "store", status: "failed", text: `could not save key faults: ${errorText(e)}` });
+    }
+  }
   report.budget.used = budget.used;
   for (const p of PRIORITY_ORDER) {
     const n = budget.spent.filter((s) => s.priority === p).length;
@@ -335,6 +362,7 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
 }
 
 type Out = {
+  keys: KeyGuard;
   add: (e: Omit<KeeperEntry, "at">) => void;
   report: TickReport;
   budget: Budget;
@@ -347,59 +375,72 @@ type Out = {
 export const cadence = (p: Pick<WireParams, "commit_secs" | "reveal_secs">): number =>
   Math.max(1, Math.floor(Math.min(p.commit_secs / 6, p.reveal_secs / 3) / 60));
 
-const forMarket = (spec: AgentSpec, id: MarketId) => spec.markets === undefined || spec.markets.includes(id);
+const forMarket = (spec: AgentSpec, id: MarketId) =>
+  spec.market !== undefined ? spec.market === id : spec.markets === undefined || spec.markets.includes(id);
 
 async function openMarket(out: Out, chain: Chain, fetchM: Fetch, dep: MarketDeployment): Promise<MarketRun> {
-  const { env, budget } = out;
+  const { env, budget, keys } = out;
   const meter = new Meter(budget, chain.perCall);
   const hooks = { fetch: fetchM, onOutcome: meter.onOutcome };
-  const connect = async (signer: Signer | null) => meter.wrap(await chain.connect(dep, signer, hooks));
+  const contract = dep.contract;
+  const viewPort = meter.wrap(await chain.connect(dep, null, hooks));
+  /** A signer's port on this market, guarded by its role, or null when it has no key here. */
+  const signerPort = async (signer: Signer, role: Role, step: Step): Promise<WeirPort | null> => {
+    const key = keyFor(signer, contract);
+    if (key === null) {
+      keys.once(`nokey|${signer.account_id}|${contract}`, `${signer.account_id} (${role}) cannot act on ${dep.id}: it has no key for ${contract} (add one under "keys")`, dep.id, signer.account_id);
+      return null;
+    }
+    try {
+      return keys.guard(meter.wrap(await chain.connect(dep, { account_id: signer.account_id, secret_key: key }, hooks)), role, signer.account_id, contract, dep.id, out.now);
+    } catch (e) {
+      out.add({ step, market: dep.id, agent: signer.account_id, action: "config", status: "failed", text: `${role} not used on ${dep.id}: ${errorText(e)}` });
+      return null;
+    }
+  };
 
-  const cached = await readJson<WireParams>(env.store, KEYS.params(dep.contract));
+  const cached = await readJson<WireParams>(env.store, KEYS.params(contract));
   if (cached) meter.params = cached;
   const agents: MarketRun["agents"] = [];
   for (const spec of env.secrets.agents.filter((a) => forMarket(a, dep.id))) {
-    try {
-      agents.push({ spec, strategy: strategyOf(spec), port: await connect(spec) });
-    } catch (e) {
-      out.add({ step: "swarm", market: dep.id, agent: spec.account_id, action: "config", status: "failed", text: `agent not run: ${errorText(e)}` });
-    }
+    const port = await signerPort(spec, "agent", "swarm");
+    if (port) agents.push({ spec, strategy: strategyOf(spec), port });
   }
-  let housekeeper: WeirPort | null = null;
-  if (env.secrets.keeper) {
-    try {
-      housekeeper = await connect(env.secrets.keeper);
-    } catch (e) {
-      out.add({ step: "housekeeping", market: dep.id, agent: env.secrets.keeper.account_id, action: "config", status: "failed", text: `keeper account not used: ${errorText(e)}` });
-    }
-  }
-  const keeper = housekeeper ?? agents[0]?.port ?? (await connect(null));
-  const status = await keeper.get_status({});
-  const params = await keeper.get_params({});
-  if (!cached) await env.store.put(KEYS.params(dep.contract), JSON.stringify(params));
+  const housekeeper = env.secrets.keeper ? await signerPort(env.secrets.keeper, "keeper", "housekeeping") : null;
+  const status = await viewPort.get_status({});
+  const params = await viewPort.get_params({});
+  if (!cached) await env.store.put(KEYS.params(contract), JSON.stringify(params));
 
   const reporters: MarketRun["reporters"] = [];
   for (const signer of env.secrets.reporters) {
     if (!params.reporters.includes(signer.account_id)) continue;
-    try {
-      reporters.push({ signer, port: await connect(signer) });
-    } catch (e) {
-      out.add({ step: "report", market: dep.id, agent: signer.account_id, action: "config", status: "failed", text: `reporter not run: ${errorText(e)}` });
-    }
+    const port = await signerPort(signer, "reporter", "report");
+    if (port) reporters.push({ signer, port });
   }
+  const named = <T extends { port: WeirPort }>(xs: T[], id: (x: T) => string) => xs.map((x) => ({ port: x.port, account: id(x) }));
+  const hk = housekeeper && env.secrets.keeper ? [{ port: housekeeper, account: env.secrets.keeper.account_id }] : [];
+  const settlers = [...hk, ...named(agents, (a) => a.spec.account_id)];
+  const finalizers = [...hk, ...named(reporters, (r) => r.signer.account_id)];
+  const keeper = keys.fallback(viewPort, settlers, contract, dep.id);
   const tp = timeParams(params);
-  const marks = (await readJson<Marks>(env.store, KEYS.marks(dep.contract))) ?? { settled_through: -1, redeemed_through: -1, redeemed: {} };
-  const stored = await readJson<Costs>(env.store, KEYS.costs(dep.contract));
-  const costs: Costs = stored ?? { since: out.now, fees: "0", forfeits: "0", rounds: 0, by_agent: {}, burned_at_start: null, burned: null };
+  const marks = (await readJson<Marks>(env.store, KEYS.marks(contract))) ?? { settled_through: -1, redeemed_through: -1, redeemed: {} };
+  const storedCosts = await readJson<Costs>(env.store, KEYS.costs(contract));
+  const costs: Costs = storedCosts ?? { since: out.now, fees: "0", forfeits: "0", rounds: 0, by_agent: {}, burned_at_start: null, burned: null };
+  const pruning = !env.secrets.keeper
+    ? "off: no KEEPER account (agent and reporter keys may not prune)"
+    : housekeeper
+      ? "on"
+      : `off: the KEEPER account has no key for ${contract}`;
   const mr: MarketRun = {
-    dep, meter, keeper, signs: housekeeper !== null || agents.length > 0,
-    finalizer: housekeeper ?? reporters[0]?.port ?? null, pruner: housekeeper,
+    dep, meter, keeper, signs: settlers.length > 0,
+    finalizer: finalizers.length > 0 ? keys.fallback(viewPort, finalizers, contract, dep.id) : null,
+    pruner: housekeeper,
     reporters, agents, params, tp, status, newest: newestSeries(tp, status.now), marks, marksChanged: false,
-    costs, costsChanged: stored === null, clearedNow: 0,
+    costs, costsChanged: storedCosts === null, clearedNow: 0,
     summary: {
-      contract: dep.contract, label: dep.label, chip: dep.chip, chain_now: status.now, live: status.live, bucket: null, reported: [],
+      contract, label: dep.label, chip: dep.chip, chain_now: status.now, live: status.live, bucket: null, reported: [],
       print: null, pending_buckets: [], settled_through: marks.settled_through, redeemed_through: marks.redeemed_through,
-      pruning: housekeeper ? "on" : "off: no KEEPER account (agent and reporter keys may not prune)", costs: null, errors: 0,
+      pruning, costs: null, errors: 0,
     },
   };
   // Before anything else: the swarm's passes skip series at or below the mark, so a series
@@ -465,7 +506,8 @@ const ALREADY_DONE: readonly string[] = [ERR.ALREADY_REVEALED, ERR.CLEARED, ERR.
 function absorb(out: Out, mr: MarketRun, entries: LogEntry[], step: Step, priority: Priority): void {
   const deferredClears = new Set(entries.filter((e) => e.action === "clear" && e.text.includes(DEFERRED)).map((e) => `${e.series}/${e.round}`));
   for (const e of entries) {
-    if (e.text.includes(DEFERRED)) continue;
+    // Deferred to a later step, or not sent for want of a usable key (said once already).
+    if (e.text.includes(DEFERRED) || e.text.includes(NO_KEY_MARK)) continue;
     if (e.action === "forfeit" && deferredClears.has(`${e.series}/${e.round}`)) continue;
     const base = { market: mr.dep.id, step, ...(e.agent ? { agent: e.agent } : {}), ...(e.series !== undefined ? { series: e.series } : {}), ...(e.round !== undefined ? { round: e.round } : {}) };
     if (e.text.includes(BUDGET_MARK)) {
@@ -596,6 +638,7 @@ async function reports(out: Out, mr: MarketRun, latest: LatestBundle | null): Pr
       if (madeFinal) return markDecided(mr, bucket, "Final");
     } catch (e) {
       if (e instanceof BudgetExhausted) throw e;
+      if (e instanceof KeyUnusable) continue;
       if (refused(e, ERR.DUPLICATE_REPORT)) {
         done.add(signer.account_id);
         out.add({ ...at, action: "report", status: "skipped", text: `another run reported for bucket ${bucket} first` });
@@ -643,6 +686,7 @@ async function finalize(out: Out, mr: MarketRun): Promise<void> {
       else out.add({ ...base, status: "done", text: `finalized bucket ${b} with no print: ${await noPrintReason(mr, b)}` });
     } catch (e) {
       if (e instanceof BudgetExhausted) throw e;
+      if (e instanceof KeyUnusable) return;
       if (refused(e, ERR.DECIDED, ERR.NO_REPORTS)) out.add({ ...base, status: "skipped", text: `bucket ${b}: ${errorText(e)} (a later report or a settle decided it)` });
       else {
         mr.summary.errors++;
@@ -696,7 +740,7 @@ async function settleAndRedeem(out: Out, mr: MarketRun): Promise<void> {
     const log = await swarmPass(out, mr, "settle-redeem", ["settle"], { lookback: openLookback(mr), trade: false, housekeeping: true });
     for (const e of log) if (e.action === "settle" && (e.status === "done" || e.text.endsWith(ERR.SETTLED)) && e.series !== undefined) settled.add(e.series);
   } else if (due) {
-    out.add({ step: "housekeeping", market: mr.dep.id, action: "settle", status: "skipped", text: "no account configured to sign settle" });
+    out.keys.once(`nosettle|${mr.dep.contract}`, `nobody can settle on ${mr.dep.id}: no housekeeping account or agent has a key for ${mr.dep.contract}`, mr.dep.id);
   }
   await advanceSettled(mr, settled);
   // Redeem every agent's position on settled series, remembering who is done.
@@ -712,6 +756,7 @@ async function settleAndRedeem(out: Out, mr: MarketRun): Promise<void> {
           out.add({ step: "housekeeping", market: mr.dep.id, agent: id, series: s, action: "redeem", status: "done", text: `redeemed ${pos.long} LONG and ${pos.short} SHORT` });
         } catch (e) {
           if (e instanceof BudgetExhausted) throw e;
+          if (e instanceof KeyUnusable) continue;
           if (!refused(e, ERR.NO_POSITION)) {
             mr.summary.errors++;
             out.add({ step: "housekeeping", market: mr.dep.id, agent: id, series: s, action: "redeem", status: "failed", text: `redeem failed: ${errorText(e)}` });
@@ -752,7 +797,7 @@ async function prune(out: Out, mr: MarketRun): Promise<void> {
       await mr.pruner.prune_print({ bucket: b });
       out.add({ ...base, action: "prune", status: "done", text: `pruned the print of bucket ${b}` });
     } catch (e) {
-      if (e instanceof BudgetExhausted) throw e;
+      if (e instanceof BudgetExhausted || e instanceof KeyUnusable) throw e;
       if (refused(e, ERR.NOT_DECIDED)) {
         (mr.marks.pending ??= []).push(b);
         mr.marksChanged = true;
@@ -780,7 +825,7 @@ async function prune(out: Out, mr: MarketRun): Promise<void> {
         await mr.pruner.prune_result({ series: at.series, round });
         out.add({ ...base, action: "prune", status: "done", series: at.series, round, text: `pruned the result of series ${at.series} round ${round}` });
       } catch (e) {
-        if (e instanceof BudgetExhausted) throw e;
+        if (e instanceof BudgetExhausted || e instanceof KeyUnusable) throw e;
         out.add({ ...base, action: "prune", status: "skipped", series: at.series, round, text: `result not pruned: ${errorText(e)}` });
       }
       mr.marks.results_from = { series: at.series, round: round + 1 };
@@ -801,6 +846,7 @@ export interface StoredStatus {
   acting: MarketId[];
   undone: string[];
   markets: TickReport["markets"];
+  key_faults: KeyFault[];
   log: KeeperEntry[];
 }
 
@@ -816,6 +862,7 @@ async function saveStatus(store: KeeperStore, report: TickReport): Promise<void>
     acting: report.acting,
     undone: report.undone,
     markets: report.markets,
+    key_faults: report.key_faults,
     log,
   };
   await store.put(KEYS.status, JSON.stringify(status));
