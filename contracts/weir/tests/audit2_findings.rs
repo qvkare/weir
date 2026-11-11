@@ -5,8 +5,12 @@
 //! audit record. Each test drives the contract through its public API in near-sdk's
 //! mocked VM, one call per "transaction" (a panic rolls state back). Run with
 //! `--nocapture --test-threads=1` to see the numbers.
-//! Economic numbers follow the `weekly` preset (agents/src/presets.ts): 2 of 3
-//! reporters, max_spread 2%, forfeit 1%, commit fee 0.02 $, 64 commits a round.
+//! Parameters follow the deployed presets (agents/src/presets.ts): 2 of 3 reporters,
+//! max_spread 2%, forfeit 1%, the ten-cent commit fee, 64 commits a round. Two differ,
+//! on purpose: the band is 10% of the anchor (0.40 $ at 2.00 $, where the presets have
+//! 15%, 0.60 $), so the fixture's prices stay round; and `min_prints` is 3 of 100
+//! buckets (the presets need 75%), so a test can show a normal settlement from a few
+//! prints. Where a number shown depends on either, the test's comment says so.
 
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -35,7 +39,8 @@ const OPEN: u64 = T0 - 1_100;
 const END: u64 = T0 + 1_000;
 const PRICE: u64 = 2_000_000;
 const DOLLAR: u128 = 1_000_000;
-const FEE: u128 = 20_000;
+/// The deployed ten-cent commit fee.
+const FEE: u128 = 100_000;
 
 fn id(name: &str) -> AccountId {
     name.parse().unwrap()
@@ -185,7 +190,9 @@ impl H {
 /// honest reporter and one dishonest reporter decide every bucket together. The
 /// dishonest one cannot move a print by more than max_spread/2, but it chooses WHICH
 /// buckets get a print (agree, or disagree by more than the spread), and the fixing
-/// is the average of the printed buckets only. Spec 9 and 15 say a single reporter
+/// is the average of the printed buckets only (with the presets' 75% `min_prints`, a
+/// fixing from 10 of 20 buckets would go void instead; the lean of each print is set
+/// by `max_spread_bps`, as deployed). Spec 9 and 15 say a single reporter
 /// "cannot steer" a print; it can choose which buckets print, and so moves the fixing.
 /// Shown: true average 2.000000, fixing 2.121000 from the 10 high buckets (the 10 low
 /// ones get no print): +0.121000 a unit, about 6% of the price.
@@ -224,7 +231,9 @@ fn limit_one_reporter_selects_which_buckets_print() {
 /// reporter disagrees in every bucket, so the series has no prints and goes void. Spec
 /// 0.6 cancels a void series at the centre of the band. Shown: the reporter bought 10
 /// SHORT at 0.10 (paid 1.00 $) and gets 0.20 a unit, 2.00 $: +1.00 $, where the true
-/// price (band top) pays SHORT nothing. The 0.5 rule paid it back 1.00 $ here only
+/// price (band top) pays SHORT nothing. The gain is half the band less the price paid,
+/// so it follows the fixture's 10% band; at the presets' 15% band (0.60 $) the same
+/// 0.10 SHORT would be paid 0.30, +2.00 $. The 0.5 rule paid it back 1.00 $ here only
 /// because this series has one trade; see audit3_void.rs for why that rule was dropped.
 #[test]
 fn limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side() {
@@ -264,11 +273,12 @@ fn limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side() {
 }
 
 /// LIMIT (spec 15, "Blocking a round"). Blocking a round costs max_commits *
-/// commit_fee. Shown: 64 * 0.02 = 1.28 $ a round (and 640 $ of capital tied up for
-/// one round), about 215 $ a week at 168 rounds, to keep every honest bidder whose lock
-/// is below the attacker's out of every round.
+/// commit_fee. Shown at the deployed fee: 64 * 0.10 = 6.40 $ a round (and 640 $ of
+/// capital tied up for one round), about 1,075 $ a week at 168 rounds, to keep every
+/// honest bidder whose lock is below the attacker's out of every round. It was 1.28 $
+/// at the two-cent fee the audit used.
 #[test]
-fn limit_blocking_a_round_costs_1_28_dollars() {
+fn limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee() {
     let mut h = H::with(params());
     for who in ["a.near", "b.near"] {
         h.fund(who, 100 * DOLLAR);
@@ -295,12 +305,14 @@ fn limit_blocking_a_round_costs_1_28_dollars() {
     println!("honest reveal {honest:?}; volume {}; blocking cost {cost} micro-$ (capital tied up 640 $ for one round)", r.volume);
     assert_eq!(honest, Err("commit not found".into()));
     assert_eq!(cost, 64 * FEE);
+    assert_eq!(cost, 6_400_000);
 }
 
 /// LIMIT (spec 15, "Agents"). Forfeits are burned, so nobody profits, but an account
 /// that leaves `max_round_lock` unset (the default) can still have its balance burned
 /// by a function-call agent at forfeit_bps of everything plus the fee, every round.
-/// Shown: 100 $ falls to about 90.25 $ after 10 rounds at the preset's 1% forfeit.
+/// Shown, at the deployed 1% forfeit and ten-cent fee: 100 $ falls to 89.491594 $ in
+/// 10 rounds (it was 90.248889 $ at the two-cent fee the audit used).
 #[test]
 fn limit_an_account_without_a_round_lock_limit_can_be_burned() {
     let mut h = H::with(params());
@@ -317,14 +329,15 @@ fn limit_an_account_without_a_round_lock_limit_can_be_burned() {
     let left = h.balance("victim.near");
     let burned = h.view(|w| w.get_totals()).burned.0;
     println!("victim 100 $ -> {left} micro-$ after 10 rounds; burned {burned}");
-    assert!(left < 91 * DOLLAR);
+    assert_eq!(left, 89_491_594);
 }
 
 /// LIMIT (spec 11, invariant 6 now reads "forfeits and fees are never credited to any
 /// account"). Whether Bob reveals still decides whether Charlie trades and at what
 /// price: if Bob and Charlie are one person, not revealing is a last look. Shown: with
 /// Bob's reveal the round clears at 0.150 and Charlie gets nothing; without it, at 0.225
-/// and Charlie sells 10. The look costs 1% of Bob's 5 $ lock plus the 0.02 $ fee: 0.07 $.
+/// and Charlie sells 10. The look costs 1% of Bob's 5 $ lock plus the ten-cent fee:
+/// 0.15 $ (0.07 $ at the two-cent fee the audit used).
 #[test]
 fn limit_last_look_a_non_reveal_changes_another_accounts_fill() {
     let outcome = |bob_reveals: bool| {

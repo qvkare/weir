@@ -71,11 +71,14 @@ most four).
 
 ## Audit
 
-An independent auditor made three passes (against spec 0.3, 0.4 and 0.5) and found
-the dollar accounting sound every time. Each finding is either closed by a rule, with
+The review was done by an AI reviewer that did not write the contract, working from
+the specification and the source, with tests it wrote. It is not an audit firm's
+audit and not a formal verification. It made three passes (against spec 0.3, 0.4 and
+0.5) and found the dollar accounting sound every time. Each finding is either closed by a rule, with
 a test that keeps the attack and asserts it fails, or stated in the spec as an open
 limit, with a test that shows exactly what is still possible and the number it shows.
-`docs/AUDIT.md` has the auditor's reasoning; the numbers below come from the tests.
+`docs/AUDIT.md` has the reviewer's reasoning; the numbers below come from the tests,
+at the deployed presets' parameters unless a test's comment says otherwise.
 
 ### Closed by a rule
 
@@ -96,12 +99,12 @@ limit, with a test that shows exactly what is still possible and the number it s
 
 | Pass | Limit (spec section) | What the test shows | Test |
 |---|---|---|---|
-| 1, 2 | Blocking a round costs `max_commits * commit_fee` (15) | 1.28 $ a round at the test's 0.02 $ fee (64 slots); 6.40 $ at the deployed 0.10 $ | `limit_blocking_a_round_costs_1_28_dollars`, and `audit_eviction_griefing_now_costs_a_fee_per_slot` asserts exactly `max_commits * commit_fee` |
+| 1, 2 | Blocking a round costs `max_commits * commit_fee` (15) | 6.40 $ a round at the deployed 0.10 $ fee (64 slots); it was 1.28 $ at the two-cent fee the review used | `limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee`, and `audit_eviction_griefing_now_costs_a_fee_per_slot` asserts exactly `max_commits * commit_fee` |
 | 2 | With one reporter absent, a dishonest one chooses which buckets print (15) | True average 2.000, fixing 2.121 from the 10 buckets it agreed to | `limit_one_reporter_selects_which_buckets_print` |
-| 2, 3 | A reporter can force a void, which pays half the band (10, 15) | Bought 10 SHORT at 0.10, gets 0.20: +1.00 $ | `limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side` |
+| 2, 3 | A reporter can force a void, which pays half the band (10, 15) | Bought 10 SHORT at 0.10, gets half the band: +1.00 $ at the test's 0.40 $ band, +2.00 $ at the deployed 0.60 $ | `limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side` |
 | 3 | A reporter who trades buys the cheap side after a move, then forces the void (10, 15) | SHORT at 0.04 pays 0.20: +15.90 $ on 100 units at a 0.40 $ band; up to 0.299 $ a unit at the deployed 0.60 $ band | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
-| 2 | An account without `max_round_lock` can be burned by its agent (15) | 100 $ falls to 90.248889 $ in 10 rounds at a 1% forfeit | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
-| 2 | The last look: a non-reveal changes another account's fill (11) | Clearing moves from 0.150 to 0.225; the look costs 0.07 $ | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
+| 2 | An account without `max_round_lock` can be burned by its agent (15) | 100 $ falls to 89.491594 $ in 10 rounds at the deployed 1% forfeit and 0.10 $ fee | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
+| 2 | The last look: a non-reveal changes another account's fill (11) | Clearing moves from 0.150 to 0.225; the look costs 0.15 $ (1% of a 5 $ lock and the fee) | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
 | 2 | One account can take a series' whole mint cap (8) | The next minter gets `too many sets`; auctions still clear | `limit_one_account_can_take_the_whole_mint_cap` |
 | 2 | Unwise but valid parameters (3) | A 100% spread lets one of two reporters print 3.0 for a true 2.0 | `limit_unwise_parameters_are_still_accepted` |
 
