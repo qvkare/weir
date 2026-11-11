@@ -17,7 +17,8 @@ Options: `--markets h100-fast,h100-weekly,h200-weekly,a100-80-weekly` (default: 
 state file, else all four), `--out <dir>` (default `deploy/out/<network>/`, git-ignored),
 `--keys <dir>` (default `~/.near-credentials/<network>/`; refused inside the repository),
 `--days <n>` (operator gas to fund, default 2), `--faucet-wait <secs>` (default 900),
-`--json` (status), `--dry-run` and `--max-fund-accounts <n>` (topup, default 20). On the sandbox: `--rpc <url> --root-key <sandbox home>/validator_key.json`.
+`--json` (status), `--dry-run` and `--max-fund-accounts <n>` (topup, default 20; there `--days`
+means days to cover, default 14). On the sandbox: `--rpc <url> --root-key <sandbox home>/validator_key.json`.
 The suffix is kept in `<out>/state.json`; later runs need only `--network`.
 
 ## What it creates
@@ -28,7 +29,7 @@ attaches):
 
 | Account | Created by | What it is | NEAR |
 |---|---|---|---|
-| `weir-<market>-<s>.testnet` | faucet | the market contract, deployed and initialised with `new(params)` in one transaction | the faucet grant (10 NEAR assumed, read by `apply`); weir.wasm is 303,281 B = 3.04 NEAR of storage, plus 0.105 NEAR of attached gas to deploy; the remaining ~6.86 NEAR pays for the state it accumulates |
+| `weir-<market>-<s>.testnet` | faucet | the market contract, deployed and initialised with `new(params)` in one transaction | the faucet grant (10 NEAR assumed, read by `apply`); weir.wasm is about 304 kB = 3.04 NEAR of storage (`plan` prints the exact size of the local build), plus 0.105 NEAR of attached gas to deploy; the remaining ~6.86 NEAR pays for the state it accumulates |
 | `weir-usdc-<s>.testnet` | faucet | the test dollar `tUSDC` (`mock_usdc.wasm`, open `mint`). **Real USDC is out of scope.** | grant; 146,689 B = 1.47 NEAR of storage |
 | `weir-ops-<s>.testnet` | faucet | parent of every operator; pays their NEAR, their token storage and their registrations | grant; pays 9.78 NEAR for the four markets (6.83 for the two H100 ones) |
 | `reporter-{a,b,c}.weir-ops-<s>.testnet` | ops | three reporters for every market, each with one function-call key per market contract | 0.240 each for the four markets |
@@ -90,8 +91,9 @@ book, x 1.25, plus the purchase price of its largest attached call and 5 Tgas of
 up to 0.01 NEAR. For example a fast reporter: (8640 reports + 864 finalizes) x 2.73 Tgas =
 25,946 Tgas = 2.5946 NEAR; x 1.25 + (10 + 5) Tgas x 1e9 = 0.015, so 3.2582, rounded to
 **3.26 NEAR**. Fast agents 7.87 (maker 15.36), the keeper on the fast market 33.12; weekly
-reporters 0.29, agents 0.79 (maker 1.41), the keeper 2.88. `plan` prints every key's arithmetic. An allowance is a cap,
-not money: what is spent comes from the account's balance.
+reporters 0.29, agents 0.79 (maker 1.41), the keeper 2.88. A reporter and the keeper hold one such
+key per market. `plan` prints every key's arithmetic. An allowance is a cap, not money: what is
+spent comes from the account's balance.
 
 **Funding.** Each operator gets its setup gas plus `--days` of gas at the expected load (worst
 measured gas, `clear` at our agents' book), plus what it must keep: the purchase price of its
@@ -129,8 +131,8 @@ transaction that uses them, never overwritten (`O_EXCL`), mode 600, directory 70
 The tool never prints a secret: every log line and error passes through a redactor that knows
 each key in every encoding (base58 with and without the public half, hex, base64), and
 `state.json`, `record.json` and `deployments.json` are refused if they would contain one. Tests
-check this with recognisable generated keys; the sandbox run scans all CLI output and files for
-the 88 secrets it generated.
+check this with recognisable generated keys; the sandbox run scans every CLI output and output
+file for every secret it generated.
 
 ## Outputs (`--out`)
 
@@ -204,10 +206,23 @@ node --env-file=deploy/out/testnet/keeper.env keeper/src/node.ts --loop --port 8
 #   or, for the Worker: wrangler secret put REPORTERS (AGENTS, SWARM_SECRET, KEEPER) with the values from keeper.env
 ```
 
-`keeper.env` uses the keeper's per-contract key shape (keeper commit 868e2fc, "Let every keeper
-signer hold one key per contract"): a NEAR function-call key names exactly one contract, so the
-three reporters and the housekeeping account hold one key per market contract and each agent one
-for its market. With the housekeeping account set, the keeper prunes prints and results.
+`keeper.env` is in the keeper's per-contract key shape (see `keeper/.env.example`). A NEAR
+function-call key names exactly one contract, so every signer carries a `keys` map from contract
+account to key:
+
+- `REPORTERS`: the three reporters, shared by all markets (every market's `reporters` parameter
+  names the same three), each with one key per market contract (`REPORTER_KEY_METHODS`);
+- `AGENTS`: six per market, each with `market` and one key for that market's contract
+  (`AGENT_KEY_METHODS`), plus its strategy settings;
+- `KEEPER`: the one housekeeping account, with one key per market contract
+  (`KEEPER_KEY_METHODS`); it signs `clear`, `settle`, `finalize_print` and the prunes, so prints
+  and results are pruned and a contract's storage stops growing;
+- `SWARM_SECRET`.
+
+After `topup` rotates a key it rewrites `keeper.env`; restart the keeper (or re-put the Worker
+secrets) so it loads the new key, because the old one is deleted. The tool's own sandbox run loads
+the generated `keeper.env` and `deployments.json` into the keeper's `runTick` unchanged, before and
+after a rotation.
 
 ## Tests
 
@@ -232,19 +247,20 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   logs, state, record or deployments.json, every function-call key (and no full-access key) in
   keeper.env, in the per-contract shape, and a tampered keeper.env caught; key files; seal.
 - `topup.test.ts`: the arithmetic (nothing short at exactly N days; an operator short by X gets
-  X plus a tenth; a contract's N days of unpruned prints, 1.49 NEAR a day fast, 0.12 weekly; a key
-  rotated below N days' need and not at exactly it, to a month or N days x 1.25; the number of fund
-  accounts; the fast market's gas about twelve times a weekly one's); and on the fake chain a
-  test-dollar top-ups at and below the floor; and on the fake chain a drained agent (NEAR and,
-  for another, test dollars), contract and key with an empty ops account: fund accounts created and swept, the
-  run killed partway and resumed, nothing short afterwards, the new key on chain, the old one
-  gone, keeper.env holding the new one, a second run sending nothing, no secret logged.
+  X plus a tenth; an agent's test dollars at and below its floor; a contract's N days of unpruned
+  prints, 1.49 NEAR a day fast, 0.12 weekly; a key rotated below N days' need and not at exactly
+  it, to a month or N days x 1.25; the number of fund accounts; the fast market's gas about twelve
+  times a weekly one's). Then, on the fake chain, with an empty ops account: an agent drained of
+  NEAR, another of test dollars, a contract and an exhausted key. Fund accounts are created and
+  swept, the run is killed partway and resumed, nothing is short afterwards, the new key is on
+  chain and the old one gone, keeper.env holds the new one, a second run sends nothing, and no
+  secret is logged.
 - `encode.test.ts`: `DeleteKey` (the one action this package encodes) and a 400 kB deploy, byte
   for byte against `@near-js/transactions`.
 - `faucet.test.ts`: the faucet client through 429 and 503, an existing account, a refusal, a
   `false`, a long outage.
 - `e2e/e2e.ts` (sandbox, through the CLI as an operator runs it): plan; apply two H100 markets
-  (117 transactions, each hash logged); status asserted field by field (code hashes, keys and
+  (111 transactions, each hash logged); status asserted field by field (code hashes, keys and
   allowances, balances, storage to the byte, parameters, registrations, guards, deposits); one
   tick by hand with the generated keys (three reports make a print, a buyer and a seller commit
   and reveal, the keeper's key clears at 3 GPU-hours at $0.435, the agent key refused
@@ -254,8 +270,8 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   ticks of the keeper's `runTick` loaded from the generated `keeper.env` and `deployments.json`
   (index sources served from the saved fixtures), which reports, commits, reveals and clears with
   no failure; topup after draining an agent's NEAR, another's test dollars (withdrawn) and
-  exhausting reporter-a's fast key (status flags
-  both; `--dry-run` names them and creates nothing; topup creates fund accounts from the sandbox
+  exhausting reporter-a's fast key (status flags them; `--dry-run` names them and creates
+  nothing; topup creates fund accounts from the sandbox
   root, sweeps them, tops everyone up to 14 days, rotates the key, rewrites keeper.env; a second
   run sends nothing), then the keeper restarted on the new keeper.env reports with the rotated key;
   a fresh apply killed with SIGKILL halfway and re-run to completion; no secret in any output.
@@ -266,8 +282,8 @@ Everything above ran on near-sandbox 2.14.0 (protocol 88) only. Only testnet wil
 
 - **The faucet.** The endpoint and request are near-cli-rs's (`src/chain.ts`, `FAUCET_URL`,
   with the source cited); its grant per account (10 NEAR assumed; `apply` reads the balance
-  instead), its rate limits and how it answers when limited, whether it accepts six accounts in
-  a row from one address, and the exact shape of its reply (the client falls back to waiting for
+  instead), its rate limits and how it answers when limited, whether it accepts the six
+  top-level accounts of a deployment in a row from one address, and the exact shape of its reply (the client falls back to waiting for
   the account if the reply is not the outcome near-cli-rs expects).
 - **Real latency and finality**: 211 transactions one after another.
 - **`topup` against the faucet**: how many fund accounts in a row the faucet allows, and its
