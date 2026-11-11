@@ -5,4 +5,5 @@ packages:
   - agents
   - keeper
   - backtest
+  - integration
   - web
