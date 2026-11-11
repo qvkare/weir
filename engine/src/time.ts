@@ -37,6 +37,9 @@ export const roundEnd = (p: TimeParams, series: number, round: number): number =
 export const roundExists = (p: TimeParams, series: number, round: number): boolean =>
   round >= 0 && roundEnd(p, series, round) <= auctionClose(p, series);
 
+/** The rounds a series has when nothing saturates: `(lead_secs - cutoff_secs) / round_secs` (section 3). */
+export const roundsPerSeries = (p: TimeParams): number => Math.floor((p.leadSecs - p.cutoffSecs) / roundSecs(p));
+
 /** Rounds series `series` has: rounds `0 .. count-1` exist. */
 export const roundCount = (p: TimeParams, series: number): number =>
   Math.max(0, Math.floor((auctionClose(p, series) - auctionOpen(p, series)) / roundSecs(p)));

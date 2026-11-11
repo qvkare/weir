@@ -1,6 +1,8 @@
 // Random action sequences against Market. After every step, success or failure, the test
 // checks invariants 1, 2 and 5 of section 11 against its own count of dollars, and that a
-// call that threw changed nothing.
+// call that threw changed nothing. Clears and redeems also check invariant 6, and the calls
+// invariant 7 says must work (clearing a finished round, settling when the time comes) are
+// made with `must`, which fails the test if they are refused.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { computeBand, deliveryEnd, Market, phaseAt, roundEnd, type Params, type Side, type Totals } from "../src/mod.ts";
@@ -21,6 +23,7 @@ const PARAMS: Params = {
   reportGraceSecs: 60,
   voidAfterSecs: 600,
   maxAnchorAgeSecs: 1200,
+  commitFee: 100n,
 };
 const START = 98_500;
 const RUNS = 300;
@@ -34,12 +37,12 @@ interface Ledger {
   /** USDC the contract holds: deposits taken minus withdrawals paid. */
   held: bigint;
   netDeposit: Map<string, bigint>;
-  /** Everything each account ever locked in a commit or paid to mint. */
+  /** Everything each account ever locked or paid as a fee in a commit, or paid to mint. */
   outlay: Map<string, bigint>;
 }
 
 const add = (m: Map<string, bigint>, k: string, v: bigint) => m.set(k, (m.get(k) ?? 0n) + v);
-const total = (t: Totals) => t.free + t.locked + t.setsBacking + t.pools + t.unredeemed;
+const total = (t: Totals) => t.free + t.locked + t.setsBacking + t.unredeemed + t.burned;
 
 function lockedBy(m: Market, secrets: readonly Secret[]): Map<string, bigint> {
   const locked = new Map<string, bigint>();
@@ -49,7 +52,7 @@ function lockedBy(m: Market, secrets: readonly Secret[]): Map<string, bigint> {
     if (seen.has(key)) continue;
     seen.add(key);
     for (const c of m.getRound(s.series, s.round)?.commits ?? []) {
-      if (c.state !== "Void") add(locked, c.owner, c.lock);
+      add(locked, c.owner, (c.state === "Void" ? 0n : c.lock) + c.fee);
     }
   }
   return locked;
@@ -57,7 +60,7 @@ function lockedBy(m: Market, secrets: readonly Secret[]): Map<string, bigint> {
 
 function checkInvariants(m: Market, ledger: Ledger, secrets: readonly Secret[], where: string): void {
   const totals = m.getTotals();
-  // Invariant 1. Every rounding in the spec goes to a pool, so it holds with equality.
+  // Invariant 1, an equality: what is not owed to anyone is burned.
   assert.equal(total(totals), ledger.held, `${where}: solvency ${JSON.stringify(totals, big)}`);
 
   // Invariant 2.
@@ -73,6 +76,7 @@ function checkInvariants(m: Market, ledger: Ledger, secrets: readonly Secret[], 
     }
     assert.equal(long, series.openSets, `${where}: series ${s} long`);
     assert.equal(short, series.openSets, `${where}: series ${s} short`);
+    assert.ok(series.openSets <= Number.MAX_SAFE_INTEGER, `${where}: series ${s} open_sets`);
   }
 
   // Invariant 5: what an account no longer has never exceeds what it locked or paid.
@@ -101,7 +105,16 @@ function anchorBand(m: Market): number {
   return last ? computeBand(last.price, PARAMS.tick, PARAMS.bandBps).band : 400_000;
 }
 
-function runSequence(seed: number, stats: { settled: number; voided: number; cleared: number; traded: number }): void {
+interface Stats {
+  settled: number;
+  voided: number;
+  cleared: number;
+  traded: number;
+  forfeits: number;
+  noPrints: number;
+}
+
+function runSequence(seed: number, stats: Stats): void {
   const rng = new Rng(seed);
   const m = new Market(PARAMS, START);
   const ledger: Ledger = { held: 0n, netDeposit: new Map(), outlay: new Map() };
@@ -115,10 +128,29 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
     add(ledger.netDeposit, t, 50_000_000n);
   }
 
+  // Invariant 6 at clearing: each account gets back at most what its own live commits
+  // locked, an account with no commit in the round gets nothing, and the rest is burned.
   const clear = (series: number, round: number) => {
+    const own = new Map<string, bigint>();
+    for (const c of m.getRound(series, round)?.commits ?? []) add(own, c.owner, c.state === "Void" ? 0n : c.lock);
+    const before = new Map(TRADERS.map((t) => [t, m.getAccount(t)!.balance]));
+    const burned = m.getTotals().burned;
     const result = m.clear(series, round);
+    for (const t of TRADERS) {
+      const gain = m.getAccount(t)!.balance - before.get(t)!;
+      assert.ok(gain >= 0n && gain <= (own.get(t) ?? 0n), `seed ${seed}: ${t} gained ${gain} at clear ${series}/${round}`);
+    }
+    assert.equal(m.getTotals().burned - burned, result.forfeited + result.fees);
     stats.cleared++;
     if (result.volume > 0) stats.traded++;
+    if (result.forfeited > 0n) stats.forfeits++;
+  };
+  // Invariant 6 at redemption: a position pays its payouts and nothing more.
+  const redeem = (series: number, t: string) => {
+    const p = m.getPosition(series, t);
+    const s = m.getSeries(series)?.settlement;
+    const amount = m.redeem(series, t);
+    assert.equal(amount, BigInt(p.long * s!.longPayout) + BigInt(p.short * s!.shortPayout));
   };
   const waiting = (s: Secret) => {
     const now = phaseAt(PARAMS, s.series, m.now);
@@ -150,7 +182,15 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
         }
       },
     ],
-    [1, () => m.setGuard(rng.pick(TRADERS), rng.chance(0.5) ? null : rng.int(0, 150_000))],
+    [
+      1,
+      () =>
+        m.setGuard(
+          rng.pick(TRADERS),
+          rng.chance(0.5) ? null : rng.int(0, 150_000),
+          rng.chance(0.5) ? null : BigInt(rng.int(0, 20_000_000)),
+        ),
+    ],
     [
       12,
       () => {
@@ -175,7 +215,7 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
         const lock = rng.chance(0.1) ? BigInt(rng.int(1000, 50_000)) : cost + BigInt(rng.int(0, 200_000));
         const salt = rng.hex(rng.int(32, 64));
         secrets.push(sealedCommit(m, t, series, round, side, size, price, lock, salt));
-        add(ledger.outlay, t, lock);
+        add(ledger.outlay, t, lock + PARAMS.commitFee);
       },
     ],
     [
@@ -211,7 +251,17 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
       () => m.transferPosition(rng.pick(TRADERS), rng.pick(SERIES), rng.pick(TRADERS), rng.int(0, 3), rng.int(0, 3)),
     ],
     [1, () => m.settle(rng.pick(SERIES))],
-    [2, () => m.redeem(rng.pick(SERIES), rng.pick(TRADERS))],
+    [2, () => redeem(rng.pick(SERIES), rng.pick(TRADERS))],
+    [
+      2,
+      () => {
+        const closed = m.getPendingPrints().filter((b) => m.now >= b + PARAMS.printIntervalSecs + PARAMS.reportGraceSecs);
+        if (closed.length === 0) return;
+        const bucket = rng.pick(closed);
+        if (!m.finalizePrint(bucket)) stats.noPrints++;
+      },
+    ],
+    [1, () => m.prunePrint(m.now - (m.now % PARAMS.printIntervalSecs) - PARAMS.printIntervalSecs * rng.int(0, 60))],
   ];
   const weights = actions.reduce((w, [n]) => w + n, 0);
 
@@ -224,6 +274,14 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
       assert.equal(m.events.length, before.events, `${where}: a failed call logged an event (${e.message})`);
       assert.deepEqual(m.getTotals(), before.totals, `${where}: a failed call moved dollars (${e.message})`);
       assert.equal(ledger.held, before.held, where);
+    }
+    checkInvariants(m, ledger, secrets, where);
+  };
+  const must = (where: string, action: () => void) => {
+    try {
+      action();
+    } catch (e) {
+      assert.fail(`${where}: refused with ${e instanceof Error ? e.message : String(e)}`);
     }
     checkInvariants(m, ledger, secrets, where);
   };
@@ -240,16 +298,19 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
     }
     for (const s of secrets) {
       const over = m.now >= roundEnd(PARAMS, s.series, s.round);
-      if (over && m.getRound(s.series, s.round) && rng.chance(0.6)) step(`seed ${seed} step ${i} clear`, () => clear(s.series, s.round));
+      if (over && m.getRound(s.series, s.round) && rng.chance(0.6)) must(`seed ${seed} step ${i} clear`, () => clear(s.series, s.round));
     }
   }
 
-  // Wind down: clear what is left, settle, redeem everything.
-  step(`seed ${seed} end`, () => m.setTime(Math.max(m.now, END)));
-  for (const s of secrets) step(`seed ${seed} final clear`, () => m.getRound(s.series, s.round) && clear(s.series, s.round));
+  // Wind down. Invariant 7: whatever happened, every finished round clears and every series
+  // settles once its time has come.
+  must(`seed ${seed} end`, () => m.setTime(Math.max(m.now, END)));
+  for (const s of secrets) {
+    if (m.getRound(s.series, s.round)) must(`seed ${seed} final clear`, () => clear(s.series, s.round));
+  }
   for (const series of SERIES) {
     if (!m.getSeries(series)) continue;
-    step(`seed ${seed} final settle`, () => {
+    must(`seed ${seed} final settle`, () => {
       if (!m.getSeries(series)!.settlement) m.settle(series);
       const s = m.getSeries(series)!.settlement!;
       stats.settled++;
@@ -257,16 +318,16 @@ function runSequence(seed: number, stats: { settled: number; voided: number; cle
     });
     for (const t of TRADERS) {
       const p = m.getPosition(series, t);
-      if (p.long + p.short > 0) step(`seed ${seed} final redeem`, () => m.redeem(series, t));
+      if (p.long + p.short > 0) must(`seed ${seed} final redeem`, () => redeem(series, t));
     }
   }
   const totals = m.getTotals();
   assert.deepEqual([totals.locked, totals.setsBacking, totals.unredeemed], [0n, 0n, 0n], `seed ${seed}`);
-  assert.equal(totals.free + totals.pools, ledger.held, `seed ${seed}`);
+  assert.equal(totals.free + totals.burned, ledger.held, `seed ${seed}`);
 }
 
-test(`invariants 1, 2 and 5 hold over ${RUNS} random action sequences`, (t) => {
-  const stats = { settled: 0, voided: 0, cleared: 0, traded: 0 };
+test(`invariants 1, 2, 5, 6 and 7 hold over ${RUNS} random action sequences`, (t) => {
+  const stats: Stats = { settled: 0, voided: 0, cleared: 0, traded: 0, forfeits: 0, noPrints: 0 };
   for (let seed = 1; seed <= RUNS; seed++) runSequence(seed, stats);
   t.diagnostic(JSON.stringify(stats));
   // The sequences must actually reach the interesting states.
@@ -274,4 +335,6 @@ test(`invariants 1, 2 and 5 hold over ${RUNS} random action sequences`, (t) => {
   assert.ok(stats.traded > RUNS, `traded ${stats.traded}`);
   assert.ok(stats.settled > RUNS, `settled ${stats.settled}`);
   assert.ok(stats.voided > 0 && stats.voided < stats.settled, `voided ${stats.voided} of ${stats.settled}`);
+  assert.ok(stats.forfeits > RUNS / 2, `forfeits ${stats.forfeits}`);
+  assert.ok(stats.noPrints > 0, `no prints ${stats.noPrints}`);
 });

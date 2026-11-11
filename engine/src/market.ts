@@ -1,11 +1,13 @@
-// An in-memory model of the whole Weir contract (sections 5 to 13) with a settable clock.
+// An in-memory model of the whole Weir contract (sections 5 to 14) with a settable clock.
 // Every method checks everything before it changes anything, so a call that throws leaves
-// the state exactly as it was, like a panicking transaction on chain. Chain-only details
-// (the registration fee, 1 yoctoNEAR deposits, the token contract) are left out.
+// the state exactly as it was, like a panicking transaction on chain. Refusals use the
+// contract's texts (section 16, `ERR`). Chain-only details (the registration fee,
+// 1 yoctoNEAR deposits, the token contract) are left out.
 import { computeBand } from "./band.ts";
 import { clearRound, type Order } from "./clearing.ts";
+import { ERR } from "./errors.ts";
 import { commitHash, isHex64, isSalt, type Side } from "./hash.ts";
-import { printDecision } from "./index.ts";
+import { decidePrint, type PrintState } from "./index.ts";
 import { redeemAmount, settleSeries } from "./settlement.ts";
 import {
   auctionClose,
@@ -16,6 +18,7 @@ import {
   phaseAt,
   phaseEndsAt,
   roundEnd,
+  roundsPerSeries,
   roundStart,
   seriesOf,
   MAX_SERIES,
@@ -31,12 +34,14 @@ export interface Params extends TimeParams {
   tick: number;
   printIntervalSecs: number;
   reportGraceSecs: number;
-  maxMoveBps: number;
+  maxSpreadBps: number;
   minPrints: number;
   voidAfterSecs: number;
   maxAnchorAgeSecs: number;
   forfeitBps: number;
   minLock: bigint;
+  /** Burned for every commit that reaches clearing. May be zero. */
+  commitFee: bigint;
   maxCommits: number;
   maxOrderSize: number;
   reporters: readonly string[];
@@ -56,6 +61,7 @@ export interface CommitView {
   owner: string;
   hash: string;
   lock: bigint;
+  fee: bigint;
   state: CommitState;
   order: OrderTerms | null;
 }
@@ -82,8 +88,12 @@ export interface ResultView {
   orders: number;
   /** Commits the round held when it was cleared. */
   commits: number;
+  /** Burned from unrevealed locks. */
   forfeited: bigint;
+  /** Burned commit fees. */
+  fees: bigint;
   clearedAt: number;
+  /** The orders that were filled, in seq order. */
   fills: FillView[];
 }
 
@@ -91,8 +101,6 @@ export interface SettlementView {
   fixing: number;
   longPayout: number;
   shortPayout: number;
-  bonusLong: bigint;
-  bonusShort: bigint;
   prints: number;
   void: boolean;
   settledAt: number;
@@ -105,7 +113,6 @@ export interface SeriesView {
   band: number;
   openedAt: number;
   openSets: number;
-  bonusPool: bigint;
   /** Rounds, ascending, that hold commits and have not been cleared. */
   pendingRounds: number[];
   settlement: SettlementView | null;
@@ -113,7 +120,10 @@ export interface SeriesView {
 
 export interface AccountView {
   balance: bigint;
+  /** Section 6.4: how far from the reference an order may bid. */
   guard: number | null;
+  /** Section 6.2: the most the account's commits may lock in one round. */
+  maxRoundLock: bigint | null;
 }
 
 export interface Position {
@@ -129,9 +139,9 @@ export interface ReportView {
 
 export interface PrintView {
   bucket: number;
-  /** Null until the print is final. */
+  /** Null unless `state` is `Final`. */
   price: number | null;
-  final: boolean;
+  state: PrintState;
   reports: ReportView[];
 }
 
@@ -145,13 +155,14 @@ export interface Accumulator {
   count: number;
 }
 
-/** The five terms of invariant 1. */
+/** The five terms of invariant 1; their sum is the USDC the contract holds. */
 export interface Totals {
   free: bigint;
+  /** Locks of commits not void, and fees of all commits, in rounds not yet cleared. */
   locked: bigint;
   setsBacking: bigint;
-  pools: bigint;
   unredeemed: bigint;
+  burned: bigint;
 }
 
 export interface LiveSeries {
@@ -170,34 +181,41 @@ export interface Status {
   live: LiveSeries[];
 }
 
+type CommitData = { series: number; round: number; seq: number; accountId: string };
+
 export type WeirEvent =
   | { event: "register"; data: { accountId: string } }
-  | { event: "deposit"; data: { accountId: string; amount: bigint } }
-  | { event: "withdraw"; data: { accountId: string; amount: bigint } }
-  | { event: "withdraw_failed"; data: { accountId: string; amount: bigint } }
+  | { event: "deposit" | "withdraw" | "withdraw_failed"; data: { accountId: string; amount: bigint } }
   | { event: "series_opened"; data: { series: number; anchor: number; floor: number; band: number } }
-  | { event: "commit"; data: { series: number; round: number; seq: number; accountId: string; hash: string; lock: bigint } }
-  | { event: "evict"; data: { series: number; round: number; seq: number; accountId: string; lock: bigint } }
+  | { event: "commit"; data: CommitData & { hash: string; lock: bigint; fee: bigint } }
+  | { event: "evict"; data: CommitData & { lock: bigint; fee: bigint } }
+  | { event: "reveal"; data: CommitData & { side: Side; size: number; price: number; void: boolean } }
   | {
-      event: "reveal";
-      data: { series: number; round: number; seq: number; accountId: string; side: Side; size: number; price: number; void: boolean };
+      event: "clear";
+      data: { series: number; round: number; price: number | null; volume: number; forfeited: bigint; fees: bigint };
     }
-  | { event: "clear"; data: { series: number; round: number; price: number | null; volume: number; forfeited: bigint } }
   | { event: "mint" | "merge"; data: { series: number; accountId: string; sets: number } }
   | { event: "transfer_position"; data: { series: number; from: string; to: string; long: number; short: number } }
   | { event: "report"; data: { bucket: number; reporter: string; price: number; bundle: string } }
   | { event: "print"; data: { bucket: number; price: number; reports: number } }
+  | { event: "no_print"; data: { bucket: number; reports: number } }
+  | { event: "prune_print"; data: { bucket: number } }
+  | { event: "prune_result"; data: { series: number; round: number } }
   | { event: "settle"; data: { series: number; fixing: number; longPayout: number; shortPayout: number; void: boolean } }
   | { event: "redeem"; data: { series: number; accountId: string; amount: bigint } }
-  | { event: "guard"; data: { accountId: string; guard: number | null } };
+  | { event: "guard"; data: { accountId: string; guard: number | null; maxRoundLock: bigint | null } };
 
 interface Commit {
   seq: number;
   owner: string;
   lock: bigint;
+  fee: bigint;
   hash: string;
   state: CommitState;
   order: OrderTerms | null;
+  /** The owner's guard and the reference price when the commit was made (section 6.2). */
+  guard: number | null;
+  ref: number;
 }
 
 interface Book {
@@ -212,7 +230,6 @@ interface SeriesRecord {
   band: number;
   openedAt: number;
   openSets: number;
-  bonusPool: bigint;
   settlement: SettlementView | null;
   /** What redeem still owes on a settled series. */
   unredeemed: bigint;
@@ -221,16 +238,25 @@ interface SeriesRecord {
 interface PrintRecord {
   bucket: number;
   price: number | null;
+  state: PrintState;
   reports: ReportView[];
 }
 
 const PRINTS_LIMIT = 200;
 const RESULTS_LIMIT = 100;
 const STATUS_LIMIT = 32;
+/** How many earlier closed buckets one report decides on its way out (section 9). */
+const SWEEP_LIMIT = 4;
+const MAX_SAFE = 2n ** 53n - 1n;
 
 /** NEAR's account id rule: 2 to 64 characters of lowercase letters and digits, with `-`, `_`
  * and `.` as separators that cannot start, end or repeat. */
 export const isAccountId = (s: string): boolean => /^(?=.{2,64}$)[a-z0-9]+(?:[-_.][a-z0-9]+)*$/.test(s);
+
+/** What a series' auctions can add to `open_sets` at most: `max_order_size * max_commits *
+ * rounds_per_series` (sections 3 and 8). */
+export const auctionCapacity = (p: Params): bigint =>
+  BigInt(p.maxOrderSize) * BigInt(p.maxCommits) * BigInt(roundsPerSeries(p));
 
 export class Market {
   readonly params: Readonly<Params>;
@@ -246,7 +272,7 @@ export class Market {
   readonly #prints = new Map<number, PrintRecord>();
   readonly #accumulators = new Map<number, Accumulator>();
   #lastPrint: LastPrint | null = null;
-  #carryPool = 0n;
+  #burned = 0n;
 
   constructor(params: Params, now = 0) {
     validateParams(params);
@@ -276,16 +302,16 @@ export class Market {
   // Section 5: accounts and dollars
 
   register(accountId: string): void {
-    if (!isAccountId(accountId)) throw new Error("account id is not valid");
-    if (this.#accounts.has(accountId)) throw new Error("account is already registered");
-    this.#accounts.set(accountId, { balance: 0n, guard: null });
+    if (!isAccountId(accountId)) throw new Error(ERR.BAD_ACCOUNT_ID);
+    if (this.#accounts.has(accountId)) throw new Error(ERR.REGISTERED);
+    this.#accounts.set(accountId, { balance: 0n, guard: null, maxRoundLock: null });
     this.#emit({ event: "register", data: { accountId } });
   }
 
   /** Models `ft_on_transfer`. Returns the amount sent back: all of it when `accountId` is not
    * a valid account id or not registered. */
   deposit(accountId: string, amount: bigint): bigint {
-    positive("amount", amount);
+    if (amount <= 0n) throw new Error(ERR.ZERO_AMOUNT);
     const account = isAccountId(accountId) ? this.#accounts.get(accountId) : undefined;
     if (!account) return amount;
     account.balance += amount;
@@ -296,8 +322,8 @@ export class Market {
   /** `transferFails` models a failed `ft_transfer`, whose callback credits the amount back. */
   withdraw(caller: string, amount: bigint, opts: { transferFails?: boolean } = {}): void {
     const account = this.#account(caller);
-    positive("amount", amount);
-    if (account.balance < amount) throw new Error("balance is too low");
+    if (amount <= 0n) throw new Error(ERR.ZERO_AMOUNT);
+    if (account.balance < amount) throw new Error(ERR.BALANCE);
     account.balance -= amount;
     this.#emit({ event: "withdraw", data: { accountId: caller, amount } });
     if (opts.transferFails) {
@@ -306,46 +332,57 @@ export class Market {
     }
   }
 
-  setGuard(caller: string, guard: number | null): void {
+  /** Sets both limits of section 6.4; null clears one. */
+  setGuard(caller: string, guard: number | null, maxRoundLock: bigint | null = null): void {
     const account = this.#account(caller);
     if (guard !== null) uint("guard", guard);
+    if (maxRoundLock !== null && maxRoundLock < 0n) throw new Error("max_round_lock must not be negative");
     account.guard = guard;
-    this.#emit({ event: "guard", data: { accountId: caller, guard } });
+    account.maxRoundLock = maxRoundLock;
+    this.#emit({ event: "guard", data: { accountId: caller, guard, maxRoundLock } });
   }
 
   // Section 6: orders
 
-  /** Locks `lock` behind a sealed order in the current round. Returns the commit's seq. */
+  /** Locks `lock` plus the commit fee behind a sealed order in the current round. Returns the seq. */
   commit(caller: string, series: number, hash: string, lock: bigint): number {
     const account = this.#account(caller);
     seriesId(series);
-    if (!isHex64(hash)) throw new Error("hash must be 64 lowercase hex characters");
-    if (lock < this.params.minLock) throw new Error("lock is below min_lock");
+    if (!isHex64(hash)) throw new Error(ERR.BAD_HASH);
+    if (lock < this.params.minLock) throw new Error(ERR.LOCK_TOO_SMALL);
     const { round, phase } = phaseAt(this.params, series, this.#now);
-    if (round === null || phase !== "Commit") throw new Error("series is not in a commit phase");
+    if (round === null || phase !== "Commit") throw new Error(ERR.NOT_COMMIT_PHASE);
     const opening = this.#prepareOpening(series);
-    if (account.balance < lock) throw new Error("balance does not cover lock");
+    const fee = this.params.commitFee;
+    if (account.balance < lock + fee) throw new Error(ERR.BALANCE);
     const book = this.#books.get(series)?.get(round);
+    if (account.maxRoundLock !== null) {
+      const held = (book?.commits ?? []).reduce((sum, c) => (c.owner === caller ? sum + c.lock : sum), 0n);
+      if (held + lock > account.maxRoundLock) throw new Error(ERR.ROUND_LOCK);
+    }
     let evicted: Commit | null = null;
     if (book && book.commits.length >= this.params.maxCommits) {
       evicted = smallestLock(book.commits);
-      if (lock <= evicted.lock) throw new Error("round is full");
+      if (lock <= evicted.lock) throw new Error(ERR.ROUND_FULL);
     }
 
     if (opening) this.#open(opening);
+    const { floor, band } = this.#series.get(series)!;
     const target = book ?? this.#newBook(series, round);
     if (evicted) {
       target.commits.splice(target.commits.indexOf(evicted), 1);
-      this.#accounts.get(evicted.owner)!.balance += evicted.lock;
+      this.#accounts.get(evicted.owner)!.balance += evicted.lock + evicted.fee;
       this.#emit({
         event: "evict",
-        data: { series, round, seq: evicted.seq, accountId: evicted.owner, lock: evicted.lock },
+        data: { series, round, seq: evicted.seq, accountId: evicted.owner, lock: evicted.lock, fee: evicted.fee },
       });
     }
-    account.balance -= lock;
+    account.balance -= lock + fee;
     const seq = target.nextSeq++;
-    target.commits.push({ seq, owner: caller, lock, hash, state: "Committed", order: null });
-    this.#emit({ event: "commit", data: { series, round, seq, accountId: caller, hash, lock } });
+    // An open series always has a last print: it was opened on one and prints are never unset.
+    const ref = Math.min(Math.max(this.#lastPrint!.price - floor, 0), band);
+    target.commits.push({ seq, owner: caller, lock, fee, hash, state: "Committed", order: null, guard: account.guard, ref });
+    this.#emit({ event: "commit", data: { series, round, seq, accountId: caller, hash, lock, fee } });
     return seq;
   }
 
@@ -360,30 +397,28 @@ export class Market {
     salt: string,
   ): void {
     const account = this.#account(caller);
-    const book = this.#books.get(series)?.get(round);
-    if (!book) throw new Error("round has no open book");
-    const commit = book.commits.find((c) => c.seq === seq);
-    if (!commit) throw new Error("commit not found");
-    if (commit.owner !== caller) throw new Error("commit belongs to another account");
-    if (commit.state !== "Committed") throw new Error("commit is already revealed");
+    const commit = this.#books.get(series)?.get(round)?.commits.find((c) => c.seq === seq);
+    if (!commit) throw new Error(ERR.NO_COMMIT);
+    if (commit.owner !== caller) throw new Error(ERR.NOT_OWNER);
+    if (commit.state !== "Committed") throw new Error(ERR.ALREADY_REVEALED);
     const start = roundStart(this.params, series, round);
     if (this.#now < start + this.params.commitSecs || this.#now >= roundEnd(this.params, series, round)) {
-      throw new Error("round is not in its reveal phase");
+      throw new Error(ERR.NOT_REVEAL_PHASE);
     }
     if (side !== "Long" && side !== "Short") throw new Error("side must be Long or Short");
     uint("size", size);
     uint("price", price);
-    if (!isSalt(salt)) throw new Error("salt must be 32 to 64 lowercase hex characters");
+    if (!isSalt(salt)) throw new Error(ERR.BAD_SALT);
     if (commitHash({ series, round, accountId: caller, side, size, price, salt }) !== commit.hash) {
-      throw new Error("revealed order does not match the hash");
+      throw new Error(ERR.HASH_MISMATCH);
     }
-    if (size < 1 || size > this.params.maxOrderSize) throw new Error("size is out of range");
-    const { floor, band } = this.#series.get(series)!;
-    if (price % this.params.tick !== 0 || price <= 0 || price >= band) throw new Error("price is out of range");
+    if (size < 1 || size > this.params.maxOrderSize) throw new Error(ERR.BAD_SIZE);
+    const { band } = this.#series.get(series)!;
+    if (price % this.params.tick !== 0 || price <= 0 || price >= band) throw new Error(ERR.BAD_PRICE);
     const cost = BigInt(size) * BigInt(side === "Long" ? price : band - price);
-    if (commit.lock < cost) throw new Error("lock does not cover the order");
+    if (commit.lock < cost) throw new Error(ERR.UNDER_LOCKED);
 
-    const isVoid = this.#guardVoids(account.guard, side, price, floor, band);
+    const isVoid = guardVoids(commit, side, price);
     commit.order = { side, size, price };
     commit.state = isVoid ? "Void" : "Revealed";
     if (isVoid) account.balance += commit.lock;
@@ -397,10 +432,8 @@ export class Market {
 
   clear(series: number, round: number): ResultView {
     const book = this.#books.get(series)?.get(round);
-    if (!book) {
-      throw new Error(this.#results.get(series)?.has(round) ? "round is already cleared" : "round has no commits");
-    }
-    if (this.#now < roundEnd(this.params, series, round)) throw new Error("round is not over");
+    if (!book) throw new Error(this.#results.get(series)?.has(round) ? ERR.CLEARED : ERR.NO_COMMITS);
+    if (this.#now < roundEnd(this.params, series, round)) throw new Error(ERR.ROUND_NOT_OVER);
 
     const record = this.#series.get(series)!;
     const revealed = book.commits.filter((c) => c.state === "Revealed");
@@ -408,8 +441,10 @@ export class Market {
     const { price, volume, fills } = clearRound(orders, this.params.tick);
 
     let forfeited = 0n;
+    let fees = 0n;
     for (const c of book.commits) {
       const owner = this.#accounts.get(c.owner)!;
+      fees += c.fee;
       if (c.state === "Committed") {
         const forfeit = (c.lock * BigInt(this.params.forfeitBps)) / 10_000n;
         forfeited += forfeit;
@@ -426,7 +461,7 @@ export class Market {
         }
       }
     }
-    record.bonusPool += forfeited;
+    this.#burned += forfeited + fees;
     record.openSets += volume;
 
     const result: ResultView = {
@@ -437,12 +472,15 @@ export class Market {
       orders: orders.length,
       commits: book.commits.length,
       forfeited,
+      fees,
       clearedAt: this.#now,
-      fills: revealed.map((c, i) => ({ seq: c.seq, owner: c.owner, ...c.order!, filled: fills[i]! })),
+      fills: revealed
+        .map((c, i) => ({ seq: c.seq, owner: c.owner, ...c.order!, filled: fills[i]! }))
+        .filter((f) => f.filled > 0),
     };
     this.#books.get(series)!.delete(round);
     mapIn(this.#results, series).set(round, result);
-    this.#emit({ event: "clear", data: { series, round, price, volume, forfeited } });
+    this.#emit({ event: "clear", data: { series, round, price, volume, forfeited, fees } });
     return copyResult(result);
   }
 
@@ -451,14 +489,18 @@ export class Market {
   mint(caller: string, series: number, sets: number): void {
     const account = this.#account(caller);
     seriesId(series);
-    count("sets", sets);
+    uint("sets", sets);
+    if (sets === 0) throw new Error(ERR.ZERO_SETS);
     if (this.#now < auctionOpen(this.params, series) || this.#now >= auctionClose(this.params, series)) {
-      throw new Error("series is outside its auction window");
+      throw new Error(ERR.WINDOW_CLOSED);
     }
     const opening = this.#prepareOpening(series);
-    const band = opening?.band ?? this.#series.get(series)!.band;
-    const cost = BigInt(sets) * BigInt(band);
-    if (account.balance < cost) throw new Error("balance does not cover the sets");
+    const record = opening ?? this.#series.get(series)!;
+    if (BigInt(record.openSets) + BigInt(sets) > MAX_SAFE - auctionCapacity(this.params)) {
+      throw new Error(ERR.TOO_MANY_SETS);
+    }
+    const cost = BigInt(sets) * BigInt(record.band);
+    if (account.balance < cost) throw new Error(ERR.BALANCE);
 
     if (opening) this.#open(opening);
     account.balance -= cost;
@@ -472,9 +514,10 @@ export class Market {
   merge(caller: string, series: number, sets: number): void {
     const account = this.#account(caller);
     const record = this.#unsettled(series);
-    count("sets", sets);
+    uint("sets", sets);
+    if (sets === 0) throw new Error(ERR.ZERO_SETS);
     const position = this.#positions.get(series)?.get(caller);
-    if (!position || position.long < sets || position.short < sets) throw new Error("not enough units to merge");
+    if (!position || position.long < sets || position.short < sets) throw new Error(ERR.POSITION_TOO_SMALL);
 
     position.long -= sets;
     position.short -= sets;
@@ -486,13 +529,13 @@ export class Market {
 
   transferPosition(caller: string, series: number, to: string, long: number, short: number): void {
     this.#account(caller);
-    this.#account(to, "receiver is not registered");
-    if (to === caller) throw new Error("cannot transfer to yourself");
+    this.#account(to);
+    if (to === caller) throw new Error(ERR.SELF_TRANSFER);
     uint("long", long);
     uint("short", short);
-    if (long + short === 0) throw new Error("nothing to transfer");
+    if (long + short === 0) throw new Error(ERR.NOTHING_TO_TRANSFER);
     const from = this.#positions.get(series)?.get(caller);
-    if (!from || from.long < long || from.short < short) throw new Error("not enough units to transfer");
+    if (!from || from.long < long || from.short < short) throw new Error(ERR.POSITION_TOO_SMALL);
 
     from.long -= long;
     from.short -= short;
@@ -505,85 +548,90 @@ export class Market {
 
   // Section 9: index
 
-  /** Returns true when this report made the bucket's print final. */
+  /** Returns true when this report gave the bucket a final print. */
   report(caller: string, bucket: number, price: number, bundle: string): boolean {
     const p = this.params;
-    if (!p.reporters.includes(caller)) throw new Error("caller is not a reporter");
+    if (!p.reporters.includes(caller)) throw new Error(ERR.NOT_REPORTER);
     uint("bucket", bucket);
-    if (bucket % p.printIntervalSecs !== 0) throw new Error("bucket is not a multiple of print_interval_secs");
-    if (this.#now < bucket || this.#now >= bucket + p.printIntervalSecs + p.reportGraceSecs) {
-      throw new Error("bucket is outside its report window");
-    }
+    if (bucket % p.printIntervalSecs !== 0) throw new Error(ERR.BUCKET);
+    if (this.#now < bucket || this.#windowClosed(bucket)) throw new Error(ERR.REPORT_WINDOW);
     uint("price", price);
-    if (price === 0) throw new Error("price must be above zero");
-    if (!isHex64(bundle)) throw new Error("bundle must be 64 lowercase hex characters");
+    if (price === 0) throw new Error(ERR.ZERO_PRICE);
+    if (!isHex64(bundle)) throw new Error(ERR.BAD_BUNDLE);
     const existing = this.#prints.get(bucket);
-    // A final print ignores the call before the duplicate check, so a late repeat is not an error.
-    if (existing && existing.price !== null) return false;
-    if (existing?.reports.some((r) => r.reporter === caller)) throw new Error("reporter already reported this bucket");
+    // A decided bucket ignores the call before the duplicate check, so a late repeat is not an error.
+    if (existing && existing.state !== "Open") return false;
+    if (existing?.reports.some((r) => r.reporter === caller)) throw new Error(ERR.DUPLICATE_REPORT);
 
-    const print = existing ?? { bucket, price: null, reports: [] };
+    const print = existing ?? { bucket, price: null, state: "Open", reports: [] };
     this.#prints.set(bucket, print);
     print.reports.push({ reporter: caller, price, bundle });
     this.#emit({ event: "report", data: { bucket, reporter: caller, price, bundle } });
-
-    const last = this.#lastPrint;
-    const decision = printDecision({
-      reports: print.reports.map((r) => r.price),
-      last: last !== null && last.bucket < bucket ? last.price : null,
-      quorum: p.quorum,
-      reporters: p.reporters.length,
-      maxMoveBps: p.maxMoveBps,
-    });
-    if (decision.price === null) return false;
-
-    print.price = decision.price;
-    if (last === null || bucket > last.bucket) this.#lastPrint = { bucket, price: decision.price };
-    const series = seriesOf(p, bucket);
-    if (series !== null) {
-      const acc = this.#accumulators.get(series) ?? { sum: 0n, count: 0 };
-      this.#accumulators.set(series, { sum: acc.sum + BigInt(decision.price), count: acc.count + 1 });
+    const final = print.reports.length === p.reporters.length && this.#decide(print);
+    for (const earlier of this.#undecided().filter((b) => b.bucket < bucket && this.#windowClosed(b.bucket)).slice(0, SWEEP_LIMIT)) {
+      this.#decide(earlier);
     }
-    this.#emit({
-      event: "print",
-      data: { bucket, price: decision.price, reports: print.reports.length },
-    });
-    return true;
+    return final;
+  }
+
+  /** Decides a bucket whose report window has closed. Returns whether it got a final print. */
+  finalizePrint(bucket: number): boolean {
+    const print = this.#prints.get(bucket);
+    if (!print) throw new Error(ERR.NO_REPORTS);
+    if (print.state !== "Open") throw new Error(ERR.DECIDED);
+    if (!this.#windowClosed(bucket)) throw new Error(ERR.REPORT_WINDOW_OPEN);
+    return this.#decide(print);
+  }
+
+  /** Deletes a decided bucket's reports and price two periods after the bucket. */
+  prunePrint(bucket: number): void {
+    const print = this.#prints.get(bucket);
+    if (!print) throw new Error(ERR.NO_REPORTS);
+    if (print.state === "Open") throw new Error(ERR.NOT_DECIDED);
+    if (this.#now < bucket + 2 * this.params.periodSecs) throw new Error(ERR.TOO_EARLY_TO_PRUNE);
+    this.#prints.delete(bucket);
+    this.#emit({ event: "prune_print", data: { bucket } });
   }
 
   // Section 10: settlement
 
   settle(series: number): SettlementView {
     const record = this.#series.get(series);
-    if (!record) throw new Error("series is not open");
-    if (record.settlement) throw new Error("series is already settled");
+    if (!record) throw new Error(ERR.UNKNOWN_SERIES);
+    if (record.settlement) throw new Error(ERR.SETTLED);
+    const start = deliveryStart(this.params, series);
     const end = deliveryEnd(this.params, series);
-    if (this.#now < end + this.params.reportGraceSecs) throw new Error("report window of the delivery is still open");
-    if (this.#pendingRounds(series).length > 0) throw new Error("series has rounds waiting to be cleared");
+    if (this.#now < end + this.params.reportGraceSecs) throw new Error(ERR.DELIVERY_NOT_OVER);
+    if (this.#pendingRounds(series).length > 0) throw new Error(ERR.PENDING_ROUNDS);
+
+    // Decide the delivery window's open buckets on paper first, so a refusal changes nothing.
+    const open = this.#undecided().filter((b) => b.bucket >= start && b.bucket < end);
     const acc = this.getAccumulator(series);
+    for (const b of open) {
+      const price = decidePrint(b.reports.map((r) => r.price), this.params.quorum, this.params.maxSpreadBps);
+      if (price !== null) {
+        acc.sum += BigInt(price);
+        acc.count += 1;
+      }
+    }
     const outcome = settleSeries({
       floor: record.floor,
       band: record.band,
       sum: acc.sum,
       count: acc.count,
-      openSets: record.openSets,
-      pool: record.bonusPool + this.#carryPool,
       voidAllowed: this.#now >= end + this.params.voidAfterSecs,
       minPrints: this.params.minPrints,
     });
 
+    for (const b of open) this.#decide(b);
     const settlement: SettlementView = {
       fixing: outcome.fixing,
       longPayout: outcome.longPayout,
       shortPayout: outcome.shortPayout,
-      bonusLong: outcome.bonusLong,
-      bonusShort: outcome.bonusShort,
       prints: acc.count,
       void: outcome.void,
       settledAt: this.#now,
     };
-    this.#carryPool = outcome.carry;
-    record.bonusPool = 0n;
     record.settlement = settlement;
     // Total LONG and total SHORT both equal open_sets, so this is exactly what redeem will pay.
     record.unredeemed = redeemAmount({ long: record.openSets, short: record.openSets }, outcome);
@@ -603,9 +651,10 @@ export class Market {
   /** Pays out `accountId`'s position on a settled series. Anyone may call it. Returns the amount. */
   redeem(series: number, accountId: string): bigint {
     const record = this.#series.get(series);
-    if (!record?.settlement) throw new Error("series is not settled");
+    if (!record) throw new Error(ERR.UNKNOWN_SERIES);
+    if (!record.settlement) throw new Error(ERR.NOT_SETTLED);
     const position = this.#positions.get(series)?.get(accountId);
-    if (!position) throw new Error("nothing to redeem");
+    if (!position) throw new Error(ERR.NO_POSITION);
     const amount = redeemAmount(position, record.settlement);
 
     this.#positions.get(series)!.delete(accountId);
@@ -617,8 +666,11 @@ export class Market {
 
   /** Section 14: deletes a stored result once its series is settled. */
   pruneResult(series: number, round: number): void {
-    if (!this.#series.get(series)?.settlement) throw new Error("series is not settled");
-    if (!this.#results.get(series)?.delete(round)) throw new Error("no result for this round");
+    const record = this.#series.get(series);
+    if (!record) throw new Error(ERR.UNKNOWN_SERIES);
+    if (!record.settlement) throw new Error(ERR.NOT_SETTLED);
+    if (!this.#results.get(series)?.delete(round)) throw new Error(ERR.NO_RESULT);
+    this.#emit({ event: "prune_result", data: { series, round } });
   }
 
   // Section 12: views. They return copies, so callers cannot reach the state.
@@ -629,19 +681,21 @@ export class Market {
 
   getStatus(): Status {
     const now = this.#now;
-    const live = liveSeries(this.params, now).slice(0, STATUS_LIMIT).map((series) => {
-      const info = phaseAt(this.params, series, now);
-      return {
-        series,
-        deliveryStart: deliveryStart(this.params, series),
-        deliveryEnd: deliveryEnd(this.params, series),
-        auctionOpen: auctionOpen(this.params, series),
-        auctionClose: auctionClose(this.params, series),
-        round: info.round,
-        phase: info.phase,
-        phaseEndsAt: phaseEndsAt(this.params, series, info),
-      };
-    });
+    const live = liveSeries(this.params, now)
+      .slice(0, STATUS_LIMIT)
+      .map((series) => {
+        const info = phaseAt(this.params, series, now);
+        return {
+          series,
+          deliveryStart: deliveryStart(this.params, series),
+          deliveryEnd: deliveryEnd(this.params, series),
+          auctionOpen: auctionOpen(this.params, series),
+          auctionClose: auctionClose(this.params, series),
+          round: info.round,
+          phase: info.phase,
+          phaseEndsAt: phaseEndsAt(this.params, series, info),
+        };
+      });
     return { now, live };
   }
 
@@ -655,7 +709,6 @@ export class Market {
       band: r.band,
       openedAt: r.openedAt,
       openSets: r.openSets,
-      bonusPool: r.bonusPool,
       pendingRounds: this.#pendingRounds(series),
       settlement: r.settlement && { ...r.settlement },
     };
@@ -681,6 +734,7 @@ export class Market {
         owner: c.owner,
         hash: c.hash,
         lock: c.lock,
+        fee: c.fee,
         state: c.state,
         order: c.order && { ...c.order },
       })),
@@ -708,6 +762,11 @@ export class Market {
     return p ? copyPrint(p) : null;
   }
 
+  /** The undecided buckets that have reports, ascending. */
+  getPendingPrints(): number[] {
+    return this.#undecided().map((p) => p.bucket);
+  }
+
   getLastPrint(): LastPrint | null {
     return this.#lastPrint && { ...this.#lastPrint };
   }
@@ -715,7 +774,7 @@ export class Market {
   /** Final prints from `fromBucket` upward, at most `limit` (capped at 200). */
   getPrints(fromBucket: number, limit: number): PrintView[] {
     return [...this.#prints.values()]
-      .filter((p) => p.price !== null && p.bucket >= fromBucket)
+      .filter((p) => p.state === "Final" && p.bucket >= fromBucket)
       .sort((a, b) => a.bucket - b.bucket)
       .slice(0, Math.max(0, Math.min(limit, PRINTS_LIMIT)))
       .map(copyPrint);
@@ -732,18 +791,16 @@ export class Market {
     let locked = 0n;
     for (const books of this.#books.values()) {
       for (const book of books.values()) {
-        for (const c of book.commits) if (c.state !== "Void") locked += c.lock;
+        for (const c of book.commits) locked += (c.state === "Void" ? 0n : c.lock) + c.fee;
       }
     }
     let setsBacking = 0n;
-    let pools = this.#carryPool;
     let unredeemed = 0n;
     for (const r of this.#series.values()) {
       if (r.settlement) unredeemed += r.unredeemed;
       else setsBacking += BigInt(r.openSets) * BigInt(r.band);
-      pools += r.bonusPool;
     }
-    return { free, locked, setsBacking, pools, unredeemed };
+    return { free, locked, setsBacking, unredeemed, burned: this.#burned };
   }
 
   /** The hash of section 6.2, so a client can check its own. */
@@ -757,16 +814,16 @@ export class Market {
     this.events.push(e);
   }
 
-  #account(accountId: string, message = "account is not registered"): AccountView {
+  #account(accountId: string): AccountView {
     const a = this.#accounts.get(accountId);
-    if (!a) throw new Error(message);
+    if (!a) throw new Error(ERR.NOT_REGISTERED);
     return a;
   }
 
   #unsettled(series: number): SeriesRecord {
     const r = this.#series.get(series);
-    if (!r) throw new Error("series is not open");
-    if (r.settlement) throw new Error("series is already settled");
+    if (!r) throw new Error(ERR.UNKNOWN_SERIES);
+    if (r.settlement) throw new Error(ERR.SETTLED);
     return r;
   }
 
@@ -774,9 +831,9 @@ export class Market {
   #prepareOpening(series: number): Omit<SeriesRecord, "openedAt"> | null {
     if (this.#series.has(series)) return null;
     const last = this.#lastPrint;
-    if (last === null || this.#now - last.bucket > this.params.maxAnchorAgeSecs) throw new Error("index is stale");
+    if (last === null || this.#now - last.bucket > this.params.maxAnchorAgeSecs) throw new Error(ERR.STALE);
     const { floor, band } = computeBand(last.price, this.params.tick, this.params.bandBps);
-    return { series, anchor: last.price, floor, band, openSets: 0, bonusPool: 0n, settlement: null, unredeemed: 0n };
+    return { series, anchor: last.price, floor, band, openSets: 0, settlement: null, unredeemed: 0n };
   }
 
   #open(opening: Omit<SeriesRecord, "openedAt">): void {
@@ -795,6 +852,37 @@ export class Market {
     return [...(this.#books.get(series)?.keys() ?? [])].sort((a, b) => a - b);
   }
 
+  #windowClosed(bucket: number): boolean {
+    return this.#now >= bucket + this.params.printIntervalSecs + this.params.reportGraceSecs;
+  }
+
+  /** Undecided buckets, oldest first. Every stored bucket has at least one report. */
+  #undecided(): PrintRecord[] {
+    return [...this.#prints.values()].filter((p) => p.state === "Open").sort((a, b) => a.bucket - b.bucket);
+  }
+
+  /** Decides a bucket once and for all (section 9). Returns whether it got a final print. */
+  #decide(print: PrintRecord): boolean {
+    const p = this.params;
+    const reports = print.reports.length;
+    const price = decidePrint(print.reports.map((r) => r.price), p.quorum, p.maxSpreadBps);
+    if (price === null) {
+      print.state = "NoPrint";
+      this.#emit({ event: "no_print", data: { bucket: print.bucket, reports } });
+      return false;
+    }
+    print.state = "Final";
+    print.price = price;
+    if (this.#lastPrint === null || print.bucket > this.#lastPrint.bucket) this.#lastPrint = { bucket: print.bucket, price };
+    const series = seriesOf(p, print.bucket);
+    if (series !== null) {
+      const acc = this.getAccumulator(series);
+      this.#accumulators.set(series, { sum: acc.sum + BigInt(price), count: acc.count + 1 });
+    }
+    this.#emit({ event: "print", data: { bucket: print.bucket, price, reports } });
+    return true;
+  }
+
   #position(series: number, accountId: string): Position {
     const positions = mapIn(this.#positions, series);
     let p = positions.get(accountId);
@@ -806,64 +894,62 @@ export class Market {
     const p = this.#positions.get(series)?.get(accountId);
     if (p && p.long === 0 && p.short === 0) this.#positions.get(series)!.delete(accountId);
   }
+}
 
-  /** Section 6.4. Without a guard or a print there is nothing to compare with. */
-  #guardVoids(guard: number | null, side: Side, price: number, floor: number, band: number): boolean {
-    if (guard === null || this.#lastPrint === null) return false;
-    const ref = Math.min(Math.max(this.#lastPrint.price - floor, 0), band);
-    return side === "Long" ? price > ref + guard : price + guard < ref;
-  }
+/** Section 6.4, with the guard and reference the commit recorded. */
+function guardVoids(c: Commit, side: Side, price: number): boolean {
+  if (c.guard === null) return false;
+  return side === "Long" ? price > c.ref + c.guard : price + c.guard < c.ref;
 }
 
 function validateParams(p: Params): void {
+  for (const name of [
+    "t0",
+    "cutoffSecs",
+    "bandBps",
+    "tick",
+    "maxSpreadBps",
+    "minPrints",
+    "forfeitBps",
+    "maxCommits",
+    "maxOrderSize",
+    "quorum",
+  ] as const) {
+    uint(name, p[name]);
+  }
   // cutoff_secs is the one duration that may be zero: auctions may run up to delivery.
-  uint("cutoffSecs", p.cutoffSecs);
   const durations = [
-    "periodSecs",
-    "leadSecs",
-    "commitSecs",
-    "revealSecs",
-    "printIntervalSecs",
-    "reportGraceSecs",
-    "voidAfterSecs",
-    "maxAnchorAgeSecs",
-  ] as const;
-  for (const name of durations) {
-    uint(name, p[name]);
-    if (p[name] === 0) throw new Error(`${name} must be above zero`);
-  }
-  for (const name of ["t0", "bandBps", "tick", "maxMoveBps", "minPrints", "forfeitBps", "maxCommits", "maxOrderSize", "quorum"] as const) {
-    uint(name, p[name]);
-  }
-  if (p.tick === 0) throw new Error("tick must be above zero");
-  if (p.bandBps === 0 || p.bandBps >= 10_000) throw new Error("band_bps must be between 0 and 10000");
-  if (p.forfeitBps > 10_000) throw new Error("forfeit_bps must be at most 10000");
-  if (p.maxCommits < 1 || p.maxCommits > 128) throw new Error("max_commits must be 1 to 128");
-  if (p.maxOrderSize < 1) throw new Error("max_order_size must be at least 1");
-  if (p.cutoffSecs >= p.leadSecs) throw new Error("cutoff_secs must be below lead_secs");
-  if (p.minPrints < 1) throw new Error("min_prints must be at least 1");
-  if (p.minLock < 0n) throw new Error("min_lock must not be negative");
-  if (!isAccountId(p.usdc)) throw new Error("usdc must be an account id");
-  if (!p.reporters.every(isAccountId)) throw new Error("reporters must be account ids");
-  if (p.t0 % p.printIntervalSecs !== 0 || p.periodSecs % p.printIntervalSecs !== 0) {
-    throw new Error("t0 and period_secs must be multiples of print_interval_secs");
-  }
-  if (p.reporters.length < 1 || p.reporters.length > 9) throw new Error("there must be 1 to 9 reporters");
-  if (new Set(p.reporters).size !== p.reporters.length) throw new Error("reporters must not repeat");
-  if (p.quorum < 1 || p.quorum > p.reporters.length) throw new Error("quorum must be 1 to the number of reporters");
+    p.periodSecs,
+    p.leadSecs,
+    p.commitSecs,
+    p.revealSecs,
+    p.printIntervalSecs,
+    p.reportGraceSecs,
+    p.voidAfterSecs,
+    p.maxAnchorAgeSecs,
+  ];
+  if (!durations.every((d) => Number.isSafeInteger(d) && d > 0)) throw new Error(ERR.DURATION);
+  if (p.tick === 0) throw new Error(ERR.TICK);
+  if (p.bandBps === 0 || p.bandBps >= 10_000) throw new Error(ERR.BAND_BPS);
+  if (p.forfeitBps > 10_000) throw new Error(ERR.FORFEIT_BPS);
+  if (p.maxCommits < 1 || p.maxCommits > 128) throw new Error(ERR.MAX_COMMITS);
+  if (p.maxOrderSize < 1) throw new Error(ERR.MAX_ORDER_SIZE);
+  if (p.cutoffSecs >= p.leadSecs) throw new Error(ERR.CUTOFF);
+  if (p.minPrints < 1) throw new Error(ERR.MIN_PRINTS);
+  if (p.minPrints > Math.floor(p.periodSecs / p.printIntervalSecs)) throw new Error(ERR.MAX_PRINTS);
+  if (p.voidAfterSecs < p.reportGraceSecs) throw new Error(ERR.VOID_AFTER);
+  if (p.maxSpreadBps === 0 || p.maxSpreadBps > 10_000) throw new Error(ERR.MAX_SPREAD_BPS);
+  if (auctionCapacity(p) >= 2n ** 52n) throw new Error(ERR.CAPACITY);
+  if (p.t0 % p.printIntervalSecs !== 0 || p.periodSecs % p.printIntervalSecs !== 0) throw new Error(ERR.BUCKET_GRID);
+  if (p.minLock < 0n || p.commitFee < 0n) throw new Error("min_lock and commit_fee must not be negative");
+  if (!isAccountId(p.usdc)) throw new Error(ERR.BAD_USDC);
+  const r = p.reporters;
+  if (r.length < 1 || r.length > 9 || new Set(r).size !== r.length || !r.every(isAccountId)) throw new Error(ERR.REPORTERS);
+  if (p.quorum < 1 || p.quorum > r.length) throw new Error(ERR.QUORUM);
 }
 
 function uint(name: string, v: number): void {
   if (!Number.isSafeInteger(v) || v < 0) throw new Error(`${name} must be a non-negative integer`);
-}
-
-function count(name: string, v: number): void {
-  uint(name, v);
-  if (v === 0) throw new Error(`${name} must be at least 1`);
-}
-
-function positive(name: string, v: bigint): void {
-  if (v <= 0n) throw new Error(`${name} must be above zero`);
 }
 
 function seriesId(series: number): void {
@@ -891,5 +977,5 @@ function copyResult(r: ResultView): ResultView {
 }
 
 function copyPrint(p: PrintRecord): PrintView {
-  return { bucket: p.bucket, price: p.price, final: p.price !== null, reports: p.reports.map((r) => ({ ...r })) };
+  return { bucket: p.bucket, price: p.price, state: p.state, reports: p.reports.map((r) => ({ ...r })) };
 }

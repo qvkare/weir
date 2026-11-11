@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isAccountId, Market, type Params, type Totals } from "../src/mod.ts";
+import { ERR, isAccountId, Market, type Params, type Totals } from "../src/mod.ts";
 import { BUNDLE, PARAMS, print, revealSecret, sealedCommit } from "./fixtures.ts";
 
-const sum = (t: Totals) => t.free + t.locked + t.setsBacking + t.pools + t.unredeemed;
+const sum = (t: Totals) => t.free + t.locked + t.setsBacking + t.unredeemed + t.burned;
+const refused = (text: string) => ({ message: text });
 
 /** A market with an anchor print of 2_000_000 at 96_000 and three funded traders, at the
  * start of round 0 of series 0. Series 0 opens with floor 1_800_000 and band 400_000. */
@@ -18,8 +19,8 @@ function setup(params: Params = PARAMS): Market {
   return m;
 }
 
-test("a round from commit to redeem", () => {
-  const m = setup();
+test("a round from commit to redeem, with fees and forfeits burned", () => {
+  const m = setup({ ...PARAMS, commitFee: 1000n });
   const a = sealedCommit(m, "alice", 0, 0, "Long", 10, 250_000, 2_500_000n);
   const b = sealedCommit(m, "bob", 0, 0, "Short", 10, 150_000, 2_500_000n);
   sealedCommit(m, "carol", 0, 0, "Long", 1, 100_000, 1_000_000n);
@@ -29,6 +30,8 @@ test("a round from commit to redeem", () => {
     [opened.anchor, opened.floor, opened.band, opened.openedAt, opened.pendingRounds],
     [2_000_000, 1_800_000, 400_000, 96_400, [0]],
   );
+  assert.equal(m.getRound(0, 0)!.commits[2]!.fee, 1000n);
+  assert.equal(m.getTotals().locked, 6_003_000n);
 
   m.setTime(96_520);
   revealSecret(m, a);
@@ -36,52 +39,62 @@ test("a round from commit to redeem", () => {
   m.setTime(96_580);
   const result = m.clear(0, 0);
   // Candidates 150_000 and 250_000 both have D = S = 10: midpoint 200_000.
-  assert.equal(result.price, 200_000);
-  assert.equal(result.volume, 10);
-  assert.deepEqual(
-    [result.longSize, result.shortSize, result.orders, result.commits, result.forfeited, result.clearedAt],
-    [10, 10, 2, 3, 100_000n, 96_580],
-  );
-  assert.deepEqual(result.fills.map((f) => [f.seq, f.owner, f.filled]), [[0, "alice", 10], [1, "bob", 10]]);
+  assert.deepEqual(result, {
+    price: 200_000,
+    volume: 10,
+    longSize: 10,
+    shortSize: 10,
+    orders: 2,
+    commits: 3,
+    forfeited: 100_000n,
+    fees: 3000n,
+    clearedAt: 96_580,
+    fills: [
+      { seq: 0, owner: "alice", side: "Long", size: 10, price: 250_000, filled: 10 },
+      { seq: 1, owner: "bob", side: "Short", size: 10, price: 150_000, filled: 10 },
+    ],
+  });
   assert.equal(m.getRound(0, 0), null);
   assert.deepEqual(m.getResult(0, 0), result);
   assert.deepEqual(m.getResults(0, 0, 10), [[0, result]]);
   assert.deepEqual(m.getResults(0, 1, 10), []);
-  // Each side paid 2_000_000 of a 2_500_000 lock; carol forfeits 10% of hers.
-  assert.equal(m.getAccount("alice")!.balance, 8_000_000n);
-  assert.equal(m.getAccount("bob")!.balance, 8_000_000n);
-  assert.equal(m.getAccount("carol")!.balance, 9_900_000n);
+  // Each side paid 2_000_000 of a 2_500_000 lock and its fee; carol forfeits 10% of hers.
+  assert.equal(m.getAccount("alice")!.balance, 7_999_000n);
+  assert.equal(m.getAccount("bob")!.balance, 7_999_000n);
+  assert.equal(m.getAccount("carol")!.balance, 9_899_000n);
   assert.deepEqual(m.getPosition(0, "alice"), { long: 10, short: 0 });
   assert.deepEqual(m.getPosition(0, "bob"), { long: 0, short: 10 });
   assert.equal(m.getSeries(0)!.openSets, 10);
-  assert.equal(m.getSeries(0)!.bonusPool, 100_000n);
-  assert.deepEqual(m.getTotals(), { free: 25_900_000n, locked: 0n, setsBacking: 4_000_000n, pools: 100_000n, unredeemed: 0n });
+  assert.deepEqual(m.getTotals(), {
+    free: 25_897_000n,
+    locked: 0n,
+    setsBacking: 4_000_000n,
+    unredeemed: 0n,
+    burned: 103_000n,
+  });
 
-  // Three delivery prints at 2_100_000; the first is a 5% move, which is not far.
   for (const bucket of [100_000, 100_300, 100_600]) print(m, bucket, 2_100_000);
   assert.deepEqual(m.getAccumulator(0), { sum: 6_300_000n, count: 3 });
   m.setTime(103_719);
-  assert.throws(() => m.settle(0), /report window/);
+  assert.throws(() => m.settle(0), refused(ERR.DELIVERY_NOT_OVER));
   m.setTime(103_720);
-  const s = m.settle(0);
-  assert.deepEqual(s, {
+  assert.deepEqual(m.settle(0), {
     fixing: 2_100_000,
     longPayout: 300_000,
     shortPayout: 100_000,
-    bonusLong: 5000n,
-    bonusShort: 5000n,
     prints: 3,
     void: false,
     settledAt: 103_720,
   });
-  assert.throws(() => m.settle(0), /already settled/);
-  assert.equal(m.getTotals().unredeemed, 4_100_000n);
-  assert.equal(m.redeem(0, "alice"), 3_050_000n);
-  assert.equal(m.redeem(0, "bob"), 1_050_000n);
-  assert.throws(() => m.redeem(0, "bob"), /nothing to redeem/);
-  assert.deepEqual(m.getTotals(), { free: 30_000_000n, locked: 0n, setsBacking: 0n, pools: 0n, unredeemed: 0n });
+  assert.throws(() => m.settle(0), refused(ERR.SETTLED));
+  assert.equal(m.getTotals().unredeemed, 4_000_000n);
+  assert.equal(m.redeem(0, "alice"), 3_000_000n);
+  assert.equal(m.redeem(0, "bob"), 1_000_000n);
+  assert.throws(() => m.redeem(0, "bob"), refused(ERR.NO_POSITION));
+  assert.deepEqual(m.getTotals(), { free: 29_897_000n, locked: 0n, setsBacking: 0n, unredeemed: 0n, burned: 103_000n });
   m.pruneResult(0, 0);
   assert.equal(m.getResult(0, 0), null);
+  assert.throws(() => m.pruneResult(0, 0), refused(ERR.NO_RESULT));
 
   const names = m.events.map((e) => e.event);
   assert.deepEqual(names.slice(names.indexOf("series_opened"), names.indexOf("clear") + 1), [
@@ -93,14 +106,27 @@ test("a round from commit to redeem", () => {
     "reveal",
     "clear",
   ]);
-  assert.deepEqual(m.events.at(-1), { event: "redeem", data: { series: 0, accountId: "bob", amount: 1_050_000n } });
+  assert.deepEqual(m.events.at(-1), { event: "prune_result", data: { series: 0, round: 0 } });
+});
+
+test("fills list only the orders that were filled", () => {
+  const m = setup();
+  const a = sealedCommit(m, "alice", 0, 0, "Long", 5, 100_000, 500_000n);
+  const b = sealedCommit(m, "bob", 0, 0, "Long", 5, 300_000, 1_500_000n);
+  const c = sealedCommit(m, "carol", 0, 0, "Short", 5, 200_000, 1_000_000n);
+  m.setTime(96_520);
+  for (const s of [a, b, c]) revealSecret(m, s);
+  m.setTime(96_580);
+  const r = m.clear(0, 0);
+  assert.deepEqual([r.price, r.orders, r.longSize], [250_000, 3, 10]);
+  assert.deepEqual(r.fills.map((f) => [f.seq, f.filled]), [[1, 5], [2, 5]]);
 });
 
 test("opening needs a fresh print: index is stale", () => {
   const empty = new Market(PARAMS, 96_400);
   empty.register("alice");
   empty.deposit("alice", 10_000_000n);
-  assert.throws(() => empty.mint("alice", 0, 1), { message: "index is stale" });
+  assert.throws(() => empty.mint("alice", 0, 1), refused(ERR.STALE));
 
   const m = new Market({ ...PARAMS, maxAnchorAgeSecs: 1900 }, 94_500);
   m.register("alice");
@@ -111,49 +137,71 @@ test("opening needs a fresh print: index is stale", () => {
   m.mint("alice", 0, 1);
   assert.equal(m.getSeries(0)!.anchor, 2_000_000);
   m.setTime(100_000);
-  assert.throws(() => m.mint("alice", 1, 1), { message: "index is stale" });
-  assert.throws(() => sealedCommit(m, "alice", 1, 0, "Long", 1, 1000, 1000n), { message: "index is stale" });
+  assert.throws(() => m.mint("alice", 1, 1), refused(ERR.STALE));
+  assert.throws(() => sealedCommit(m, "alice", 1, 0, "Long", 1, 1000, 1000n), refused(ERR.STALE));
   assert.equal(m.getSeries(1), null);
 });
 
-test("a full round evicts the smallest, latest lock, else round is full", () => {
-  const m = setup();
+test("a full round evicts the smallest, latest lock with its fee, else round is full", () => {
+  const m = setup({ ...PARAMS, commitFee: 7n });
   for (const lock of [2000n, 1000n, 1000n, 3000n]) sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, lock);
   const before = { bob: m.getAccount("bob")!.balance, events: m.events.length };
-  assert.throws(() => sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1000n), { message: "round is full" });
+  assert.throws(() => sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1000n), refused(ERR.ROUND_FULL));
   assert.deepEqual({ bob: m.getAccount("bob")!.balance, events: m.events.length }, before);
 
   sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1001n);
-  assert.deepEqual(m.events.at(-2), { event: "evict", data: { series: 0, round: 0, seq: 2, accountId: "alice", lock: 1000n } });
+  assert.deepEqual(m.events.at(-2), {
+    event: "evict",
+    data: { series: 0, round: 0, seq: 2, accountId: "alice", lock: 1000n, fee: 7n },
+  });
   const round = m.getRound(0, 0)!;
   assert.equal(round.nextSeq, 5);
   assert.deepEqual(round.commits.map((c) => c.seq), [0, 1, 3, 4]);
-  assert.equal(m.getAccount("alice")!.balance, 10_000_000n - 6000n);
-  assert.throws(() => sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1000n), { message: "round is full" });
+  // Four commits with fees, one returned in full.
+  assert.equal(m.getAccount("alice")!.balance, 10_000_000n - 6000n - 3n * 7n);
+  assert.throws(() => sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1000n), refused(ERR.ROUND_FULL));
 });
 
-test("the guard voids orders far from the last print", () => {
-  const m = setup();
+test("the guard and reference recorded at commit decide whether an order is void", () => {
+  const m = setup({ ...PARAMS, commitFee: 100n });
   m.setGuard("alice", 0);
   m.setGuard("bob", 0);
-  m.setGuard("carol", 50_000);
   // ref = 2_000_000 - 1_800_000 = 200_000.
   const a = sealedCommit(m, "alice", 0, 0, "Long", 1, 250_000, 250_000n);
   const b = sealedCommit(m, "bob", 0, 0, "Short", 1, 150_000, 250_000n);
   const c = sealedCommit(m, "carol", 0, 0, "Long", 1, 250_000, 250_000n);
   const okLong = sealedCommit(m, "alice", 0, 0, "Long", 1, 200_000, 200_000n);
+  // Changing the guard or the index after committing changes nothing.
+  m.setGuard("alice", null);
+  m.setGuard("carol", 0);
+  print(m, 96_500, 1_950_000);
   m.setTime(96_520);
   for (const s of [a, b, c, okLong]) revealSecret(m, s);
   assert.deepEqual(m.getRound(0, 0)!.commits.map((x) => x.state), ["Void", "Void", "Revealed", "Revealed"]);
-  // The void lock is back at once; the other is still locked.
-  assert.equal(m.getAccount("alice")!.balance, 10_000_000n - 200_000n);
-  assert.equal(m.getAccount("bob")!.balance, 10_000_000n);
-  assert.equal(m.getTotals().locked, 450_000n);
-  m.setGuard("alice", null);
-  assert.deepEqual(m.events.at(-1), { event: "guard", data: { accountId: "alice", guard: null } });
+  // A void lock is back at once; its fee stays with the round.
+  assert.equal(m.getAccount("alice")!.balance, 10_000_000n - 200_000n - 200n);
+  assert.equal(m.getAccount("bob")!.balance, 10_000_000n - 100n);
+  assert.equal(m.getTotals().locked, 450_000n + 400n);
   m.setTime(96_580);
   const r = m.clear(0, 0);
-  assert.deepEqual([r.price, r.orders, r.commits, r.forfeited], [null, 2, 4, 0n]);
+  assert.deepEqual([r.price, r.orders, r.commits, r.forfeited, r.fees], [null, 2, 4, 0n, 400n]);
+  assert.deepEqual(r.fills, []);
+});
+
+test("max_round_lock bounds what an account locks in one round", () => {
+  const m = setup();
+  m.setGuard("alice", null, 3000n);
+  assert.deepEqual(m.events.at(-1), { event: "guard", data: { accountId: "alice", guard: null, maxRoundLock: 3000n } });
+  assert.deepEqual(m.getAccount("alice"), { balance: 10_000_000n, guard: null, maxRoundLock: 3000n });
+  sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, 2000n);
+  assert.throws(() => sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, 1001n), refused(ERR.ROUND_LOCK));
+  sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, 1000n);
+  // Other accounts' commits do not count, and the next round starts again.
+  sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 5000n);
+  m.setTime(96_580);
+  sealedCommit(m, "alice", 0, 1, "Long", 1, 1000, 3000n);
+  m.setGuard("alice", null);
+  sealedCommit(m, "alice", 0, 1, "Long", 1, 1000, 9000n);
 });
 
 test("a failed reveal leaves the commit unrevealed", () => {
@@ -163,101 +211,159 @@ test("a failed reveal leaves the commit unrevealed", () => {
   const thin = sealedCommit(m, "alice", 0, 0, "Long", 10, 250_000, 2_499_999n);
   const offTick = sealedCommit(m, "alice", 0, 0, "Long", 1, 1500, 2000n);
   const atBand = sealedCommit(m, "alice", 0, 0, "Long", 1, 400_000, 400_000n);
-  assert.throws(() => revealSecret(m, s), /reveal phase/);
+  assert.throws(() => revealSecret(m, s), refused(ERR.NOT_REVEAL_PHASE));
   m.setTime(96_520);
-  assert.throws(() => revealSecret(m, { ...s, salt: "0".repeat(32) }), /does not match/);
-  assert.throws(() => revealSecret(m, { ...s, price: 251_000 }), /does not match/);
-  assert.throws(() => revealSecret(m, { ...s, salt: "XYZ" }), /salt/);
-  assert.throws(() => revealSecret(m, { ...s, owner: "bob" }), /another account/);
-  assert.throws(() => revealSecret(m, { ...s, seq: 99 }), /not found/);
-  assert.throws(() => revealSecret(m, tooBig), /size is out of range/);
-  assert.throws(() => revealSecret(m, thin), /lock does not cover/);
-  assert.throws(() => revealSecret(m, offTick), /price is out of range/);
-  assert.throws(() => revealSecret(m, atBand), /price is out of range/);
+  assert.throws(() => revealSecret(m, { ...s, salt: "0".repeat(32) }), refused(ERR.HASH_MISMATCH));
+  assert.throws(() => revealSecret(m, { ...s, price: 251_000 }), refused(ERR.HASH_MISMATCH));
+  assert.throws(() => revealSecret(m, { ...s, salt: "XYZ" }), refused(ERR.BAD_SALT));
+  assert.throws(() => revealSecret(m, { ...s, owner: "bob" }), refused(ERR.NOT_OWNER));
+  assert.throws(() => revealSecret(m, { ...s, seq: 99 }), refused(ERR.NO_COMMIT));
+  assert.throws(() => revealSecret(m, { ...s, round: 1 }), refused(ERR.NO_COMMIT));
+  assert.throws(() => revealSecret(m, tooBig), refused(ERR.BAD_SIZE));
+  assert.throws(() => revealSecret(m, thin), refused(ERR.UNDER_LOCKED));
+  assert.throws(() => revealSecret(m, offTick), refused(ERR.BAD_PRICE));
+  assert.throws(() => revealSecret(m, atBand), refused(ERR.BAD_PRICE));
   assert.equal(m.getRound(0, 0)!.commits[0]!.state, "Committed");
   revealSecret(m, s);
   assert.deepEqual(m.getRound(0, 0)!.commits[0]!.order, { side: "Long", size: 10, price: 250_000 });
-  assert.throws(() => revealSecret(m, s), /already revealed/);
+  assert.throws(() => revealSecret(m, s), refused(ERR.ALREADY_REVEALED));
   m.setTime(96_580);
-  assert.throws(() => revealSecret(m, thin), /reveal phase/);
+  assert.throws(() => revealSecret(m, thin), refused(ERR.NOT_REVEAL_PHASE));
 });
 
 test("clear panics before the round is over, without commits, and twice", () => {
   const m = setup();
-  assert.throws(() => m.clear(0, 0), /no commits/);
+  assert.throws(() => m.clear(0, 0), refused(ERR.NO_COMMITS));
   sealedCommit(m, "alice", 0, 0, "Long", 1, 1000, 1000n);
   m.setTime(96_579);
-  assert.throws(() => m.clear(0, 0), /not over/);
+  assert.throws(() => m.clear(0, 0), refused(ERR.ROUND_NOT_OVER));
   m.setTime(96_580);
-  // Nothing revealed: the whole lock is subject to forfeit.
+  // Nothing revealed: 10% of the lock is burned.
   assert.equal(m.clear(0, 0).forfeited, 100n);
-  assert.throws(() => m.clear(0, 0), /already cleared/);
+  assert.equal(m.getTotals().burned, 100n);
+  assert.throws(() => m.clear(0, 0), refused(ERR.CLEARED));
 });
 
-test("commit checks its inputs and its phase", () => {
-  const m = setup();
+test("commit checks its inputs, the balance with the fee, and its phase", () => {
+  const m = setup({ ...PARAMS, commitFee: 1n });
   const hash = "a".repeat(64);
-  assert.throws(() => m.commit("zed", 0, hash, 1000n), /not registered/);
-  assert.throws(() => m.commit("alice", 0, "A".repeat(64), 1000n), /hash/);
-  assert.throws(() => m.commit("alice", 0, hash, 999n), /min_lock/);
-  assert.throws(() => m.commit("alice", 0, hash, 10_000_001n), /balance/);
+  assert.throws(() => m.commit("zed", 0, hash, 1000n), refused(ERR.NOT_REGISTERED));
+  assert.throws(() => m.commit("alice", 0, "A".repeat(64), 1000n), refused(ERR.BAD_HASH));
+  assert.throws(() => m.commit("alice", 0, hash, 999n), refused(ERR.LOCK_TOO_SMALL));
+  assert.throws(() => m.commit("alice", 0, hash, 10_000_000n), refused(ERR.BALANCE));
   // A failed commit did not open the series.
   assert.equal(m.getSeries(0), null);
+  m.commit("alice", 0, hash, 9_999_999n);
+  assert.equal(m.getAccount("alice")!.balance, 0n);
   m.setTime(96_520);
-  assert.throws(() => m.commit("alice", 0, hash, 1000n), /commit phase/);
+  assert.throws(() => m.commit("bob", 0, hash, 1000n), refused(ERR.NOT_COMMIT_PHASE));
   m.setTime(103_000);
-  assert.throws(() => m.commit("alice", 0, hash, 1000n), /commit phase/);
+  assert.throws(() => m.commit("bob", 0, hash, 1000n), refused(ERR.NOT_COMMIT_PHASE));
 });
 
-test("reports: windows, duplicates, finality and far moves", () => {
+test("report checks and deciding a bucket when every reporter has reported", () => {
   const m = new Market(PARAMS, 96_000);
-  assert.throws(() => m.report("alice", 96_000, 1, BUNDLE), /not a reporter/);
-  assert.throws(() => m.report("r0", 96_050, 1, BUNDLE), /multiple/);
-  assert.throws(() => m.report("r0", 96_300, 1, BUNDLE), /report window/);
-  assert.throws(() => m.report("r0", 96_000, 0, BUNDLE), /above zero/);
-  assert.throws(() => m.report("r0", 96_000, 1, "short"), /bundle/);
+  assert.throws(() => m.report("alice", 96_000, 1, BUNDLE), refused(ERR.NOT_REPORTER));
+  assert.throws(() => m.report("r0", 96_050, 1, BUNDLE), refused(ERR.BUCKET));
+  assert.throws(() => m.report("r0", 96_100, 1, BUNDLE), refused(ERR.REPORT_WINDOW));
+  assert.throws(() => m.report("r0", 96_000, 0, BUNDLE), refused(ERR.ZERO_PRICE));
+  assert.throws(() => m.report("r0", 96_000, 1, "short"), refused(ERR.BAD_BUNDLE));
   assert.equal(m.report("r0", 96_000, 2_000_000, BUNDLE), false);
-  assert.throws(() => m.report("r0", 96_000, 2_000_000, BUNDLE), /already reported/);
+  assert.throws(() => m.report("r0", 96_000, 2_000_000, BUNDLE), refused(ERR.DUPLICATE_REPORT));
+  // Quorum alone does not decide: the bucket waits for the last reporter or its window.
+  assert.equal(m.report("r1", 96_000, 2_000_002, BUNDLE), false);
   assert.deepEqual(m.getPrint(96_000), {
     bucket: 96_000,
     price: null,
-    final: false,
-    reports: [{ reporter: "r0", price: 2_000_000, bundle: BUNDLE }],
+    state: "Open",
+    reports: [
+      { reporter: "r0", price: 2_000_000, bundle: BUNDLE },
+      { reporter: "r1", price: 2_000_002, bundle: BUNDLE },
+    ],
   });
-  assert.equal(m.report("r1", 96_000, 2_000_002, BUNDLE), true);
-  assert.equal(m.report("r2", 96_000, 1, BUNDLE), false);
-  assert.equal(m.getPrint(96_000)!.reports.length, 2);
-  assert.deepEqual(m.getLastPrint(), { bucket: 96_000, price: 2_000_001 });
+  assert.deepEqual(m.getPendingPrints(), [96_000]);
+  // A far-off third report does not move the median.
+  assert.equal(m.report("r2", 96_000, 9_000_000, BUNDLE), true);
+  assert.deepEqual(m.getPrint(96_000)!.price, 2_000_002);
+  assert.equal(m.getPrint(96_000)!.state, "Final");
+  assert.deepEqual(m.getLastPrint(), { bucket: 96_000, price: 2_000_002 });
+  assert.deepEqual(m.getPendingPrints(), []);
+  assert.deepEqual(m.events.at(-1), { event: "print", data: { bucket: 96_000, price: 2_000_002, reports: 3 } });
   // Bucket 96_000 is before t0, so no series accumulates it.
   assert.deepEqual(m.getAccumulator(0), { sum: 0n, count: 0 });
-
-  // A 10% move needs all three reporters.
-  m.setTime(96_419);
-  assert.equal(m.report("r0", 96_300, 2_200_000, BUNDLE), false);
-  assert.equal(m.report("r1", 96_300, 2_200_000, BUNDLE), false);
-  assert.equal(m.report("r2", 96_300, 2_300_000, BUNDLE), true);
-  assert.equal(m.getPrint(96_300)!.price, 2_200_000);
-  m.setTime(96_420);
-  assert.throws(() => m.report("r0", 96_000, 1, BUNDLE), /report window/);
-
-  // Once a print is final, further reports for it do nothing, even a repeat.
-  m.setTime(96_620);
-  print(m, 96_600, 2_200_000);
+  // A decided bucket ignores further reports, even a repeat, and logs nothing.
   const events = m.events.length;
-  assert.equal(m.report("r2", 96_600, 1, BUNDLE), false);
-  assert.equal(m.report("r0", 96_600, 1, BUNDLE), false);
+  assert.equal(m.report("r0", 96_000, 1, BUNDLE), false);
   assert.equal(m.events.length, events);
-  assert.deepEqual(m.getPrints(0, 10).map((p) => p.bucket), [96_000, 96_300, 96_600]);
-  assert.deepEqual(m.getPrints(96_301, 1).map((p) => p.bucket), [96_600]);
+  m.setTime(96_220);
+  assert.throws(() => m.report("r0", 96_000, 1, BUNDLE), refused(ERR.REPORT_WINDOW));
 });
 
-test("an earlier bucket finalizing late is not measured against a later print", () => {
-  const m = new Market(PARAMS, 96_600);
-  print(m, 96_600, 2_000_000);
-  // Bucket 96_500's window runs to 96_720. Against 2_000_000 a 4_000_000 print would be far.
-  assert.equal(m.report("r0", 96_500, 4_000_000, BUNDLE), false);
-  assert.equal(m.report("r1", 96_500, 4_000_000, BUNDLE), true);
-  assert.deepEqual(m.getLastPrint(), { bucket: 96_600, price: 2_000_000 });
+test("finalize_print decides a closed bucket: a print, or none", () => {
+  const m = new Market(PARAMS, 96_000);
+  m.report("r0", 96_000, 2_000_000, BUNDLE);
+  m.report("r1", 96_000, 2_100_000, BUNDLE);
+  m.setTime(96_100);
+  m.report("r0", 96_100, 2_000_000, BUNDLE);
+  m.report("r1", 96_100, 2_100_001, BUNDLE);
+  m.setTime(96_200);
+  m.report("r0", 96_200, 2_000_000, BUNDLE);
+  assert.throws(() => m.finalizePrint(96_300), refused(ERR.NO_REPORTS));
+  assert.throws(() => m.finalizePrint(96_100), refused(ERR.REPORT_WINDOW_OPEN));
+  m.setTime(96_419);
+  assert.throws(() => m.finalizePrint(96_200), refused(ERR.REPORT_WINDOW_OPEN));
+  // Two reports 5% apart: exactly the spread allowed.
+  assert.equal(m.finalizePrint(96_000), true);
+  assert.equal(m.getPrint(96_000)!.price, 2_050_000);
+  assert.throws(() => m.finalizePrint(96_000), refused(ERR.DECIDED));
+  // One unit further apart: no print, for good.
+  assert.equal(m.finalizePrint(96_100), false);
+  assert.deepEqual(m.events.at(-1), { event: "no_print", data: { bucket: 96_100, reports: 2 } });
+  assert.deepEqual(m.getPrint(96_100)!.state, "NoPrint");
+  assert.equal(m.getPrint(96_100)!.price, null);
+  m.setTime(96_420);
+  // One report is below quorum.
+  assert.equal(m.finalizePrint(96_200), false);
+  assert.deepEqual(m.getPrints(0, 10).map((p) => p.bucket), [96_000]);
+  assert.deepEqual(m.getLastPrint(), { bucket: 96_000, price: 2_050_000 });
+});
+
+test("a report decides up to four earlier closed buckets, oldest first", () => {
+  // Windows of 1100 s, so six buckets can be reported before any window closes.
+  const m = new Market({ ...PARAMS, reportGraceSecs: 1000 }, 96_500);
+  for (let i = 0; i < 6; i++) {
+    m.report("r0", 96_000 + 100 * i, 2_000_000 + i, BUNDLE);
+    m.report("r1", 96_000 + 100 * i, 2_000_000 + i, BUNDLE);
+  }
+  // At 97_700 the windows of buckets 96_000 to 96_500 have all closed.
+  m.setTime(97_700);
+  assert.deepEqual(m.getPendingPrints(), [96_000, 96_100, 96_200, 96_300, 96_400, 96_500]);
+  const before = m.events.length;
+  assert.equal(m.report("r0", 97_700, 2_000_000, BUNDLE), false);
+  assert.deepEqual(
+    m.events.slice(before).map((e) => [e.event, "bucket" in e.data ? e.data.bucket : null]),
+    [["report", 97_700], ["print", 96_000], ["print", 96_100], ["print", 96_200], ["print", 96_300]],
+  );
+  assert.deepEqual(m.getPendingPrints(), [96_400, 96_500, 97_700]);
+  assert.deepEqual(m.getLastPrint(), { bucket: 96_300, price: 2_000_003 });
+});
+
+test("prune_print deletes a decided bucket two periods later, keeping the last print and accumulators", () => {
+  const m = new Market(PARAMS, 100_000);
+  print(m, 100_000, 2_000_000);
+  m.setTime(100_100);
+  m.report("r0", 100_100, 2_000_000, BUNDLE);
+  m.setTime(107_199);
+  assert.throws(() => m.prunePrint(100_000), refused(ERR.TOO_EARLY_TO_PRUNE));
+  assert.throws(() => m.prunePrint(100_100), refused(ERR.NOT_DECIDED));
+  assert.throws(() => m.prunePrint(100_200), refused(ERR.NO_REPORTS));
+  m.setTime(107_200);
+  m.prunePrint(100_000);
+  assert.deepEqual(m.events.at(-1), { event: "prune_print", data: { bucket: 100_000 } });
+  assert.equal(m.getPrint(100_000), null);
+  assert.deepEqual(m.getLastPrint(), { bucket: 100_000, price: 2_000_000 });
+  assert.deepEqual(m.getAccumulator(0), { sum: 2_000_000n, count: 1 });
+  assert.throws(() => m.prunePrint(100_000), refused(ERR.NO_REPORTS));
 });
 
 test("delivery prints feed the accumulator of their series", () => {
@@ -269,6 +375,33 @@ test("delivery prints feed the accumulator of their series", () => {
   assert.deepEqual(m.getAccumulator(1), { sum: 2_050_000n, count: 1 });
 });
 
+test("settle decides the delivery window's open buckets, and a refused settle decides nothing", () => {
+  for (const buckets of [2, 3]) {
+    const m = setup();
+    m.mint("alice", 0, 1);
+    // Two of three reporters per bucket, all before any window closes, never finalized.
+    m.setTime(100_200);
+    for (let i = 0; i < buckets; i++) {
+      const bucket = 100_000 + 100 * i;
+      m.report("r0", bucket, 2_100_000, BUNDLE);
+      m.report("r1", bucket, 2_100_000, BUNDLE);
+    }
+    m.setTime(103_720);
+    const pending = m.getPendingPrints();
+    assert.equal(pending.length, buckets);
+    if (buckets === 2) {
+      const events = m.events.length;
+      assert.throws(() => m.settle(0), refused(ERR.NOT_ENOUGH_PRINTS));
+      assert.deepEqual([m.getPendingPrints(), m.events.length], [pending, events]);
+      continue;
+    }
+    const s = m.settle(0);
+    assert.deepEqual([s.fixing, s.prints, s.void], [2_100_000, 3, false]);
+    assert.deepEqual(m.getPendingPrints(), []);
+    assert.deepEqual(m.events.slice(-4).map((e) => e.event), ["print", "print", "print", "settle"]);
+  }
+});
+
 test("void settlement with no prints and with some prints", () => {
   for (const prints of [0, 2]) {
     const m = setup();
@@ -276,45 +409,60 @@ test("void settlement with no prints and with some prints", () => {
     m.mint("bob", 0, 1);
     for (let i = 0; i < prints; i++) print(m, 100_000 + 300 * i, 2_050_001 + i);
     m.setTime(103_720);
-    assert.throws(() => m.settle(0), { message: "not enough prints yet" });
+    assert.throws(() => m.settle(0), refused(ERR.NOT_ENOUGH_PRINTS));
     m.setTime(105_999);
-    assert.throws(() => m.settle(0), { message: "not enough prints yet" });
+    assert.throws(() => m.settle(0), refused(ERR.NOT_ENOUGH_PRINTS));
     m.setTime(106_000);
     const s = m.settle(0);
     // No prints: floor + band / 2 = 2_000_000. Two: (2_050_001 + 2_050_002) / 2 = 2_050_001.
     const fixing = prints === 0 ? 2_000_000 : 2_050_001;
-    assert.deepEqual([s.void, s.fixing, s.prints, s.longPayout, s.shortPayout], [true, fixing, prints, fixing - 1_800_000, 2_200_000 - fixing]);
+    assert.deepEqual(
+      [s.void, s.fixing, s.prints, s.longPayout, s.shortPayout],
+      [true, fixing, prints, fixing - 1_800_000, 2_200_000 - fixing],
+    );
     assert.equal(m.redeem(0, "alice"), 800_000n);
     assert.equal(m.redeem(0, "bob"), 400_000n);
   }
 });
 
-test("settle waits for pending rounds; forfeits are shared as bonus and the rest carries", () => {
+test("settle waits for pending rounds, and a forfeit pays nobody", () => {
   const m = setup();
   m.mint("alice", 0, 3);
   sealedCommit(m, "bob", 0, 0, "Long", 1, 1000, 1_000_005n);
   m.setTime(106_000);
-  assert.throws(() => m.settle(0), /waiting to be cleared/);
+  assert.throws(() => m.settle(0), refused(ERR.PENDING_ROUNDS));
   assert.deepEqual(m.getSeries(0)!.pendingRounds, [0]);
-  // Forfeit 100_000 (rounded down from 100_000.5) over 3 sets: 33_333 per set, carry 1.
+  // 10% of 1_000_005, rounded down, is burned.
   assert.equal(m.clear(0, 0).forfeited, 100_000n);
-  const s = m.settle(0);
-  assert.deepEqual([s.bonusLong, s.bonusShort], [16_666n, 16_667n]);
-  assert.equal(m.getTotals().pools, 1n);
-  assert.equal(m.redeem(0, "alice"), 3n * 400_000n + 99_999n);
+  m.settle(0);
+  assert.equal(m.redeem(0, "alice"), 3n * 400_000n);
+  assert.deepEqual(m.getTotals(), { free: 29_900_000n, locked: 0n, setsBacking: 0n, unredeemed: 0n, burned: 100_000n });
+});
+
+test("unknown and unsettled series", () => {
+  const m = setup();
+  assert.throws(() => m.settle(7), refused(ERR.UNKNOWN_SERIES));
+  assert.throws(() => m.redeem(7, "alice"), refused(ERR.UNKNOWN_SERIES));
+  assert.throws(() => m.pruneResult(7, 0), refused(ERR.UNKNOWN_SERIES));
+  assert.throws(() => m.merge("alice", 7, 1), refused(ERR.UNKNOWN_SERIES));
+  m.mint("alice", 0, 1);
+  assert.throws(() => m.redeem(0, "alice"), refused(ERR.NOT_SETTLED));
+  assert.throws(() => m.pruneResult(0, 0), refused(ERR.NOT_SETTLED));
 });
 
 test("mint, transfer and merge", () => {
   const m = setup();
-  assert.throws(() => m.mint("alice", 0, 0), /at least 1/);
-  assert.throws(() => m.mint("alice", 0, 26), /balance/);
+  assert.throws(() => m.mint("alice", 0, 0), refused(ERR.ZERO_SETS));
+  assert.throws(() => m.mint("alice", 0, 26), refused(ERR.BALANCE));
   m.mint("alice", 0, 3);
   assert.equal(m.getAccount("alice")!.balance, 8_800_000n);
   m.transferPosition("alice", 0, "bob", 1, 0);
-  assert.throws(() => m.transferPosition("alice", 0, "nobody", 1, 0), /receiver/);
-  assert.throws(() => m.transferPosition("alice", 0, "bob", 3, 0), /not enough/);
-  assert.throws(() => m.transferPosition("alice", 0, "bob", 0, 0), /nothing/);
-  assert.throws(() => m.merge("alice", 0, 3), /not enough/);
+  assert.throws(() => m.transferPosition("alice", 0, "nobody", 1, 0), refused(ERR.NOT_REGISTERED));
+  assert.throws(() => m.transferPosition("alice", 0, "alice", 1, 0), refused(ERR.SELF_TRANSFER));
+  assert.throws(() => m.transferPosition("alice", 0, "bob", 3, 0), refused(ERR.POSITION_TOO_SMALL));
+  assert.throws(() => m.transferPosition("alice", 0, "bob", 0, 0), refused(ERR.NOTHING_TO_TRANSFER));
+  assert.throws(() => m.merge("alice", 0, 3), refused(ERR.POSITION_TOO_SMALL));
+  assert.throws(() => m.merge("alice", 0, 0), refused(ERR.ZERO_SETS));
   m.merge("alice", 0, 2);
   assert.deepEqual(m.getPosition(0, "alice"), { long: 0, short: 1 });
   assert.deepEqual(m.getPosition(0, "bob"), { long: 1, short: 0 });
@@ -322,22 +470,35 @@ test("mint, transfer and merge", () => {
   assert.equal(m.getAccount("alice")!.balance, 9_600_000n);
   assert.deepEqual(m.events.at(-1), { event: "merge", data: { series: 0, accountId: "alice", sets: 2 } });
   m.setTime(103_000);
-  assert.throws(() => m.mint("alice", 0, 1), /auction window/);
-  assert.throws(() => m.merge("alice", 7, 1), /not open/);
+  assert.throws(() => m.mint("alice", 0, 1), refused(ERR.WINDOW_CLOSED));
+});
+
+test("mint stops short of what the auctions could still add to 2^53 - 1", () => {
+  const m = setup();
+  m.deposit("alice", 10n ** 25n);
+  // max_order_size 100 * max_commits 4 * 20 rounds = 8000 units the auctions could add.
+  const most = 2 ** 53 - 1 - 8000;
+  assert.throws(() => m.mint("alice", 0, most + 1), refused(ERR.TOO_MANY_SETS));
+  m.mint("alice", 0, most - 1);
+  assert.throws(() => m.mint("alice", 0, 2), refused(ERR.TOO_MANY_SETS));
+  m.mint("alice", 0, 1);
+  assert.equal(m.getSeries(0)!.openSets, most);
 });
 
 test("accounts, deposits and withdrawals", () => {
   const m = new Market(PARAMS, 0);
   assert.equal(m.deposit("alice", 5n), 5n);
   m.register("alice");
-  assert.throws(() => m.register("alice"), /already registered/);
+  assert.throws(() => m.register("alice"), refused(ERR.REGISTERED));
   assert.equal(m.deposit("alice", 5n), 0n);
-  assert.throws(() => m.deposit("alice", 0n), /above zero/);
-  assert.throws(() => m.withdraw("alice", 6n), /too low/);
+  assert.throws(() => m.deposit("alice", 0n), refused(ERR.ZERO_AMOUNT));
+  assert.throws(() => m.withdraw("alice", 6n), refused(ERR.BALANCE));
+  assert.throws(() => m.withdraw("alice", 0n), refused(ERR.ZERO_AMOUNT));
+  assert.throws(() => m.withdraw("bob", 1n), refused(ERR.NOT_REGISTERED));
   m.withdraw("alice", 2n, { transferFails: true });
   assert.equal(m.getAccount("alice")!.balance, 5n);
   m.withdraw("alice", 2n);
-  assert.deepEqual(m.getAccount("alice"), { balance: 3n, guard: null });
+  assert.deepEqual(m.getAccount("alice"), { balance: 3n, guard: null, maxRoundLock: null });
   assert.deepEqual(m.events.map((e) => e.event), ["register", "deposit", "withdraw", "withdraw_failed", "withdraw"]);
   assert.equal(m.getAccount("bob"), null);
   assert.equal(sum(m.getTotals()), 3n);
@@ -372,19 +533,35 @@ test("status lists every live series and its phase", () => {
   assert.deepEqual(brief(), [[1, 16, "Commit", 103_000]]);
 });
 
-test("params are validated", () => {
-  assert.throws(() => new Market({ ...PARAMS, quorum: 4 }), /quorum/);
-  assert.throws(() => new Market({ ...PARAMS, reporters: ["ra", "ra"], quorum: 1 }), /repeat/);
-  assert.throws(() => new Market({ ...PARAMS, cutoffSecs: 3600 }), /cutoff/);
-  assert.throws(() => new Market({ ...PARAMS, bandBps: 10_000 }), /band_bps/);
-  assert.throws(() => new Market({ ...PARAMS, maxCommits: 129 }), /max_commits/);
-  assert.throws(() => new Market({ ...PARAMS, commitSecs: 0 }), /commitSecs/);
-  assert.throws(() => new Market({ ...PARAMS, tick: 0 }), /tick/);
-  assert.throws(() => new Market({ ...PARAMS, t0: 100_050 }), /multiples of print_interval_secs/);
-  assert.throws(() => new Market({ ...PARAMS, periodSecs: 3650, leadSecs: 3650 }), /multiples of print_interval_secs/);
-  assert.throws(() => new Market({ ...PARAMS, reporters: ["R0"], quorum: 1 }), /reporters/);
-  assert.throws(() => new Market({ ...PARAMS, usdc: "USDC" }), /usdc/);
-  new Market({ ...PARAMS, cutoffSecs: 0 });
+test("params are validated with the contract's texts", () => {
+  const bad: [Partial<Params>, string][] = [
+    [{ commitSecs: 0 }, ERR.DURATION],
+    [{ voidAfterSecs: 0 }, ERR.DURATION],
+    [{ tick: 0 }, ERR.TICK],
+    [{ bandBps: 10_000 }, ERR.BAND_BPS],
+    [{ bandBps: 0 }, ERR.BAND_BPS],
+    [{ forfeitBps: 10_001 }, ERR.FORFEIT_BPS],
+    [{ maxCommits: 129 }, ERR.MAX_COMMITS],
+    [{ maxOrderSize: 0 }, ERR.MAX_ORDER_SIZE],
+    [{ cutoffSecs: 3600 }, ERR.CUTOFF],
+    [{ minPrints: 0 }, ERR.MIN_PRINTS],
+    [{ minPrints: 37 }, ERR.MAX_PRINTS],
+    [{ voidAfterSecs: 119 }, ERR.VOID_AFTER],
+    [{ maxSpreadBps: 0 }, ERR.MAX_SPREAD_BPS],
+    [{ maxSpreadBps: 10_001 }, ERR.MAX_SPREAD_BPS],
+    // 225 s rounds give 16 rounds; 2^41 * 128 * 16 reaches 2^52 exactly.
+    [{ maxCommits: 128, commitSecs: 165, maxOrderSize: 2 ** 41 }, ERR.CAPACITY],
+    [{ t0: 100_050 }, ERR.BUCKET_GRID],
+    [{ periodSecs: 3650, leadSecs: 3650 }, ERR.BUCKET_GRID],
+    [{ usdc: "USDC" }, ERR.BAD_USDC],
+    [{ reporters: ["ra", "ra"], quorum: 1 }, ERR.REPORTERS],
+    [{ reporters: ["R0"], quorum: 1 }, ERR.REPORTERS],
+    [{ reporters: [], quorum: 1 }, ERR.REPORTERS],
+    [{ quorum: 4 }, ERR.QUORUM],
+    [{ quorum: 0 }, ERR.QUORUM],
+  ];
+  for (const [change, text] of bad) assert.throws(() => new Market({ ...PARAMS, ...change }), refused(text), JSON.stringify(change));
+  new Market({ ...PARAMS, minPrints: 36, voidAfterSecs: 120, maxSpreadBps: 10_000, maxCommits: 128, commitSecs: 165, maxOrderSize: 2 ** 41 - 1 });
 });
 
 test("pending rounds are listed ascending until cleared", () => {
@@ -397,18 +574,15 @@ test("pending rounds are listed ascending until cleared", () => {
   assert.deepEqual(m.getSeries(0)!.pendingRounds, [2]);
 });
 
-test("account ids, deposits to bad ids, withdrawing zero, transfer to yourself", () => {
+test("account ids and deposits to bad ids", () => {
   for (const ok of ["ab", "alice", "alice.near", "a-b_c.d1", "0x", "a".repeat(64)]) assert.ok(isAccountId(ok), ok);
   for (const bad of ["", "a", "Alice", "a..b", ".a", "a.", "a-", "-a", "a b", "a@b", "a".repeat(65)]) {
     assert.ok(!isAccountId(bad), bad);
   }
   const m = setup();
-  assert.throws(() => m.register("Bad"), /account id/);
+  assert.throws(() => m.register("Bad"), refused(ERR.BAD_ACCOUNT_ID));
   assert.equal(m.deposit("a..b", 5n), 5n);
   assert.equal(m.deposit("A", 5n), 5n);
-  assert.throws(() => m.withdraw("alice", 0n), /above zero/);
-  m.mint("alice", 0, 1);
-  assert.throws(() => m.transferPosition("alice", 0, "alice", 1, 0), /yourself/);
 });
 
 test("status lists at most 32 series", () => {

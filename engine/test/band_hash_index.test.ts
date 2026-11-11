@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { commitHash, commitPreimage, computeBand, isFar, median, printDecision } from "../src/mod.ts";
+import { commitHash, commitPreimage, computeBand, decidePrint, median, printDecision } from "../src/mod.ts";
 
 // Band, section 6.1
 
@@ -20,14 +20,14 @@ test("band of an anchor already on the tick, with a large product", () => {
 
 test("band panics when half is below one tick", () => {
   // 5000 * 10% = 500, which rounds down to 0 ticks.
-  assert.throws(() => computeBand(5000, 1000, 1000), /narrower than one tick/);
-  assert.throws(() => computeBand(9_999, 1000, 1000), /narrower than one tick/);
+  assert.throws(() => computeBand(5000, 1000, 1000), { message: "band is narrower than one tick" });
+  assert.throws(() => computeBand(9_999, 1000, 1000), { message: "band is narrower than one tick" });
 });
 
 test("band panics when half is above mid", () => {
   // Unreachable with 0 < band_bps < 10000; reachable for the function on its own.
   // mid = 1000; 1500 * 200% = 3000 > 1000.
-  assert.throws(() => computeBand(1500, 1000, 20_000), /wider than the anchor/);
+  assert.throws(() => computeBand(1500, 1000, 20_000), { message: "band is wider than the price" });
 });
 
 // Commit hash, section 6.2. Expected digests come from `printf ... | shasum -a 256`.
@@ -62,26 +62,39 @@ test("median", () => {
   assert.throws(() => median([]));
 });
 
-test("far is strict at the max move", () => {
-  // 5% of 1_000_000 is 50_000.
-  assert.equal(isFar(1_050_000, 1_000_000, 500), false);
-  assert.equal(isFar(950_000, 1_000_000, 500), false);
-  assert.equal(isFar(1_050_001, 1_000_000, 500), true);
-  assert.equal(isFar(949_999, 1_000_000, 500), true);
+test("deciding a bucket: quorum, middle report, spread of the two middle", () => {
+  // Fewer than quorum: no print.
+  assert.equal(decidePrint([], 1, 500), null);
+  assert.equal(decidePrint([2_000_000], 2, 500), null);
+  // Odd count: the middle report, however far the others are.
+  assert.equal(decidePrint([1, 2_000_000, 9_000_000], 2, 500), 2_000_000);
+  assert.equal(decidePrint([2_000_000], 1, 500), 2_000_000);
+  // Even count: 5% of 2_000_000 is 100_000; exactly that spread still prints.
+  assert.equal(decidePrint([2_100_000, 2_000_000], 2, 500), 2_050_000);
+  assert.equal(decidePrint([2_000_000, 2_100_001], 2, 500), null);
+  assert.equal(decidePrint([2_000_000, 2_000_001], 2, 500), 2_000_000);
+  // Four reports: only the two middle matter.
+  assert.equal(decidePrint([1, 2_000_000, 2_000_003, 9_000_000], 2, 1), 2_000_001);
+  assert.equal(decidePrint([1, 2_000_000, 2_000_201, 9_000_000], 2, 1), null);
+  // The spread product passes 2^53 for large prices.
+  assert.equal(decidePrint([2 ** 50, 2 ** 50 + 2], 2, 1), 2 ** 50 + 1);
 });
 
-test("a print needs quorum, or every reporter when it is far", () => {
-  const base = { last: 1_000_000, quorum: 2, reporters: 3, maxMoveBps: 500 };
-  assert.deepEqual(printDecision({ ...base, reports: [1_010_000] }), { final: false, price: null });
-  assert.deepEqual(printDecision({ ...base, reports: [1_010_000, 1_020_000] }), { final: true, price: 1_015_000 });
-  // A 10% move with quorum but not every reporter waits.
-  assert.deepEqual(printDecision({ ...base, reports: [1_100_000, 1_100_000] }), { final: false, price: null });
-  assert.deepEqual(printDecision({ ...base, reports: [1_100_000, 1_100_000, 1_200_000] }), { final: true, price: 1_100_000 });
-  // With no comparable last print nothing is far.
-  assert.deepEqual(printDecision({ ...base, last: null, reports: [5_000_000, 5_000_001] }), { final: true, price: 5_000_000 });
-  // One reporter of one is every reporter, far or not.
-  assert.deepEqual(printDecision({ ...base, quorum: 1, reporters: 1, reports: [9_000_000] }), { final: true, price: 9_000_000 });
-  // The median, not the outlier, is what is tested for far.
-  assert.deepEqual(printDecision({ ...base, reports: [1_000_000, 9_000_000] }), { final: false, price: null });
-  assert.deepEqual(printDecision({ ...base, reports: [1_000_000, 1_001_000, 9_000_000] }), { final: true, price: 1_001_000 });
+test("a bucket is open until every reporter reports or its window closes", () => {
+  const base = { quorum: 2, reporters: 3, maxSpreadBps: 500 };
+  assert.deepEqual(printDecision({ ...base, reports: [2_000_000], windowClosed: false }), { state: "Open", price: null });
+  assert.deepEqual(printDecision({ ...base, reports: [2_000_000, 2_000_000], windowClosed: false }), {
+    state: "Open",
+    price: null,
+  });
+  assert.deepEqual(printDecision({ ...base, reports: [2_000_000, 2_000_002], windowClosed: true }), {
+    state: "Final",
+    price: 2_000_001,
+  });
+  assert.deepEqual(printDecision({ ...base, reports: [2_000_000], windowClosed: true }), { state: "NoPrint", price: null });
+  assert.deepEqual(printDecision({ ...base, reports: [1, 5, 9_000_000], windowClosed: false }), { state: "Final", price: 5 });
+  assert.deepEqual(printDecision({ ...base, reports: [1_000_000, 2_000_000], windowClosed: true }), {
+    state: "NoPrint",
+    price: null,
+  });
 });

@@ -72,7 +72,8 @@ method.
 `new` panics unless: every duration except `cutoff_secs` is above zero; `tick > 0`; `0 < band_bps < 10000`;
 `forfeit_bps <= 10000`; `max_commits` is 1 to 128; `max_order_size >= 1`;
 `cutoff_secs < lead_secs`; `1 <= min_prints <= period_secs / print_interval_secs`;
-`void_after_secs >= report_grace_secs`; `0 < max_spread_bps <= 10000`;
+`void_after_secs >= report_grace_secs`; `report_grace_secs <= period_secs`, so a bucket
+can never take a report after it may be pruned; `0 < max_spread_bps <= 10000`;
 `max_order_size * max_commits * rounds_per_series < 2^52`, where `rounds_per_series =
 (lead_secs - cutoff_secs) / round_secs`; `t0` and `period_secs` are multiples of
 `print_interval_secs`, so a delivery window is a whole number of print buckets;
@@ -166,6 +167,10 @@ parameters and is kept as a guard. `floor` and `band` never change.
   `seq` among equals) is removed and its lock and fee returned to its owner in full. If the
   new lock is not larger, the call panics with `round is full`.
 - An account may hold several commits in one round.
+- The checks run in this order: the caller is registered, the phase, the hash and
+  the minimum lock, the free balance, the round lock limit (counted over the caller's
+  commits in the round before any eviction this commit causes), then whether the
+  round is full.
 
 The hash is `sha256` of this UTF-8 string, in lowercase hex:
 
@@ -334,7 +339,9 @@ When a print becomes final:
 
 `report` returns `true` when this call gave the bucket a final print. Before it
 returns, `report` also decides up to four earlier buckets that have reports, are
-undecided and whose report window has closed, oldest first.
+undecided and whose report window has closed, oldest first. The events are logged in
+this order: `report`, then `print` or `no_print` for the reported bucket if this
+call decided it, then the events of the earlier buckets.
 
 `finalize_print(bucket) -> bool`. Anyone may call it once the bucket's report window
 has closed. The bucket must have at least one report and be undecided, otherwise the

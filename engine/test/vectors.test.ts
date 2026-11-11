@@ -81,21 +81,27 @@ vectors<BandFile>("band.json", ({ cases }) =>
 interface PrintFile {
   cases: {
     reports: number[];
-    last: number | null;
     quorum: number;
     reporters: number;
-    max_move_bps: number;
-    expect: { final: boolean; price: number | null };
+    max_spread_bps: number;
+    window_closed: boolean;
+    expect: { state: "Open" | "Final" | "NoPrint"; price: number | null };
   }[];
 }
 
 vectors<PrintFile>("print.json", ({ cases }) =>
   each(
     cases,
-    (c, i) => `case ${i} ${JSON.stringify(c.reports)} last ${c.last}`,
+    (c, i) => `case ${i} ${JSON.stringify(c.reports)} window_closed ${c.window_closed}`,
     (c) =>
       assert.deepEqual(
-        printDecision({ reports: c.reports, last: c.last, quorum: c.quorum, reporters: c.reporters, maxMoveBps: c.max_move_bps }),
+        printDecision({
+          reports: c.reports,
+          quorum: c.quorum,
+          reporters: c.reporters,
+          maxSpreadBps: c.max_spread_bps,
+          windowClosed: c.window_closed,
+        }),
         c.expect,
       ),
   ),
@@ -107,28 +113,16 @@ interface SettlementFile {
     band: number;
     sum: string;
     count: number;
-    open_sets: number;
-    pool: string;
     void_allowed: boolean;
     min_prints: number;
-    expect:
-      | {
-          fixing: number;
-          long_payout: number;
-          short_payout: number;
-          bonus_long: string;
-          bonus_short: string;
-          carry: string;
-          void: boolean;
-        }
-      | { error: string };
+    expect: { fixing: number; long_payout: number; short_payout: number; void: boolean } | { error: string };
   }[];
 }
 
 vectors<SettlementFile>("settlement.json", ({ cases }) =>
   each(
     cases,
-    (c, i) => `case ${i} sum ${c.sum} count ${c.count} open_sets ${c.open_sets} pool ${c.pool}`,
+    (c, i) => `case ${i} sum ${c.sum} count ${c.count}`,
     (c) => {
       const run = () =>
         settleSeries({
@@ -136,8 +130,6 @@ vectors<SettlementFile>("settlement.json", ({ cases }) =>
           band: c.band,
           sum: BigInt(c.sum),
           count: c.count,
-          openSets: c.open_sets,
-          pool: BigInt(c.pool),
           voidAllowed: c.void_allowed,
           minPrints: c.min_prints,
         });
@@ -147,15 +139,7 @@ vectors<SettlementFile>("settlement.json", ({ cases }) =>
       }
       const out = run();
       assert.deepEqual(
-        {
-          fixing: out.fixing,
-          long_payout: out.longPayout,
-          short_payout: out.shortPayout,
-          bonus_long: out.bonusLong.toString(),
-          bonus_short: out.bonusShort.toString(),
-          carry: out.carry.toString(),
-          void: out.void,
-        },
+        { fixing: out.fixing, long_payout: out.longPayout, short_payout: out.shortPayout, void: out.void },
         c.expect,
       );
     },

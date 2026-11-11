@@ -1,5 +1,6 @@
 export * from "./time.ts";
 export * from "./band.ts";
+export * from "./errors.ts";
 export * from "./hash.ts";
 export * from "./clearing.ts";
 export * from "./index.ts";

@@ -16,12 +16,13 @@ export const PARAMS: Params = {
   tick: 1000,
   printIntervalSecs: 100,
   reportGraceSecs: 120,
-  maxMoveBps: 500,
+  maxSpreadBps: 500,
   minPrints: 3,
   voidAfterSecs: 2400,
   maxAnchorAgeSecs: 1800,
   forfeitBps: 1000,
   minLock: 1000n,
+  commitFee: 0n,
   maxCommits: 4,
   maxOrderSize: 100,
   reporters: ["r0", "r1", "r2"],
@@ -63,9 +64,9 @@ export function revealSecret(m: Market, s: Secret): void {
   m.reveal(s.owner, s.series, s.round, s.seq, s.side, s.size, s.price, s.salt);
 }
 
-/** Has reporters r0 and r1 report `price` for `bucket`, at the bucket's start time if the clock allows. */
+/** Has every reporter report `price` for `bucket`, which makes it final at once, at the
+ * bucket's start time if the clock allows. */
 export function print(m: Market, bucket: number, price: number): void {
   if (m.now < bucket) m.setTime(bucket);
-  m.report("r0", bucket, price, BUNDLE);
-  m.report("r1", bucket, price, BUNDLE);
+  for (const r of m.params.reporters) m.report(r, bucket, price, BUNDLE);
 }

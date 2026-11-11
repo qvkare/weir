@@ -1,4 +1,5 @@
-// Section 10: the fixing, what each unit pays, and how forfeits are shared out.
+// Section 10: the fixing, the void rule and what each unit pays.
+import { ERR } from "./errors.ts";
 
 export interface SettlementInput {
   floor: number;
@@ -6,9 +7,6 @@ export interface SettlementInput {
   /** The series' accumulator. */
   sum: bigint;
   count: number;
-  openSets: number;
-  /** The series' bonus pool plus the carry pool. */
-  pool: bigint;
   /** `now >= delivery_end + void_after_secs`. */
   voidAllowed: boolean;
   minPrints: number;
@@ -19,14 +17,7 @@ export interface Payouts {
   shortPayout: number;
 }
 
-export interface Bonus {
-  bonusLong: bigint;
-  bonusShort: bigint;
-  /** What is left of the pool; it becomes the new carry pool. */
-  carry: bigint;
-}
-
-export interface SettlementOutcome extends Payouts, Bonus {
+export interface SettlementOutcome extends Payouts {
   fixing: number;
   void: boolean;
 }
@@ -34,7 +25,7 @@ export interface SettlementOutcome extends Payouts, Bonus {
 export function fixingOf(input: SettlementInput): { fixing: number; void: boolean } {
   const { sum, count, floor, band } = input;
   if (count >= input.minPrints) return { fixing: Number(sum / BigInt(count)), void: false };
-  if (!input.voidAllowed) throw new Error("not enough prints yet");
+  if (!input.voidAllowed) throw new Error(ERR.NOT_ENOUGH_PRINTS);
   const fixing = count >= 1 ? Number(sum / BigInt(count)) : floor + Math.floor(band / 2);
   return { fixing, void: true };
 }
@@ -44,26 +35,12 @@ export function payouts(fixing: number, floor: number, band: number): Payouts {
   return { longPayout, shortPayout: band - longPayout };
 }
 
-export function bonus(pool: bigint, openSets: number): Bonus {
-  if (openSets === 0) return { bonusLong: 0n, bonusShort: 0n, carry: pool };
-  const sets = BigInt(openSets);
-  const perSet = pool / sets;
-  const bonusLong = perSet / 2n;
-  return { bonusLong, bonusShort: perSet - bonusLong, carry: pool - perSet * sets };
-}
-
 export function settleSeries(input: SettlementInput): SettlementOutcome {
   const { fixing, void: isVoid } = fixingOf(input);
-  return { fixing, void: isVoid, ...payouts(fixing, input.floor, input.band), ...bonus(input.pool, input.openSets) };
+  return { fixing, void: isVoid, ...payouts(fixing, input.floor, input.band) };
 }
 
 /** What `redeem` credits for a position on a settled series. */
-export function redeemAmount(
-  position: { long: number; short: number },
-  s: Payouts & Pick<Bonus, "bonusLong" | "bonusShort">,
-): bigint {
-  return (
-    BigInt(position.long) * (BigInt(s.longPayout) + s.bonusLong) +
-    BigInt(position.short) * (BigInt(s.shortPayout) + s.bonusShort)
-  );
+export function redeemAmount(position: { long: number; short: number }, p: Payouts): bigint {
+  return BigInt(position.long) * BigInt(p.longPayout) + BigInt(position.short) * BigInt(p.shortPayout);
 }
