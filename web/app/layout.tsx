@@ -63,7 +63,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         ) : null}
         <SiteHeader network={deployments().network} />
         {children}
-        <SiteFooter builtAt={buildData().builtAt} />
+        <SiteFooter builtAt={buildData().builtAt} spec={buildData().specVersion} />
       </body>
     </html>
   );

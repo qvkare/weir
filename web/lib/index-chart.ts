@@ -28,6 +28,8 @@ export interface IndexChartGeometry {
   /** SVG path data; "M" starts a new run after a gap. */
   index: string;
   reporters: { reporter: string; path: string; labelY: number | null }[];
+  /** False on narrow charts: reporter names go under the chart instead of at the right end. */
+  endLabels: boolean;
   band: null | { x: number; w: number; y: number; h: number; avgY: number | null; average: number | null };
   yTicks: { y: number; price: number }[];
   xTicks: { x: number; t: number }[];
@@ -37,7 +39,7 @@ export interface IndexChartGeometry {
 
 export function indexChartGeometry(o: IndexChartInput): IndexChartGeometry {
   const narrow = o.width < 560;
-  const plot = { x0: narrow ? 44 : 56, x1: o.width - (narrow ? 64 : 112), y0: 12, y1: o.height - 28 };
+  const plot = { x0: narrow ? 44 : 56, x1: o.width - (narrow ? 12 : 112), y0: 12, y1: o.height - 28 };
   const prints = o.prints.filter((p) => p.bucket >= o.from - o.interval && p.bucket <= o.to).sort((a, b) => a.bucket - b.bucket);
   const values: number[] = [];
   for (const p of prints) {
@@ -125,6 +127,7 @@ export function indexChartGeometry(o: IndexChartInput): IndexChartGeometry {
     plot,
     index,
     reporters,
+    endLabels: !narrow,
     band,
     yTicks,
     xTicks,

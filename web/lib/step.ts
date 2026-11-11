@@ -179,3 +179,42 @@ export function stepSummary(p: { orders: StepOrder[]; price: number | null; volu
   return `${head} It clears at a LONG price of ${fmtPrice(p.price, p.tick)}${fwd}, for ${fmtGpuH(p.volume)}.`;
 }
 
+
+export interface LabelSpot {
+  x: number;
+  y: number;
+}
+
+/**
+ * Where the "Demand (LONG)" and "Supply (SHORT)" labels go: demand's above its first step,
+ * supply's below its first step, both inside the plot, and never within `gap` px of each other
+ * vertically (they share the left edge). When they would collide, the one with room moves away.
+ */
+export function curveLabels(g: Pick<StepGeometry, "plot" | "steps">, gap = 16): { demand: LabelSpot | null; supply: LabelSpot | null } {
+  const top = g.plot.y0 + 12;
+  const bottom = g.plot.y1 - 6;
+  const clamp = (y: number) => Math.min(Math.max(y, top), bottom);
+  const d = g.steps.find((s) => s.side === "Long");
+  const s = g.steps.find((s) => s.side === "Short");
+  const x = g.plot.x0 + 4;
+  const demand = d ? { x, y: clamp(d.y - 6) } : null;
+  const supply = s ? { x, y: clamp(s.y + 16) } : null;
+  if (demand && supply && Math.abs(demand.y - supply.y) < gap) {
+    // Keep the order demand-above-supply when demand's step is higher on screen, else the reverse.
+    const demandFirst = (d!.y <= s!.y);
+    const upper = demandFirst ? demand : supply;
+    const lower = demandFirst ? supply : demand;
+    const mid = (upper.y + lower.y) / 2;
+    upper.y = mid - gap / 2;
+    lower.y = mid + gap / 2;
+    if (upper.y < top) {
+      lower.y += top - upper.y;
+      upper.y = top;
+    }
+    if (lower.y > bottom) {
+      upper.y -= lower.y - bottom;
+      lower.y = bottom;
+    }
+  }
+  return { demand, supply };
+}

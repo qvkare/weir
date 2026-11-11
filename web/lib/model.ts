@@ -26,12 +26,12 @@ export interface ModelAgent {
 }
 
 export const MODEL_AGENTS: ModelAgent[] = [
-  { id: "buyer-ana.model", role: "buyer", rule: "Bids LONG at the reference price plus up to 6% of the band", functionCallOnly: false },
-  { id: "buyer-ben.model", role: "buyer", rule: "Bids LONG from 8% of the band under the reference to 4% over", functionCallOnly: false },
-  { id: "buyer-cy.model", role: "buyer", rule: "Agent key; bids LONG within 4% of the band of the reference, skips a reveal 1 round in 8", functionCallOnly: true },
-  { id: "seller-dee.model", role: "seller", rule: "Offers SHORT from 4% of the band under the reference to 8% over", functionCallOnly: false },
+  { id: "buyer-ana.model", role: "buyer", rule: "Bids LONG at the reference price plus up to 12% of the band", functionCallOnly: false },
+  { id: "buyer-ben.model", role: "buyer", rule: "Bids LONG from 16% of the band under the reference to 8% over", functionCallOnly: false },
+  { id: "buyer-cy.model", role: "buyer", rule: "Agent key; bids LONG within 8% of the band of the reference, skips a reveal 1 round in 8", functionCallOnly: true },
+  { id: "seller-dee.model", role: "seller", rule: "Offers SHORT from 8% of the band under the reference to 16% over", functionCallOnly: false },
   { id: "seller-eli.model", role: "seller", rule: "Offers SHORT at the reference, large sizes", functionCallOnly: false },
-  { id: "maker-fay.model", role: "maker", rule: "Agent key; quotes both sides 4% of the band around the reference", functionCallOnly: true },
+  { id: "maker-fay.model", role: "maker", rule: "Agent key; quotes both sides 8% of the band around the reference", functionCallOnly: true },
 ];
 
 export const MODEL_KEEPER = "keeper.model";
@@ -111,8 +111,8 @@ function agentOrders(st: ModelState, agent: ModelAgent, k: number, series: numbe
   const { tick } = st.market.params;
   const scale = st.id === "weekly" ? 8 : 1;
   const clampPrice = (p: number) => Math.min(Math.max(Math.round(p / tick) * tick, tick), info.band - tick);
-  // One price step is 2% of the band, so orders spread visibly across it.
-  const unit = Math.max(tick, Math.round((info.band * 0.02) / tick) * tick);
+  // One price step is 4% of the band, so orders spread visibly across it.
+  const unit = Math.max(tick, Math.round((info.band * 0.04) / tick) * tick);
   const ticks = (lo: number, hi: number) => (lo + Math.floor(r() * (hi - lo + 1))) * unit;
   const size = (lo: number, hi: number) => scale * (lo + Math.floor(r() * (hi - lo + 1)));
   const salt = (n: number) => sha256Hex(`${st.id}|salt|${series}|${round}|${agent.id}|${n}`).slice(0, 32);

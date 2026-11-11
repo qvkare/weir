@@ -4,6 +4,7 @@ import { backtestGeometry, caveatsFromMarkdown, coverage, niceStep, readBacktest
 import { readCache, valueOf } from "./cache.ts";
 import { marketFromParam, parseDeployments } from "./config.ts";
 import { fundingStatus, groupTxs, readTxFile } from "./evidence.ts";
+import { specVersion } from "./build-data.ts";
 
 test("deployments.json: empty markets, defaults, and tolerant entries", () => {
   const d = parseDeployments({ network: "testnet", rpc: ["https://a.example", "http://insecure", 4], explorer: "https://x.io/", bundles_base: null, markets: [] });
@@ -112,4 +113,10 @@ test("backtest caveats come from summary.md, and nothing when it is absent", () 
   assert.deepEqual(caveatsFromMarkdown(md), [{ title: "No real order flow", text: "Nobody traded these." }, { title: "Gaps", text: "Days." }]);
   assert.deepEqual(caveatsFromMarkdown(null), []);
   assert.deepEqual(caveatsFromMarkdown("# none"), []);
+});
+
+test("the spec version is read from docs/SPEC.md", () => {
+  const v = specVersion(new URL("../../", import.meta.url).pathname);
+  assert.match(v ?? "", /^\d+\.\d+$/);
+  assert.equal(specVersion("/no/such/dir"), null);
 });

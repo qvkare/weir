@@ -10,6 +10,8 @@ export interface RecordedBundle {
 
 export interface BuildData {
   builtAt: number;
+  /** "0.2", from the first "Version x.y" line of docs/SPEC.md. */
+  specVersion: string | null;
   deployments: unknown;
   bundles: RecordedBundle[];
   bundleCount: number;

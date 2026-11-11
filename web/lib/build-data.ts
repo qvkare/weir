@@ -56,6 +56,7 @@ export function readBuildData(root: string): BuildData {
 
   return {
     builtAt: Math.floor(Date.now() / 1000),
+    specVersion: specVersion(root),
     deployments: readJson(join(root, "deployments.json")) ?? null,
     // Only the newest recorded bundle travels with the build: it is the fixture and the fallback.
     bundles: bundles.slice(0, 1),
@@ -67,4 +68,12 @@ export function readBuildData(root: string): BuildData {
       intents: existsSync(join(root, "chain", "src", "intents.ts")),
     },
   };
+}
+
+export function specVersion(root: string): string | null {
+  try {
+    return /^Version (\d+(?:\.\d+)+)/m.exec(readFileSync(join(root, "docs", "SPEC.md"), "utf8"))?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }

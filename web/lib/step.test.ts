@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { clearRound } from "@weir/engine";
-import { sizesAt, stepGeometry, type StepOrder } from "./step.ts";
+import { curveLabels, sizesAt, stepGeometry, type StepOrder } from "./step.ts";
 
 const band = 1_000_000;
 const base = { band, width: 1000, height: 400 };
@@ -84,4 +84,31 @@ test("a zero band does not divide by zero", () => {
 test("sizes at a price follow SPEC 7.1", () => {
   assert.deepEqual(sizesAt(orders, 400_000), { demand: 20, supply: 15 });
   assert.deepEqual(sizesAt(orders, 700_000), { demand: 0, supply: 25 });
+});
+
+test("curve labels never overlap, even when both curves start at the same price", () => {
+  for (const p of [500_000, 100_000, 10_000, 990_000]) {
+    for (const width of [375, 1200]) {
+      const same: StepOrder[] = [
+        { seq: 0, owner: "a", side: "Long", size: 10, price: p },
+        { seq: 1, owner: "b", side: "Short", size: 10, price: p },
+      ];
+      const g = stepGeometry({ ...base, width, orders: same, price: null, volume: 0, cleared: false });
+      const l = curveLabels(g);
+      assert.ok(l.demand && l.supply);
+      assert.ok(Math.abs(l.demand.y - l.supply.y) >= 16, `price ${p} width ${width}: ${l.demand.y} vs ${l.supply.y}`);
+      for (const y of [l.demand.y, l.supply.y]) assert.ok(y >= g.plot.y0 + 12 - 1e-9 && y <= g.plot.y1 - 6 + 1e-9);
+    }
+  }
+});
+
+test("curve labels: supply just above demand stays clear of it", () => {
+  const apart: StepOrder[] = [
+    { seq: 0, owner: "a", side: "Long", size: 5, price: 400_000 },
+    { seq: 1, owner: "b", side: "Short", size: 5, price: 410_000 },
+  ];
+  const g = stepGeometry({ ...base, orders: apart, price: null, volume: 0, cleared: false });
+  const l = curveLabels(g);
+  assert.ok(Math.abs(l.demand!.y - l.supply!.y) >= 16);
+  assert.equal(curveLabels(stepGeometry({ ...base, orders: [], price: null, volume: 0, cleared: true })).demand, null);
 });

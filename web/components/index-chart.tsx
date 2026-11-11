@@ -20,18 +20,20 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
         const g = indexChartGeometry({ ...input, width, height });
         const span = input.to - input.from;
         return (
+          <>
           <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} aria-hidden="true">
             {g.band ? (
               <g>
                 <rect x={g.band.x} y={g.band.y} width={g.band.w} height={g.band.h} fill="var(--panel)" />
-                <text x={g.band.x + 4} y={g.band.y + 14}>
-                  Band, series in delivery
+                <text x={g.band.x + g.band.w - 4} y={g.band.y + 14} textAnchor="end">
+                  {g.endLabels && g.band.w > 170 ? "Band, series in delivery" : "Band"}
                 </text>
                 {g.band.avgY !== null ? (
                   <>
                     <line x1={g.band.x} x2={g.band.x + g.band.w} y1={g.band.avgY} y2={g.band.avgY} stroke="var(--ink)" strokeWidth={1.5} strokeDasharray="5 4" />
-                    <text className="ink" x={g.band.x + 4} y={g.band.avgY - 6}>
-                      Average so far {dollarsOfPrice(g.band.average, tick)}
+                    <text className="ink" x={g.band.x + 4} y={g.band.y + g.band.h - 6}>
+                      {g.endLabels ? "Average so far " : "Avg "}
+                      {dollarsOfPrice(g.band.average, tick)}
                     </text>
                   </>
                 ) : null}
@@ -54,7 +56,7 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
             {g.reporters.map((r) => (
               <g key={r.reporter}>
                 <path d={r.path} fill="none" stroke="var(--ink-3)" strokeWidth={1} />
-                {r.labelY !== null ? (
+                {g.endLabels && r.labelY !== null ? (
                   <text x={g.plot.x1 + 6} y={r.labelY + 4} style={{ fontSize: 11 }}>
                     {r.reporter.split(".")[0]}
                   </text>
@@ -69,6 +71,12 @@ export function IndexChart({ input, tick, summary }: { input: Omit<IndexChartInp
               </text>
             ) : null}
           </svg>
+          {!g.endLabels && g.reporters.length ? (
+            <p className="tiny muted" style={{ marginTop: 4 }}>
+              Thin lines: {g.reporters.map((r) => r.reporter).join(", ")}
+            </p>
+          ) : null}
+          </>
         );
       }}
     />

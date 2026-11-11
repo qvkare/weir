@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export function SiteFooter({ builtAt }: { builtAt: number }) {
+export function SiteFooter({ builtAt, spec }: { builtAt: number; spec: string | null }) {
   return (
     <footer className="site-footer">
       <div className="wrap cols">
@@ -9,7 +9,7 @@ export function SiteFooter({ builtAt }: { builtAt: number }) {
             <b>Weir</b>. One price for next week&rsquo;s GPU-hour. NEAR testnet only; no real money moves.
           </p>
           <p className="tiny" style={{ marginTop: 8 }}>
-            Built {new Date(builtAt * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC from SPEC v0.1. No analytics, no cookies, no third-party scripts.
+            Built {new Date(builtAt * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC{spec ? ` from SPEC v${spec}` : ""}. No analytics, no cookies, no third-party scripts.
           </p>
         </div>
         <div>

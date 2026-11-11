@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { dollarsOfPrice, fmtGpuH, fmtInt, fmtPrice } from "@/lib/format.ts";
-import { stepGeometry, stepSummary, type Seg, type StepOrder } from "@/lib/step.ts";
+import { curveLabels, stepGeometry, stepSummary, type Seg, type StepOrder } from "@/lib/step.ts";
 import { ChartFrame } from "./chart-frame.tsx";
 
 export interface StepChartProps {
@@ -50,6 +50,7 @@ export function StepChart(props: StepChartProps) {
 function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { width: number; height: number; picked: number | null; onPick: (seq: number | null) => void }) {
   const g = useMemo(() => stepGeometry({ orders: p.orders, band: p.band, price: p.price, volume: p.volume, cleared: p.cleared, width, height }), [p.orders, p.band, p.price, p.volume, p.cleared, width, height]);
   const narrow = width < 560;
+  const labels = curveLabels(g);
   const anim = p.animate && g.clearing ? "draw-in" : undefined;
   const thin = (segs: Seg[]) => path(segs);
   const thick = (segs: Seg[]) => path(segs.filter((s) => s.filled));
@@ -125,13 +126,13 @@ function StepSvg({ width, height, picked, onPick, ...p }: StepChartProps & { wid
 
       {!p.compact || !narrow ? (
         <>
-          {g.demand.length ? (
-            <text className="long" x={g.plot.x0 + 4} y={Math.max(g.plot.y0 + 12, (g.steps.find((s) => s.side === "Long")?.y ?? g.plot.y0) - 6)}>
+          {labels.demand ? (
+            <text className="long" x={labels.demand.x} y={labels.demand.y}>
               Demand (LONG)
             </text>
           ) : null}
-          {g.supply.length ? (
-            <text className="short" x={g.plot.x0 + 4} y={Math.min(g.plot.y1 - 6, (g.steps.find((s) => s.side === "Short")?.y ?? g.plot.y1) + 16)}>
+          {labels.supply ? (
+            <text className="short" x={labels.supply.x} y={labels.supply.y}>
               Supply (SHORT)
             </text>
           ) : null}

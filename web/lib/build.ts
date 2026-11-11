@@ -5,6 +5,7 @@ import { fundingStatus, type FundingStatus } from "./evidence.ts";
 
 const EMPTY: BuildData = {
   builtAt: 0,
+  specVersion: null,
   deployments: null,
   bundles: [],
   bundleCount: 0,
