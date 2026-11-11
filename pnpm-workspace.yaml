@@ -6,4 +6,5 @@ packages:
   - keeper
   - backtest
   - integration
+  - deploy
   - web
