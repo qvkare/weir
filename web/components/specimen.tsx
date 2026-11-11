@@ -1,6 +1,7 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { DUR, EASE_FN, clamp01 } from "@/lib/motion.ts";
+import { EASE_FN, clamp01, specimenStep } from "@/lib/motion.ts";
 
 // Fig. 1, the specimen (DESIGN section 6.1): one H100 SXM module drawn in fine isometric lines,
 // taken apart in five steps. Text on each step is limited to facts checked in lib/hardware.ts.
@@ -24,6 +25,8 @@ const STEPS: Step[] = [
 ];
 
 const STILL = 3;
+
+
 const C30 = Math.cos(Math.PI / 6);
 const S30 = 0.5;
 
@@ -164,7 +167,7 @@ export function Specimen({ hourLabel, sheet }: { hourLabel: string; sheet: React
   const [reduced, setReduced] = useState(false);
   const raf = useRef(0);
   const begun = useRef(false);
-  const state = useRef({ cur: STILL, from: STEPS[STILL]!, k: 1, t0: 0, playing: false });
+  const state = useRef<{ cur: number; from: Step; k: number; t0: number; playing: boolean; held: number | null }>({ cur: STILL, from: STEPS[STILL]!, k: 1, t0: 0, playing: false, held: null });
 
   const L: Lay = useMemo(() => (narrow ? { n: true, W: 400, H: 340, cx: 200, cy: 186, s: 0.8 } : { n: false, W: 900, H: 560, cx: 440, cy: 318, s: 1 }), [narrow]);
 
@@ -172,10 +175,10 @@ export function Specimen({ hourLabel, sheet }: { hourLabel: string; sheet: React
 
   const tick = useCallback((now: number) => {
     const s = state.current;
-    const u = clamp01((now - s.t0) / (DUR.draw + 100));
+    const u = specimenStep(now - s.t0).tween;
     s.k = u;
     setK(u);
-    if (s.playing && now - s.t0 > 3200) {
+    if (s.playing && specimenStep(now - s.t0).advance) {
       go(s.cur + 1, true);
       return;
     }
@@ -197,7 +200,7 @@ export function Specimen({ hourLabel, sheet }: { hourLabel: string; sheet: React
       }
       setFrom(shown);
       setCur(next);
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      if (motionQuery().matches) {
         s.k = 1;
         setK(1);
         return;
@@ -223,7 +226,7 @@ export function Specimen({ hourLabel, sheet }: { hourLabel: string; sheet: React
   useEffect(() => {
     const el = stage.current;
     if (!el) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mq = motionQuery();
     setReduced(mq.matches);
     const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 560));
     ro.observe(el);
@@ -244,18 +247,35 @@ export function Specimen({ hourLabel, sheet }: { hourLabel: string; sheet: React
           s.t0 = performance.now() - 2000;
           raf.current = requestAnimationFrame(tick);
         }
-        if (!vis && state.current.playing) {
-          state.current.playing = false;
-          setPlaying(false);
+        // Off screen it stops where it is; back in view it carries on from the same moment.
+        const s = state.current;
+        if (!vis && s.playing) {
+          s.held = performance.now() - s.t0;
+          s.playing = false;
+          if (raf.current) cancelAnimationFrame(raf.current);
+          raf.current = 0;
+        } else if (vis && s.held !== null && !mq.matches) {
+          s.t0 = performance.now() - s.held;
+          s.held = null;
+          s.playing = true;
+          if (!raf.current) raf.current = requestAnimationFrame(tick);
         }
       },
       { threshold: 0.5 },
     );
     io.observe(el);
     const onVis = () => {
-      if (document.hidden && state.current.playing) {
-        state.current.playing = false;
-        setPlaying(false);
+      const s = state.current;
+      if (document.hidden && s.playing) {
+        s.held = performance.now() - s.t0;
+        s.playing = false;
+        if (raf.current) cancelAnimationFrame(raf.current);
+        raf.current = 0;
+      } else if (!document.hidden && s.held !== null) {
+        s.t0 = performance.now() - s.held;
+        s.held = null;
+        s.playing = true;
+        if (!raf.current) raf.current = requestAnimationFrame(tick);
       }
     };
     document.addEventListener("visibilitychange", onVis);

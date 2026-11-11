@@ -183,7 +183,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
               <b>How a print is decided.</b> Each of {params.reporters.length} reporters may report a bucket within its window, {fmtSpan(params.print_interval_secs)} plus {fmtSpan(params.report_grace_secs)} of grace. The bucket is decided when every reporter has reported, or when the window closes. The print is the median of the reports. With fewer than {fmtInt(params.quorum)} reports (quorum) there is no print; with an even number, the two middle reports must agree within {fmtBps(params.max_spread_bps)} (max_spread_bps) or there is no print. A bucket without a print stays without one, and the index chart marks it. Nothing compares a print with earlier ones.
             </p>
             <p>
-              If fewer than {fmtInt(params.min_prints)} prints (min_prints) arrived, the series waits; after {fmtSpan(params.void_after_secs)} (void_after_secs) it settles on what it has, or on the middle of the band if it has none, and is marked void.
+              If fewer than {fmtInt(params.min_prints)} prints (min_prints) arrived, the series waits. After {fmtSpan(params.void_after_secs)} (void_after_secs) it is <b>void</b>: cancelled at the centre of the band. Every LONG and every SHORT is paid half the band, whatever was traded and whatever prints exist, so no trade and no partial set of prints can move the payout. That is close to a refund when the auctions cleared near the centre of the band; whoever paid more than half the band for a side gets less back, and whoever paid less gets more.
             </p>
           </div>
           <div className="stack">
@@ -250,7 +250,7 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
             <li><span>A round holds at most {fmtInt(params.max_commits)} commits; when full, a larger lock evicts the smallest.</span><code>max_commits</code></li>
             <li><span>One order is at most {fmtGpuH(params.max_order_size)}.</span><code>max_order_size</code></li>
             <li><span>A commit locks at least {fmtUsd(params.min_lock)}.</span><code>min_lock</code></li>
-            <li><span>A normal settlement needs {fmtInt(params.min_prints)} prints; after {fmtSpan(params.void_after_secs)} it settles void without them.</span><code>min_prints, void_after_secs</code></li>
+            <li><span>A normal settlement needs {fmtInt(params.min_prints)} prints; without them, after {fmtSpan(params.void_after_secs)} the series is void: cancelled at the centre of the band, half the band to each side.</span><code>min_prints, void_after_secs</code></li>
             <li><span>A function-call key cannot set a guard, withdraw or move positions: those need 1 yoctoNEAR.</span><code>set_guard, withdraw</code></li>
           </ul>
         </section>
@@ -258,10 +258,13 @@ export default async function HowPage({ searchParams }: { searchParams: Search }
         <section className="section" id="trust" aria-labelledby="trust-h">
           <h2 id="trust-h">Trust</h2>
           <ul className="limits">
-            <li><span>Reporters set the index: a print is the median of their reports. They cannot take funds; they can move the fixing. Every report carries the hash of its data, so anyone can recompute it on <Link href="/proof#verifier">Proof</Link>.</span><code>reporters</code></li>
+            <li><span>The index is what the reporters say it is, and a majority of them acting together can set the fixing. With all of them present, a print is the median, which a minority cannot move. With one of three absent, either of the other two can leave a bucket without a print; doing that selectively shifts the fixing by the difference between the average of all buckets and the average of the ones it lets through, as long as {fmtInt(params.min_prints)} remain. Doing it more often makes the series void, which pays both sides half the band. A reporter who also trades can profit from that when auction prices have moved away from the centre of the band, by holding the side that cost less than half and then causing the void. Reporters cannot take funds. The remedy is more reporters run by independent parties, which this deployment does not have. Every report carries the hash of its data, so anyone can recompute it on <Link href="/proof#verifier">Proof</Link>.</span><code>reporters</code></li>
+            <li><span>A late revealer has seen the earlier reveals and can still choose not to reveal. That costs {fmtBps(params.forfeit_bps)} of its lock and the {fmtUsd(params.commit_fee)} fee, and it can change who else is filled.</span><code>last look</code></li>
+            <li><span>A determined bidder can fill all {fmtInt(params.max_commits)} slots of a round; at {fmtUsd(params.commit_fee)} a commit that costs {fmtUsd(BigInt(params.max_commits) * BigInt(params.commit_fee))} a round. A price on blocking, not a ban.</span><code>max_commits, commit_fee</code></li>
             <li><span>The contract trusts the USDC token contract named in its parameters{live ? `: ${live.usdc}` : ""}.</span><code>usdc</code></li>
             <li><span>There is no owner, pause, fee switch or upgrade method. Once the contract account has no keys, its code cannot change. Proof reads the key count live.</span><code>no admin</code></li>
-            <li><span>An agent with a function-call key limited to commit, reveal, clear, mint, merge and redeem trades only with dollars already deposited for it.</span><code>agents</code></li>
+            <li><span>An agent with a function-call key limited to commit, reveal, clear, mint, merge, settle and redeem trades only with dollars already deposited for it. Its guard and round lock limit are off until the account sets them: set them before handing over the key.</span><code>agents</code></li>
+            <li><span>The parameters are whatever the deployer chose; the contract refuses only what cannot work, not what is unwise. Read them on <Link href="/proof#params">Proof</Link> before trusting a deployment.</span><code>get_params</code></li>
           </ul>
         </section>
       </div>

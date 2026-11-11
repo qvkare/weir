@@ -16,6 +16,8 @@ export interface BuildData {
   specVersion: string | null;
   /** docs/SPEC.md as text, for /spec. */
   spec: string | null;
+  /** docs/AUDIT.md as text, for /audit. */
+  audit: string | null;
   deployments: unknown;
   bundles: RecordedBundle[];
   bundleCount: number;

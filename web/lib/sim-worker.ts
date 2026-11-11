@@ -17,7 +17,7 @@ self.onmessage = (e: MessageEvent<SimRequest>) => {
   const req = e.data;
   try {
     if (req.type === "init") {
-      sim = createSimulation({ seed: req.config.seed, buyers: 3, sellers: 3, makers: 2, noise: 2, market: req.config.market });
+      sim = createSimulation({ seed: req.config.seed, buyers: 3, sellers: 3, makers: 2, noise: 2, market: req.config.market, silentSeries: req.config.voidSeries ? 0 : undefined });
       reply({ type: "state", reset: true, events: toLines([...sim.log]).slice(-300), snapshot: snapshot(sim) });
       return;
     }

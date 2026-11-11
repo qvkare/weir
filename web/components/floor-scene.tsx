@@ -1,9 +1,11 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { floorBeat, scanRow, type FloorPlan, type FloorTicket } from "@/lib/floor.ts";
+import { floorBeat, floorTime, scanRow, type FloorPlan, type FloorTicket } from "@/lib/floor.ts";
 import { dollarsOfPrice, fmtInt } from "@/lib/format.ts";
 import { eyePath, MARK_PARTS } from "@/lib/logo.ts";
 import { clamp01, EASE_FN, seg } from "@/lib/motion.ts";
+import { Clock } from "@/lib/clock.ts";
 
 // "One round, as work" (DESIGN section 7.4). The plan (lib/floor.ts) is built on the server from
 // an example book cleared by the engine; this component poses it at time t, frame by frame, in
@@ -190,7 +192,9 @@ export function FloorScene({ plan, label = "Example round" }: { plan: FloorPlan;
   const [reduced, setReduced] = useState(false);
   const tRef = useRef(plan.total);
   const raf = useRef(0);
-  const last = useRef(0);
+  // Time-based (lib/clock.ts): t is the clock's elapsed time, which stops off screen and in a
+  // hidden tab and resumes without a jump. A slow frame rate only makes it less smooth.
+  const clock = useRef(new Clock());
   const visible = useRef(false);
   const seen = useRef(false);
   const wantPlay = useRef(false);
@@ -198,43 +202,43 @@ export function FloorScene({ plan, label = "Example round" }: { plan: FloorPlan;
   const L = useMemo(() => layout(wide, plan.rows.length), [wide, plan.rows.length]);
 
   const stopLoop = () => {
+    clock.current.pause(performance.now());
     if (raf.current) cancelAnimationFrame(raf.current);
     raf.current = 0;
   };
   const loop = useCallback(
     (now: number) => {
-      const dt = Math.min(0.1, (now - last.current) / 1000 || 0.016);
-      last.current = now;
-      let nt = tRef.current + dt;
-      if (nt >= plan.total) {
-        nt = plan.total;
-        wantPlay.current = false;
-        setPlaying(false);
-        tRef.current = nt;
-        setT(nt);
-        raf.current = 0;
-        return;
-      }
+      raf.current = 0;
+      const nt = floorTime(plan, clock.current.elapsed(now));
       tRef.current = nt;
       setT(nt);
+      if (nt >= plan.total) {
+        wantPlay.current = false;
+        clock.current.pause(now);
+        setPlaying(false);
+        return;
+      }
       raf.current = requestAnimationFrame(loop);
     },
-    [plan.total],
+    [plan],
   );
   const startLoop = useCallback(() => {
     if (raf.current || !visible.current || document.hidden) return;
-    last.current = performance.now();
+    clock.current.start(performance.now());
     raf.current = requestAnimationFrame(loop);
   }, [loop]);
 
+  const seekTo = (sec: number) => {
+    clock.current.seek(sec * 1000, performance.now());
+    tRef.current = sec;
+    setT(sec);
+  };
   const play = useCallback(() => {
-    if (tRef.current >= plan.total - 0.01) {
-      tRef.current = 0;
-      setT(0);
-    }
+    if (tRef.current >= plan.total - 0.01) seekTo(0);
     wantPlay.current = true;
     setPlaying(true);
     startLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan.total, startLoop]);
   const pause = () => {
     wantPlay.current = false;
@@ -242,25 +246,23 @@ export function FloorScene({ plan, label = "Example round" }: { plan: FloorPlan;
     stopLoop();
   };
   const replay = () => {
-    tRef.current = 0;
-    setT(0);
+    stopLoop();
+    seekTo(0);
     wantPlay.current = true;
     setPlaying(true);
-    stopLoop();
     startLoop();
   };
 
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mq = motionQuery();
     setReduced(mq.matches);
     const onMq = () => {
       setReduced(mq.matches);
       if (mq.matches) {
         pause();
-        tRef.current = plan.total;
-        setT(plan.total);
+        seekTo(plan.total);
       }
     };
     mq.addEventListener("change", onMq);
@@ -273,8 +275,7 @@ export function FloorScene({ plan, label = "Example round" }: { plan: FloorPlan;
         if (!visible.current) return stopLoop();
         if (!seen.current && !mq.matches) {
           seen.current = true;
-          tRef.current = 0;
-          setT(0);
+          seekTo(0);
           wantPlay.current = true;
           setPlaying(true);
         }

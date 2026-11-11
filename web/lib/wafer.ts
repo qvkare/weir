@@ -118,12 +118,20 @@ export const WAFER_T = {
   /** The clearing ring grows from the centre; filled dies light, the rest go dark. */
   clearStart: 4.6,
   clearEnd: 6.0,
-  /** Hold the cleared wafer, then fade it before the next book. */
-  fadeStart: 11,
+  /** Hold the cleared wafer, then seal it again from the edge in, ready for the next book: the
+   * round ends exactly as it began, every die present and grey, so the hand-over is seamless. */
+  fadeStart: 10.8,
   total: 12,
   /** The composed still frame for reduced motion and for the server's first paint. */
   still: 8,
 } as const;
+
+/** Which round, and how far into it (seconds), after `ms` of clock time. */
+export function waferClock(ms: number): { round: number; t: number } {
+  const s = Math.max(0, ms) / 1000;
+  const round = Math.floor(s / WAFER_T.total);
+  return { round, t: s - round * WAFER_T.total };
+}
 
 export type DieLook = "sealed" | "open" | "filled" | "part" | "out";
 
@@ -132,7 +140,8 @@ export type DieLook = "sealed" | "open" | "filled" | "part" | "out";
  * `ring` how far the clearing ring has grown; both come from waferProgress.
  */
 export function dieLook(t: number, die: Die, pitch: number, fill: number, size: number, prog: WaferProgress): DieLook {
-  if (t < WAFER_T.probeStart) return "sealed";
+  if (t < WAFER_T.probeStart || t >= WAFER_T.total) return "sealed";
+  if (die.d >= prog.unseal) return "sealed";
   if (die.y + pitch / 2 >= prog.probeY) return "sealed";
   if (t < WAFER_T.clearStart || die.d >= prog.ring) return "open";
   if (fill === 0) return "out";
@@ -142,8 +151,8 @@ export function dieLook(t: number, die: Die, pitch: number, fill: number, size: 
 export interface WaferProgress {
   probeY: number;
   ring: number;
-  /** 0..1, how far the end-of-round fade has gone. */
-  fade: number;
+  /** Dies at or beyond this distance from the centre are sealed again (the end of the round). */
+  unseal: number;
 }
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
@@ -154,7 +163,8 @@ export function waferProgress(t: number, g: WaferGeom): WaferProgress {
   const pu = inOut(clamp01((t - WAFER_T.probeStart) / (WAFER_T.probeEnd - WAFER_T.probeStart)));
   const probeY = g.cy - g.r - 20 + pu * (2 * g.r + 40);
   const ru = 1 - (1 - clamp01((t - WAFER_T.clearStart) / (WAFER_T.clearEnd - WAFER_T.clearStart))) ** 3;
-  return { probeY: t < WAFER_T.probeStart ? -Infinity : probeY, ring: t < WAFER_T.clearStart ? 0 : ru * (g.r + 40), fade: clamp01((t - WAFER_T.fadeStart) / (WAFER_T.total - WAFER_T.fadeStart)) };
+  const su = inOut(clamp01((t - WAFER_T.fadeStart) / (WAFER_T.total - WAFER_T.fadeStart)));
+  return { probeY: t < WAFER_T.probeStart ? -Infinity : probeY, ring: t < WAFER_T.clearStart ? 0 : ru * (g.r + 40), unseal: t < WAFER_T.fadeStart ? Infinity : (1 - su) * (g.r + 42) - 2 };
 }
 
 /** Counts of each look at time t: the tests use it to check the round reads in order. */

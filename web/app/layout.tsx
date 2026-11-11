@@ -3,7 +3,7 @@ import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer.tsx";
 import { SiteHeader } from "@/components/site-header.tsx";
-import { THEME_SCRIPT } from "@/components/theme-toggle.tsx";
+import { MOTION_SCRIPT, THEME_SCRIPT } from "@/lib/reduced-motion.ts";
 import { buildData, deployments, isModel, liveMarkets } from "@/lib/build.ts";
 import "./globals.css";
 
@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT + ";" + MOTION_SCRIPT }} />
       </head>
       <body>
         <a className="skip" href="#main">

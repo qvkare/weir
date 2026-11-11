@@ -7,6 +7,7 @@ const EMPTY: BuildData = {
   builtAt: 0,
   specVersion: null,
   spec: null,
+  audit: null,
   deployments: null,
   bundles: [],
   bundleCount: 0,

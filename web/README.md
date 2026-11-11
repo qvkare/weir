@@ -25,7 +25,7 @@ pnpm --filter @weir/web smoke             # next build, then every page and API 
 | Nothing | neither | every live block says the market is not deployed yet; the rest of the site works |
 | Index bundles | `bundles_base` set | fetched as `<base>/<hash>.json`, hashed with SubtleCrypto in the browser on `/proof` |
 | Recorded bundles | always | the newest bundle of each chip (`../evidence/bundles/<chip>/`, and the version-1 H100 file at the top level), inlined at build; fixture and fallback for the selected chip, labelled with its date |
-| Specification | always | `../docs/SPEC.md`, inlined at build and rendered at `/spec` |
+| Specification, review record | always | `../docs/SPEC.md` and `../docs/AUDIT.md`, inlined at build and rendered at `/spec` and `/audit` |
 | Transactions | JSON in `../evidence/` | tolerant reader in `lib/evidence.ts`, inlined at build |
 | Backtest | `../backtest/results/site.json`, `summary.json`, `summary.md` | inlined at build; "Backtest file missing" when absent |
 | Simulation | always | `@weir/agents/sim` in `lib/sim-worker.ts` |

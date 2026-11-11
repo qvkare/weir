@@ -5,6 +5,7 @@ import { DotText } from "@/components/dot-text.tsx";
 import { FloorScene } from "@/components/floor-scene.tsx";
 import { chipCardData, HeroIndex, HeroWafer, HomeRefresh, IndexChartBlock, IndexSources, LastClearing, lastClearingLine, Limits, marketLine, PayoffBlock, Facts, SeriesStrips } from "@/components/home-blocks.tsx";
 import { Room } from "@/components/room.tsx";
+import { Wafer } from "@/components/wafer.tsx";
 import { SheetHead } from "@/components/sheet-head.tsx";
 import { Specimen } from "@/components/specimen.tsx";
 import { Skeleton } from "@/components/state.tsx";
@@ -71,7 +72,7 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   return (
     <main id="main">
       <section className="hero" aria-labelledby="hero-h">
-        <Suspense fallback={<div className="wafer" aria-hidden="true" />}>
+        <Suspense fallback={<Wafer anchor={null} anchorIsLive={false} />}>
           <HeroWafer market={market} />
         </Suspense>
         <div className="wrap">

@@ -14,7 +14,9 @@ import { loadCore, recordedBundle } from "@/lib/load.ts";
 import { modelContract } from "@/lib/model.ts";
 import { readAccount, readKeys, readTokenBalance } from "@/lib/source.ts";
 import { totalsSum } from "@/lib/views.ts";
-import { AUDIT_FINDINGS, AUDIT_TEST_FILE, specHref } from "@/lib/audit.ts";
+import { auditHref, CLOSED, HISTORY, LIMITS, specHref, VERDICT } from "@/lib/audit.ts";
+import { roundsOf } from "@/lib/load.ts";
+import { MODEL_WIRE } from "@/lib/model.ts";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Proof", description: "Contracts and their remaining keys, parameters, recorded transactions, bundle hashes re-checked in your browser, and a live solvency check." };
@@ -46,9 +48,11 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
         <section className="section" id="audited" aria-labelledby="audited-h">
           <div className="section-head">
             <h2 id="audited-h">Audited</h2>
-            <span className="note">Reviewed by an AI reviewer, not an audit firm</span>
+            <span className="note">Three passes by an AI reviewer, not an audit firm · <a href="/audit">the full record</a></span>
           </div>
-          <Audited />
+          <Suspense fallback={<Skeleton lines={6} label="Reading the parameters" />}>
+            <Audited market={market} />
+          </Suspense>
         </section>
 
         <section className="section" id="solvency" aria-labelledby="solvency-h">
@@ -93,58 +97,148 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
   );
 }
 
-function Audited() {
+async function Audited({ market }: { market: MarketId }) {
+  const core = await loadCore(market);
+  const p = valueOf(core.params) ?? MODEL_WIRE[market];
+  const live = !!valueOf(core.params);
+  const perRound = BigInt(p.max_commits) * BigInt(p.commit_fee);
+  const rounds = roundsOf(p, 1);
+  const deployed: Record<string, string> = {
+    "2.3": `At ${live ? "this market's" : "the preset"} parameters: ${fmtInt(p.max_commits)} slots at ${fmtUsd(p.commit_fee)} a commit, ${fmtUsd(perRound)} a round, ${fmtUsd(perRound * BigInt(rounds))} for all ${fmtInt(rounds)} rounds of a series, plus capital above the largest honest lock.`,
+    "2.5": `A look costs ${fmtBps(p.forfeit_bps)} of the lock plus ${fmtUsd(p.commit_fee)}.`,
+  };
+  const Sections = ({ list }: { list: string[] }) => (
+    <>
+      {list.map((s, i) => (
+        <span key={s}>
+          {i ? ", " : ""}
+          <a href={specHref(s)}>{s}</a>
+        </span>
+      ))}
+    </>
+  );
+  const open = LIMITS.filter((l) => l.status === "Open");
+  const stated = LIMITS.filter((l) => l.status === "Stated");
+  const limitTable = (rows: typeof LIMITS, caption: string) => (
+    <div className="table-wrap">
+      <table>
+        <caption>{caption}</caption>
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">What remains possible</th>
+            <th scope="col">What the test shows</th>
+            <th scope="col" className="collapse-sm">Spec</th>
+            <th scope="col" className="collapse-sm">Test</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((l) => (
+            <tr key={l.id}>
+              <td className="mono">
+                {l.id}
+                <div className="tiny flag">{l.severity}</div>
+              </td>
+              <td>{l.limit}</td>
+              <td>
+                {l.shows}
+                {deployed[l.id] ?? l.deployed ? <div className="tiny"><b>{deployed[l.id] ?? `At deployed parameters: ${l.deployed}.`}</b></div> : null}
+                <div className="only-sm tiny muted">
+                  SPEC <Sections list={l.sections} />
+                  {l.test ? <> · <code>{l.test}</code></> : null}
+                </div>
+              </td>
+              <td className="collapse-sm mono"><Sections list={l.sections} /></td>
+              <td className="collapse-sm mono tiny" style={{ overflowWrap: "anywhere" }}>{l.test ?? "none: found by reading"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
   return (
     <div className="stack">
       <p className="lead" style={{ marginBottom: 0 }}>
-        An independent review of the contract found the dollar accounting sound and eight weaknesses in the rules around it. Specification 0.4 closes each one, and each of the reviewer&rsquo;s demonstrations is kept as a test in <code>{AUDIT_TEST_FILE}</code> that now asserts the attack fails.
+        The contract was reviewed in three passes. Every pass found the dollar accounting exact. The findings are in three groups below: closed by a rule, still open, and limits the specification states and accepts. The full record, with its reasoning, scope and verdict, is at <a href={auditHref()}>/audit</a>.
       </p>
+      <div className="board">
+        <b className="eyebrow">Verdict, in the reviewer&rsquo;s words</b>
+        <ul>
+          <li><span aria-hidden="true">·</span><span>{VERDICT.testnet}</span></li>
+          <li><span aria-hidden="true">·</span><span className="flag">{VERDICT.real}</span></li>
+        </ul>
+      </div>
+
+      <h3>Closed by a rule</h3>
       <div className="table-wrap">
         <table>
+          <caption>Each test keeps the reviewer&rsquo;s attack and now asserts that it fails.</caption>
           <thead>
             <tr>
-              <th scope="col" className="num">#</th>
-              <th scope="col">Weakness found</th>
-              <th scope="col">Rule that now closes it</th>
+              <th scope="col">#</th>
+              <th scope="col">Finding</th>
+              <th scope="col">Rule that closes it</th>
               <th scope="col" className="collapse-sm">Spec</th>
-              <th scope="col" className="collapse-sm">Test that asserts it</th>
+              <th scope="col" className="collapse-sm">Test</th>
             </tr>
           </thead>
           <tbody>
-            {AUDIT_FINDINGS.map((f) => (
-              <tr key={f.n}>
-                <td className="num">{f.n}</td>
+            {CLOSED.map((f) => (
+              <tr key={f.id}>
+                <td className="mono">
+                  {f.id}
+                  <div className="tiny muted">{f.severity}</div>
+                </td>
                 <td>{f.finding}</td>
                 <td>
-                  {f.rule}
+                  {f.status !== "Closed" ? <span className="tag flag">{f.status}</span> : null} {f.rule}
                   <div className="only-sm tiny muted">
-                    {f.sections.map((s, i) => (
-                      <span key={s}>{i ? ", " : "SPEC "}<a href={specHref(s)}>{s}</a></span>
-                    ))}{" "}
-                    · <code>{f.test}</code>
+                    SPEC <Sections list={f.sections} /> · <code>{f.test}</code>
                   </div>
                 </td>
-                <td className="collapse-sm mono">
-                  {f.sections.map((s, i) => (
-                    <span key={s}>
-                      {i ? ", " : ""}
-                      <a href={specHref(s)}>{s}</a>
-                    </span>
-                  ))}
-                </td>
+                <td className="collapse-sm mono"><Sections list={f.sections} /></td>
                 <td className="collapse-sm mono tiny" style={{ overflowWrap: "anywhere" }}>{f.test}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      <h3>Open</h3>
+      {limitTable(open, "Not closed. Each limit_ or audit3_ test passes, which here means the weakness happens.")}
+
+      <h3>Stated limits</h3>
+      {limitTable(stated, "The specification states these and accepts them; each test shows exactly what is possible.")}
+
+      <h3>A fix that was itself found faulty</h3>
+      <div className="table-wrap">
+        <table>
+          <caption>How the rule for a void series changed between passes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Spec</th>
+              <th scope="col">Rule</th>
+              <th scope="col">What the review found</th>
+            </tr>
+          </thead>
+          <tbody>
+            {HISTORY.map((h) => (
+              <tr key={h.spec}>
+                <td className="mono">{h.spec}</td>
+                <td>{h.rule}</td>
+                <td>{h.review}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div className="board">
-        <b className="eyebrow">Who reviewed it, and what it did not cover</b>
+        <b className="eyebrow">Who reviewed it, and what it was not</b>
         <ul>
-          <li><span aria-hidden="true">·</span><span>The review was done by an AI reviewer that did not write the contract. It is not an audit by a security firm, and this page makes no claim that the contract is secure.</span></li>
-          <li><span aria-hidden="true">·</span><span>It read the contract in <code>contracts/weir</code> against the specification. Outside it: the NEAR protocol and near-sdk, the USDC token contract, the reporters&rsquo; honesty and their index code, this site, the agents and the keeper.</span></li>
-          <li><span aria-hidden="true">·</span><span>No market is deployed, so nothing was reviewed on a live chain; the eight demonstrations run in near-sdk&rsquo;s mocked VM.</span></li>
-          <li><span aria-hidden="true">·</span><span>What the rules still allow is written in <a href="/spec#s15">SPEC 15, Trust</a>: a majority of reporters can set a fixing, and a bidder with capital can still block a round, at <code>commit_fee</code> per slot.</span></li>
+          <li><span aria-hidden="true">·</span><span>An AI reviewer (Claude, an Anthropic model) that did not write the contract. It is not an audit by a security firm and not a formal verification; no person has signed it off. This page makes no claim that the contract is secure.</span></li>
+          <li><span aria-hidden="true">·</span><span>In scope: the contract in <code>contracts/weir</code> against the specification. Out of scope: the TypeScript packages and this site, the reporters&rsquo; code and data sources, any real token, NEAR beyond what near-sdk documents, the behaviour of real participants, deployment and key management.</span></li>
+          <li><span aria-hidden="true">·</span><span>The reviewer&rsquo;s tests run in near-sdk&rsquo;s mocked VM; the real wasm was not run for the review. A finding that is absent means only that it was not found.</span></li>
         </ul>
       </div>
     </div>
@@ -354,7 +448,7 @@ function ParamsTable({ p }: { p: WireParams }) {
     ["max_commits", fmtInt(p.max_commits)],
     ["max_order_size", fmtGpuH(p.max_order_size)],
     ["reporters", p.reporters.join(", ")],
-    ["quorum", `${p.quorum} of ${p.reporters.length}`],
+    ["quorum", `${p.quorum} of ${p.reporters.length} (must be a majority)`],
   ];
   return (
     <div className="table-wrap">

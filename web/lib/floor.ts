@@ -181,6 +181,9 @@ export function scanRow(plan: FloorPlan, t: number): number {
   return plan.clearRow + (start - plan.clearRow) * Math.exp(-3.2 * u) * Math.cos(4.6 * u);
 }
 
+/** Timeline seconds after `ms` of clock time: wall time, clamped to the end. */
+export const floorTime = (plan: Pick<FloorPlan, "total">, ms: number): number => Math.min(plan.total, Math.max(0, ms / 1000));
+
 /** The beat showing at t. */
 export function floorBeat(plan: FloorPlan, t: number): number {
   let i = 0;

@@ -64,3 +64,38 @@ test("the dot-matrix face lays text on the 5 by 7 grid", () => {
   assert.equal(layoutDots("H100").dots.length, 17 + 10 + 19 + 19);
   for (const [, r] of layoutDots("$2.76 /GPU-h").dots) assert.ok(r >= 0 && r < 9);
 });
+
+test("the floor is time-based: any frame times end on the final frame at the stated time", async () => {
+  const { Clock } = await import("./clock.ts");
+  const { floorTime } = await import("./floor.ts");
+  const { specimenStep, STEP_HOLD_MS, STEP_MOVE_MS } = await import("./motion.ts");
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let run = 0; run < 3; run++) {
+    const clock = new Clock();
+    let now = 0;
+    clock.start(now);
+    const seen: number[] = [];
+    while (floorTime(plan, clock.elapsed(now)) < plan.total) {
+      now += 5 + r() * 700; // 5 ms to 700 ms frames, as in a throttled tab
+      // Off screen for ten seconds in the middle: the timeline stops and resumes where it was.
+      if (seen.length === 6) {
+        clock.pause(now);
+        const held = clock.elapsed(now);
+        now += 10_000;
+        clock.start(now);
+        assert.equal(clock.elapsed(now), held);
+      }
+      seen.push(floorTime(plan, clock.elapsed(now)));
+    }
+    // It ends exactly at the end of the plan, never before the stated time and never past it.
+    assert.equal(seen[seen.length - 1], plan.total);
+    assert.ok(now - 10_000 >= plan.total * 1000);
+    assert.ok(seen.every((t, i) => i === 0 || t >= seen[i - 1]!));
+  }
+  // The specimen's step: the move is done at STEP_MOVE_MS and the next step starts after STEP_HOLD_MS.
+  assert.equal(specimenStep(STEP_MOVE_MS).tween, 1);
+  assert.equal(specimenStep(STEP_MOVE_MS / 2).tween, 0.5);
+  assert.equal(specimenStep(STEP_HOLD_MS).advance, false);
+  assert.equal(specimenStep(STEP_HOLD_MS + 1).advance, true);
+});

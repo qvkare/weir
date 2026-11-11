@@ -1,4 +1,5 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
@@ -24,7 +25,7 @@ export function ChartFrame({ render, label, minWidth = 300 }: { render: (width: 
   }, [minWidth]);
   useEffect(() => {
     const el = ref.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!el || motionQuery().matches) return;
     // A chart already above the fold and in view at load is part of the first paint: leave it drawn.
     const r = el.getBoundingClientRect();
     if (r.top < window.innerHeight && r.bottom > 0 && performance.now() < 1500) return;

@@ -1,4 +1,5 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useEffect, useRef, type ReactNode } from "react";
 import { DUR, EASE } from "@/lib/motion.ts";
 
@@ -14,7 +15,7 @@ export function LiveValue({ text, children }: { text: string; children: ReactNod
     if (prev.current === text) return;
     prev.current = text;
     const el = ref.current;
-    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (!el || motionQuery().matches) return;
     el.animate(
       [
         { transform: "translateY(0.18em)", opacity: 0.4, backgroundColor: "var(--flag-soft)" },

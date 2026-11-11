@@ -31,6 +31,7 @@ export function SiteFooter({ builtAt, spec }: { builtAt: number; spec: string | 
               <li><Link href="/how#limits">Limits and trust</Link></li>
               <li><Link href="/proof">Contracts and checks</Link></li>
               <li><Link href="/proof#audited">Audit findings</Link></li>
+              <li><Link href="/audit">Review record</Link></li>
               <li><Link href="/spec">Specification</Link></li>
             </ul>
           </nav>

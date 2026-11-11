@@ -66,6 +66,14 @@ export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 /** Progress of a step that starts at `a` and lasts `d`, at time t: 0 before, 1 after. */
 export const seg = (t: number, a: number, d: number) => clamp01((t - a) / d);
 
+/** Timing of one specimen step, from the time since it began (ms): time-based, so a slow frame
+ * rate never stretches it. The move takes STEP_MOVE_MS; when playing, the next step starts at STEP_HOLD_MS. */
+export const STEP_MOVE_MS = 1000;
+export const STEP_HOLD_MS = 3200;
+export function specimenStep(ms: number): { tween: number; advance: boolean } {
+  return { tween: clamp01(ms / STEP_MOVE_MS), advance: ms > STEP_HOLD_MS };
+}
+
 export type Frame = Record<string, string | number>;
 
 export interface Track {

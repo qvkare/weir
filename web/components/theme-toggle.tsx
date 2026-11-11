@@ -1,4 +1,5 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useEffect, useState } from "react";
 
 type Theme = "system" | "light" | "dark";
@@ -28,7 +29,7 @@ export function ThemeToggle() {
     setTheme(t);
     // One cross-fade of the whole page where the browser can do it; an instant swap otherwise.
     const vt = (document as Document & { startViewTransition?: (cb: () => void) => unknown }).startViewTransition;
-    if (vt && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) vt.call(document, apply);
+    if (vt && !motionQuery().matches) vt.call(document, apply);
     else apply();
     try {
       if (t === "system") localStorage.removeItem("weir-theme");
@@ -46,5 +47,3 @@ export function ThemeToggle() {
   );
 }
 
-/** Runs before paint so a stored theme never flashes. */
-export const THEME_SCRIPT = `try{var t=localStorage.getItem("weir-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}`;

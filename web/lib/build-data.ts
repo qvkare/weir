@@ -65,6 +65,7 @@ export function readBuildData(root: string): BuildData {
     builtAt: Math.floor(Date.now() / 1000),
     specVersion: specVersion(root),
     spec: existsSync(join(root, "docs", "SPEC.md")) ? readFileSync(join(root, "docs", "SPEC.md"), "utf8") : null,
+    audit: existsSync(join(root, "docs", "AUDIT.md")) ? readFileSync(join(root, "docs", "AUDIT.md"), "utf8") : null,
     deployments: readJson(join(root, "deployments.json")) ?? null,
     // Only the newest recorded bundle of each chip travels with the build: the fixture and the fallback.
     bundles: [...new Set(bundles.map((b) => b.chip))].map((c) => bundles.find((b) => b.chip === c)!),

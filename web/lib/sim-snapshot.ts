@@ -1,13 +1,15 @@
 // What the /simulate page shows, taken from a running simulation through the same views the
 // chain answers (callView). Plain JSON: bigints become decimal strings, so it crosses postMessage
 // and React state without surprises.
-import { callView, type WireParams, type WireResult, type WireRound, type WireSeries } from "@weir/engine";
+import { callView, type WireParams, type WireResult, type WireRound, type WireSeries, type WireSettlement } from "@weir/engine";
 import { agentReports, type SimEvent, type Simulation } from "@weir/agents/sim";
 import type { MarketId } from "./config.ts";
 
 export interface SimConfigInput {
   seed: number;
   market: MarketId;
+  /** The void scenario: the reporters sit out series 0's delivery, so it settles void. */
+  voidSeries?: boolean;
 }
 
 export interface SimSnapshot {
@@ -20,6 +22,8 @@ export interface SimSnapshot {
   /** Per-agent results once at least one series has settled. */
   results: null | { id: string; role: string; long: number; short: number; paid: string; received: string; fees: string; forfeited: string; result: string }[];
   settled: number;
+  /** Every settled series, with its settlement as the contract reports it. */
+  settlements: { series: number; settlement: WireSettlement }[];
 }
 
 export interface LogLine {
@@ -52,7 +56,14 @@ export function snapshot(sim: Simulation): SimSnapshot {
   const lc = lastClear(sim.log);
   const result = lc ? callView(m, "get_result", lc) : null;
   let settled = 0;
-  for (const e of sim.log) if (e.kind === "settle") settled++;
+  const settlements: { series: number; settlement: WireSettlement }[] = [];
+  for (const e of sim.log) {
+    if (e.kind !== "settle") continue;
+    settled++;
+    const s = (e.data as { series?: unknown } | undefined)?.series;
+    const info = typeof s === "number" ? callView(m, "get_series", { series: s }) : null;
+    if (info?.settlement) settlements.push({ series: info.series, settlement: info.settlement });
+  }
   return {
     now: sim.now(),
     params,
@@ -74,5 +85,6 @@ export function snapshot(sim: Simulation): SimSnapshot {
         ? agentReports(sim).map((r) => ({ id: r.id, role: r.role, long: r.long, short: r.short, paid: r.paid.toString(), received: r.received.toString(), fees: r.fees.toString(), forfeited: r.forfeited.toString(), result: r.result.toString() }))
         : null,
     settled,
+    settlements,
   };
 }

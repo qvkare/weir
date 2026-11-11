@@ -10,7 +10,7 @@ import type { ChipCardData } from "./chip-cards.tsx";
 import { dollarsOfPrice, fmtBps, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
 import { isStale, loadBundle, loadCore, loadGaps, loadLastClearing, loadPrints, loadSeriesSet, recordedBundle, type Core, type LoadedBundle } from "@/lib/load.ts";
 import { isNotDeployed } from "@/lib/source.ts";
-import { average, printView, seriesTimes, stepOrdersFromResult, summarize, timesOf } from "@/lib/views.ts";
+import { average, printView, seriesTimes, settlementLine, stepOrdersFromResult, summarize, timesOf, tradedAverage } from "@/lib/views.ts";
 import { seriesStage } from "@/lib/timeline.ts";
 import { Countdown } from "./countdown.tsx";
 import { Figure, priceParts } from "./figure.tsx";
@@ -405,6 +405,14 @@ export async function SeriesStrips({ market }: { market: MarketId }) {
                   <span>
                     Open sets <b>{fmtGpuH(info.open_sets)}</b>
                   </span>
+                  {tradedAverage(info) !== null ? (
+                    <span>
+                      Average traded LONG price <b>{fmtPrice(tradedAverage(info), params.tick)}</b> <span className="muted">(information only)</span>
+                    </span>
+                  ) : null}
+                  {info.settlement ? (
+                    <span className={info.settlement.void ? "flag" : undefined}>Settled: {settlementLine(info.settlement, params.tick)}</span>
+                  ) : null}
                 </>
               ) : s.info.ok ? (
                 <span className="muted">Not opened yet. The first commit sets the band from the last print.</span>
@@ -533,7 +541,7 @@ export function LimitsList({ params, network }: { params: WireParams | null; net
         <code>network</code>
       </li>
       <li>
-        <span>The index is what {p ? `${p.quorum} of ${p.reporters.length}` : "a quorum of"} named reporters say it is.</span>
+        <span>The index is what {p ? `${p.quorum} of ${p.reporters.length}` : "a majority of the"} named reporters say it is; a majority acting together can set the fixing; with one absent either of the others can leave a bucket without a print, or make a series void (half the band to each side), which a reporter who also trades can profit from.</span>
         <code>quorum</code>
       </li>
       <li>

@@ -1,4 +1,5 @@
 "use client";
+import { motionQuery } from "@/lib/reduced-motion.ts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { beatAt, beatEnd, EASE, type Score } from "@/lib/motion.ts";
 
@@ -63,7 +64,7 @@ export function MotionFigure({
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mq = motionQuery();
     const set = () => setReduced(mq.matches);
     set();
     mq.addEventListener("change", set);

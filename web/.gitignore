@@ -6,3 +6,6 @@ next-env.d.ts
 .open-next/
 .wrangler/
 .dev.vars*
+
+# written by the Next.js dev server
+AGENTS.md

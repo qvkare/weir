@@ -110,3 +110,14 @@ test("averages and totals", () => {
   assert.equal(totalsSum({ free: "1", locked: "2", sets_backing: "3", unredeemed: "4", burned: "5" }), 15n);
   assert.equal(totalsSum({ free: "x", locked: "2", sets_backing: "3", unredeemed: "4", burned: "5" }), null);
 });
+
+test("a settled series reads as fixed, a void one as cancelled at the centre of the band", async () => {
+  const { settlementLine, tradedAverage } = await import("./views.ts");
+  assert.equal(settlementLine(null), null);
+  assert.equal(settlementLine({ fixing: 2_500_000, long_payout: 300_000, short_payout: 500_000, prints: 168, void: false, settled_at: 1 }, 10_000), "fixed at $2.50 from 168 prints: LONG pays $0.30, SHORT pays $0.50");
+  const v = settlementLine({ fixing: 2_400_000, long_payout: 400_000, short_payout: 400_000, prints: 3, void: true, settled_at: 1 }, 10_000)!;
+  assert.match(v, /^void: cancelled at the centre of the band, \$0\.40 to each side/);
+  assert.ok(!v.includes("fixed") && !v.includes("unwound"));
+  assert.equal(tradedAverage({ traded_units: 4, traded_value: "1000000" }), 250_000);
+  assert.equal(tradedAverage({ traded_units: 0, traded_value: "0" }), null);
+});

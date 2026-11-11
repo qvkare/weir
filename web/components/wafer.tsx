@@ -1,7 +1,9 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { motionQuery } from "@/lib/reduced-motion.ts";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Clock } from "@/lib/clock.ts";
 import { dollarsOfPrice, fmtInt } from "@/lib/format.ts";
-import { dieLook, layoutDies, WAFER_ANCHOR, WAFER_T, WAFER_TICK, waferBook, waferProgress, type Die, type DieLook, type WaferBook, type WaferGeom } from "@/lib/wafer.ts";
+import { dieLook, layoutDies, waferClock, WAFER_ANCHOR, WAFER_T, WAFER_TICK, waferBook, waferProgress, type Die, type DieLook, type WaferBook, type WaferGeom } from "@/lib/wafer.ts";
 
 // The first screen's living object: a wafer under test, one die per order of a simulated round
 // cleared by the engine (lib/wafer.ts). One canvas, no library. It paints only while on screen
@@ -9,6 +11,8 @@ import { dieLook, layoutDies, WAFER_ANCHOR, WAFER_T, WAFER_TICK, waferBook, wafe
 // dies at MAX_DIES, and under reduced motion paints one composed, cleared frame and stops.
 
 const MAX_DIES = 1400;
+
+const useIsoLayout = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 interface Caption {
   orders: number;
@@ -38,13 +42,15 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
   const [reduced, setReduced] = useState(false);
   const pausedRef = useRef(false);
 
-  useEffect(() => {
+  // A layout effect: the first frame (the sealed wafer, every die grey) is drawn before the
+  // browser paints, so the hero is never blank, and no animation frame is asked for until then.
+  useIsoLayout(() => {
     const el = host.current;
     const cv = canvas.current;
     if (!el || !cv) return;
     const ctx = cv.getContext("2d", { alpha: false });
     if (!ctx) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const mq = motionQuery();
     let W = 0;
     let H = 0;
     let geom: WaferGeom | null = null;
@@ -53,7 +59,10 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
     let alpha: number[] = [];
     let book: WaferBook | null = null;
     let seed = (Date.now() / 1000) | 0;
-    let t0 = performance.now();
+    // Time-based: the round's position is the clock's elapsed time (lib/clock.ts), which stops
+    // off screen, in a hidden tab and when paused, and resumes where it stopped.
+    const clock = new Clock();
+    let round = 0;
     let raf = 0;
     let visible = false;
     let lastKey = "";
@@ -131,7 +140,7 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
       ctx.fillStyle = col.ground!;
       ctx.fill();
 
-      const fadeK = 1 - prog.fade * 0.75;
+      const fadeK = 1;
       // Group dies by look so each colour is one fill.
       const groups: Record<string, number[]> = {};
       const hatch: number[] = [];
@@ -216,10 +225,11 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
     const frame = (now: number) => {
       raf = 0;
       if (!visible || document.hidden || pausedRef.current || mq.matches) return;
-      let t = (now - t0) / 1000;
-      if (t >= WAFER_T.total) {
-        t0 = now;
-        t = 0;
+      const { round: r, t } = waferClock(clock.elapsed(now));
+      // A new book at each round boundary; every round starts and ends sealed, so even a long
+      // frame that skips a boundary lands on a complete wafer.
+      if (r !== round) {
+        round = r;
         newBook();
         lastKey = "";
       }
@@ -228,9 +238,11 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
     };
     const play = () => {
       if (raf || !visible || document.hidden || pausedRef.current || mq.matches) return;
+      clock.start(performance.now());
       raf = requestAnimationFrame(frame);
     };
     const stop = () => {
+      clock.pause(performance.now());
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
     };
@@ -239,19 +251,11 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
       draw(WAFER_T.still);
     };
     // Pausing keeps the frame on screen; resuming continues the round where it stopped.
-    let pausedAt = 0;
     const onPause = (e: Event) => {
-      const p = (e as CustomEvent<boolean>).detail;
-      if (p) {
-        pausedAt = performance.now();
-        stop();
-      } else {
-        t0 += performance.now() - pausedAt;
-        play();
-      }
+      if ((e as CustomEvent<boolean>).detail) stop();
+      else play();
     };
 
-    setReduced(mq.matches);
     // The stage may have no size yet (a narrow layout still settling): the resize observer builds it then.
     if (build()) {
       if (mq.matches) still();
@@ -281,12 +285,8 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
         const r = el.getBoundingClientRect();
         if (Math.round(r.width) === W && Math.round(r.height) === H) return;
         if (!build()) return;
-        t0 = performance.now();
         if (mq.matches || pausedRef.current) still();
-        else {
-          draw(0);
-          play();
-        }
+        else draw(waferClock(clock.elapsed(performance.now())).t);
       }, 150);
     });
     ro.observe(el);
@@ -313,6 +313,11 @@ export function Wafer({ anchor, anchorIsLive }: { anchor: number | null; anchorI
       window.clearTimeout(rt);
     };
   }, [anchor]);
+
+  useEffect(() => {
+    const mq = motionQuery();
+    setReduced(mq.matches);
+  }, []);
 
   const toggle = () => {
     const p = !paused;

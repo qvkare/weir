@@ -14,6 +14,9 @@ const DAY = 86_400;
 /** The same parameters the deployment uses (agents/src/presets.ts, MARKETS), as the engine takes them. */
 export const MODEL_PARAMS = Object.fromEntries(MARKET_IDS.map((id) => [id, paramsFromWire(MARKETS[id].params)])) as Record<MarketId, Params>;
 
+/** The same parameters as the contract's JSON (get_params), for pages that need them when no market answers. */
+export const MODEL_WIRE = Object.fromEntries(MARKET_IDS.map((id) => [id, MARKETS[id].params])) as Record<MarketId, (typeof MARKETS)[MarketId]["params"]>;
+
 const weekly = (id: MarketId) => MARKETS[id].preset === "weekly";
 
 export interface ModelAgent {

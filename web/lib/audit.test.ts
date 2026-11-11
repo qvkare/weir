@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
-import { AUDIT_FINDINGS, AUDIT_TEST_FILE } from "./audit.ts";
+import { CLOSED, HISTORY, LIMITS } from "./audit.ts";
 import { headingId, inline, parseMarkdown } from "./markdown.ts";
 
 const root = new URL("../../", import.meta.url);
 
-test("each audit finding names a test that exists and spec sections that exist", () => {
-  const rs = readFileSync(new URL(AUDIT_TEST_FILE, root), "utf8");
+test("every finding and limit names a test that exists, and spec sections that exist", () => {
+  const dir = new URL("contracts/weir/tests/", root);
+  const rs = readdirSync(dir).filter((f) => f.endsWith(".rs")).map((f) => readFileSync(new URL(f, dir), "utf8")).join("\n");
   const spec = parseMarkdown(readFileSync(new URL("docs/SPEC.md", root), "utf8"));
   const ids = new Set(spec.filter((b) => b.t === "h").map((b) => (b as { id: string }).id));
-  assert.equal(AUDIT_FINDINGS.length, 8);
-  for (const f of AUDIT_FINDINGS) {
-    assert.ok(rs.includes(`fn ${f.test}(`), f.test);
+  for (const f of [...CLOSED, ...LIMITS]) {
+    if (f.test) assert.ok(rs.includes(`fn ${f.test}(`), f.test);
     for (const s of f.sections) assert.ok(ids.has(`s${s.replace(/\./g, "-")}`), `section ${s}`);
   }
+  // Every limit_ test in the contract's tests is on the page.
+  for (const m of rs.matchAll(/fn (limit_[a-z0-9_]+)\(/g)) assert.ok(LIMITS.some((l) => l.test === m[1]), m[1]);
+  assert.ok(LIMITS.some((l) => l.status === "Open") && LIMITS.some((l) => l.status === "Stated"));
+  assert.ok(HISTORY.length >= 3);
+  // The record the page renders at /audit exists and still says who did it.
+  assert.match(readFileSync(new URL("docs/AUDIT.md", root), "utf8"), /not\*\* an audit by a security firm/);
 });
 
 test("the spec reader: headings, code, tables, lists and inline marks", () => {

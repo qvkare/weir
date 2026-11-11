@@ -4,7 +4,7 @@ import type { MarketId } from "@/lib/config.ts";
 import { fmtCountdown, fmtGpuH, fmtInt, fmtPrice, fmtUsd, fmtUsdOrNone, fmtUtc, fmtUtcTime, shortHash } from "@/lib/format.ts";
 import type { LogLine, SimSnapshot } from "@/lib/sim-snapshot.ts";
 import type { SimRequest } from "@/lib/sim-worker.ts";
-import { bookRows, bookTotals, stepOrdersFromResult, summarize } from "@/lib/views.ts";
+import { bookRows, bookTotals, settlementLine, stepOrdersFromResult, summarize } from "@/lib/views.ts";
 import { EyeIcon, LockIcon } from "./icons.tsx";
 import { StepChart } from "./step-chart.tsx";
 
@@ -23,6 +23,7 @@ export function SimRunner({ market }: { market: MarketId }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"agents" | "log">("agents");
   const [run, setRun] = useState(0);
+  const [voidSeries, setVoidSeries] = useState(false);
 
   const send = useCallback((req: SimRequest) => {
     if (!worker.current || busy.current) return false;
@@ -58,13 +59,13 @@ export function SimRunner({ market }: { market: MarketId }) {
       setPlaying(false);
     };
     busy.current = true;
-    w.postMessage({ type: "init", config: { seed, market } } satisfies SimRequest);
+    w.postMessage({ type: "init", config: { seed, market, voidSeries } } satisfies SimRequest);
     return () => {
       w.terminate();
       worker.current = null;
       busy.current = false;
     };
-  }, [seed, market, run]);
+  }, [seed, market, run, voidSeries]);
 
   useEffect(() => {
     if (!playing) return;
@@ -122,6 +123,13 @@ export function SimRunner({ market }: { market: MarketId }) {
         <button type="button" className="button ghost" onClick={reset}>
           Reset
         </button>
+        <label className="check-control">
+          <input type="checkbox" checked={voidSeries} onChange={(e) => setVoidSeries(e.target.checked)} />
+          <span>
+            Silent reporters (void series)
+            <span className="tiny muted"> Reporters sit out series 0&rsquo;s delivery, so it is void: cancelled at the centre of the band, half the band to each side. Restarts the run.</span>
+          </span>
+        </label>
       </div>
 
       <div aria-live="polite" className="small" style={{ padding: "12px 0" }}>
@@ -241,6 +249,16 @@ export function SimRunner({ market }: { market: MarketId }) {
           {snap?.results ? (
             <>
               <h2 style={{ fontSize: "var(--t17)", marginTop: 24 }}>Results after settlement ({snap.settled} series settled)</h2>
+              <ul className="limits">
+                {snap.settlements.map((s) => (
+                  <li key={s.series}>
+                    <span className={s.settlement.void ? "flag" : undefined}>
+                      Series {s.series}: {settlementLine(s.settlement, snap.params.tick)}.
+                    </span>
+                    <code>{s.settlement.void ? "void" : "settled"}</code>
+                  </li>
+                ))}
+              </ul>
               <div className="table-wrap">
                 <table>
                   <caption>Per agent, simulated. Result is the free balance now minus the deposit.</caption>

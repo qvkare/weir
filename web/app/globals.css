@@ -510,6 +510,22 @@ main {
   transform: rotate(-40deg);
 }
 
+/* 961 to 1180 px: the market switcher and the theme button take a second row, so neither
+   the navigation nor the switcher is squeezed. */
+@media (min-width: 961px) and (max-width: 1180px) {
+  .site-header .row {
+    row-gap: 0;
+  }
+
+  .header-tools {
+    order: 3;
+    flex-basis: 100%;
+    justify-content: flex-end;
+    padding-bottom: var(--s2);
+    margin-top: -4px;
+  }
+}
+
 @media (max-width: 960px) {
   .site-header {
     position: relative;
@@ -1366,6 +1382,19 @@ details.data summary {
   }
 }
 
+/* The test override ?motion=reduce (lib/reduced-motion.ts): the same as the reader's setting. */
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+:root[data-motion="reduce"] .mf[data-pending] [data-enter] {
+  opacity: 1;
+}
+
 /* The theme switch: no colour transitions while the palette swaps. */
 .theme-swap *,
 .theme-swap *::before,
@@ -1492,6 +1521,39 @@ details.data summary {
   position: absolute;
   inset: 0;
   z-index: 0;
+}
+
+/* Before the script draws (or without scripts), a sealed wafer in CSS sits where the canvas
+   will draw one: the hero is never an empty grey area. The canvas covers it once painted. */
+.wafer {
+  container-type: size;
+}
+
+.wafer::before {
+  content: "";
+  position: absolute;
+  --r: min(54cqh, 33cqw);
+  left: calc(78cqw - var(--r));
+  top: calc(55cqh - var(--r));
+  width: calc(2 * var(--r));
+  height: calc(2 * var(--r));
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background:
+    linear-gradient(90deg, var(--sheet) 2.4px, transparent 2.4px) 0 0 / 17px 17px,
+    linear-gradient(var(--sheet) 2.4px, transparent 2.4px) 0 0 / 17px 17px,
+    var(--die);
+  -webkit-mask: radial-gradient(circle, #000 calc(100% - 8px), transparent calc(100% - 7px));
+  mask: radial-gradient(circle closest-side, #000 calc(100% - 8px), transparent calc(100% - 7px));
+}
+
+@media (max-width: 899px) {
+  .wafer::before {
+    --r: min(38cqh, 46cqw);
+    left: calc(50cqw - var(--r));
+    top: calc(40cqh - var(--r));
+    background-size: 12px 12px, 12px 12px, auto;
+  }
 }
 
 .wafer canvas {
@@ -3443,4 +3505,30 @@ ol.steps > li {
 .check-row td:first-child {
   white-space: normal;
   min-width: 140px;
+}
+
+.check-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 340px;
+  min-height: 44px;
+  font-size: var(--t15);
+  cursor: pointer;
+}
+
+.check-control input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--ink);
+  flex: none;
+}
+
+.check-control .tiny {
+  display: block;
+}
+
+.spec-body-text code {
+  overflow-wrap: anywhere;
 }

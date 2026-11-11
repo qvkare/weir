@@ -73,7 +73,11 @@ async function page(base: string, path: string, expect: string[], status = 200):
   check(res.status === status, `${path}: status ${res.status}, expected ${status}`);
   const t = text(body);
   for (const e of expect) check(t.includes(e), `${path}: missing "${e}"`);
-  for (const bad of ["NaN", "undefined", "TODO", "[object Object]", "Infinity"]) check(!t.includes(bad), `${path}: contains "${bad}"`);
+  for (const bad of ["NaN", "undefined", "TODO", "[object Object]", "Infinity", "unwound at"]) check(!t.includes(bad), `${path}: contains "${bad}"`);
+  // The reduced-motion test override is wired on every page: the head script that sets data-motion.
+  check(body.includes('setAttribute("data-motion","reduce")'), `${path}: no motion=reduce override script`);
+  // The head scripts must be the strings themselves, not a client reference turned into text.
+  check(!body.includes("not possible to invoke a client function"), `${path}: a head script is a client reference`);
   // A placeholder zero: "$0.00" not followed by another digit ("$0.003" is a real price).
   check(!/\$0\.00(?!\d)/.test(t), `${path}: contains a "$0.00" placeholder`);
   return body;
@@ -108,10 +112,14 @@ const PAGES: [string, string[]][] = [
   ["/simulate?m=a100-80-weekly", ["A100 80 GB weekly market"]],
   ["/auction?m=h200-weekly", ["Sealed book", "Recent rounds", "Commit fees held"]],
   ["/proof?m=a100-80-weekly", ["Solvency, A100 80 GB weekly market", "evidence/bundles/a100-80/"]],
-  ["/spec", ["The rules, as written", "version 0.4"]],
+  ["/spec", ["The rules, as written", "Settlement"]],
+  ["/audit", ["What the review found", "not an audit by a security firm", "Verdict"]],
+  ["/simulate?m=h100-fast", ["Silent reporters (void series)", "cancelled at the centre of the band"]],
+  ["/?motion=reduce", ["Take the heat out of your", "Simulated"]],
+  ["/how?motion=reduce", ["One round, as work", "One price for all"]],
   ["/backtest", ["What a hedge would have done", "The rule", "Average stayed inside the band in", "What this does not show"]],
-  ["/how", ["How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
-  ["/proof", ["Audited", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
+  ["/how", ["cancelled at the centre of the band", "who also trades", "How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
+  ["/proof", ["Audited", "Closed by a rule", "Open", "Stated limits", "A fix that was itself found faulty", "$6.40 a round", "limit_blocking_a_round_costs_1_28_dollars", "Not fit for real dollars", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
   ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book", "max_round_lock", "Three things bound an agent"]],
 ];
 

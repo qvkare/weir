@@ -1,6 +1,6 @@
 // Contract JSON (engine/src/wire.ts, the single definition) to what the pages show.
-import type { WireCommit, WireLiveSeries, WireParams, WirePrint, WireResult, WireRound } from "@weir/engine";
-import { toBig } from "./format.ts";
+import type { WireCommit, WireLiveSeries, WireParams, WirePrint, WireResult, WireRound, WireSettlement } from "@weir/engine";
+import { dollarsOfPrice, toBig } from "./format.ts";
 import type { SeriesTimes } from "./timeline.ts";
 import type { StepOrder } from "./step.ts";
 
@@ -224,4 +224,24 @@ export function totalsSum(t: { free: string; locked: string; sets_backing: strin
     s += b;
   }
   return s;
+}
+
+/** How a settled series reads. A void series is never shown as a normal fixing (SPEC 10): it is
+ * cancelled at the centre of its band, half the band to every LONG and every SHORT. */
+export function settlementLine(s: WireSettlement | null, tick?: number): string | null {
+  if (!s) return null;
+  const long = dollarsOfPrice(s.long_payout, tick);
+  const short = dollarsOfPrice(s.short_payout, tick);
+  if (s.void) {
+    const each = Math.abs(s.long_payout - s.short_payout) <= 1 ? `${long} to each side` : `${long} per LONG and ${short} per SHORT`;
+    return `void: cancelled at the centre of the band, ${each} (${s.prints} print${s.prints === 1 ? "" : "s"}, too few to fix it)`;
+  }
+  return `fixed at ${dollarsOfPrice(s.fixing, tick)} from ${s.prints} prints: LONG pays ${long}, SHORT pays ${short}`;
+}
+
+/** The average LONG price a series' auctions traded at. Information only: no rule uses it. */
+export function tradedAverage(series: { traded_units: number; traded_value: string } | null): number | null {
+  if (!series || series.traded_units <= 0) return null;
+  const v = toBig(series.traded_value);
+  return v === null ? null : Number(v / BigInt(series.traded_units));
 }
