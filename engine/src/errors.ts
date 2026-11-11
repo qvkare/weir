@@ -61,6 +61,7 @@ export const ERR = {
   // Section 3 checks of 0.4 (engine).
   MAX_PRINTS: "min_prints must be at most period_secs / print_interval_secs",
   VOID_AFTER: "void_after_secs must be at least report_grace_secs",
+  GRACE: "report_grace_secs must be at most period_secs",
   MAX_SPREAD_BPS: "max_spread_bps must be between 1 and 10000",
   CAPACITY: "max_order_size * max_commits * rounds_per_series must be below 2^52",
   BAD_USDC: "usdc must be a valid account id",

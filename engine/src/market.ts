@@ -934,13 +934,16 @@ function validateParams(p: Params): void {
   if (p.forfeitBps > 10_000) throw new Error(ERR.FORFEIT_BPS);
   if (p.maxCommits < 1 || p.maxCommits > 128) throw new Error(ERR.MAX_COMMITS);
   if (p.maxOrderSize < 1) throw new Error(ERR.MAX_ORDER_SIZE);
+  // The order of the contract's checks, so a set of several faults is refused with the same text.
   if (p.cutoffSecs >= p.leadSecs) throw new Error(ERR.CUTOFF);
+  if (p.t0 % p.printIntervalSecs !== 0 || p.periodSecs % p.printIntervalSecs !== 0) throw new Error(ERR.BUCKET_GRID);
   if (p.minPrints < 1) throw new Error(ERR.MIN_PRINTS);
   if (p.minPrints > Math.floor(p.periodSecs / p.printIntervalSecs)) throw new Error(ERR.MAX_PRINTS);
   if (p.voidAfterSecs < p.reportGraceSecs) throw new Error(ERR.VOID_AFTER);
+  // A bucket's window then closes before it may be pruned, so a pruned bucket takes no reports.
+  if (p.reportGraceSecs > p.periodSecs) throw new Error(ERR.GRACE);
   if (p.maxSpreadBps === 0 || p.maxSpreadBps > 10_000) throw new Error(ERR.MAX_SPREAD_BPS);
   if (auctionCapacity(p) >= 2n ** 52n) throw new Error(ERR.CAPACITY);
-  if (p.t0 % p.printIntervalSecs !== 0 || p.periodSecs % p.printIntervalSecs !== 0) throw new Error(ERR.BUCKET_GRID);
   if (p.minLock < 0n || p.commitFee < 0n) throw new Error("min_lock and commit_fee must not be negative");
   if (!isAccountId(p.usdc)) throw new Error(ERR.BAD_USDC);
   const r = p.reporters;

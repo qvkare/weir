@@ -547,6 +547,7 @@ test("params are validated with the contract's texts", () => {
     [{ minPrints: 0 }, ERR.MIN_PRINTS],
     [{ minPrints: 37 }, ERR.MAX_PRINTS],
     [{ voidAfterSecs: 119 }, ERR.VOID_AFTER],
+    [{ reportGraceSecs: 3601, voidAfterSecs: 3601 }, ERR.GRACE],
     [{ maxSpreadBps: 0 }, ERR.MAX_SPREAD_BPS],
     [{ maxSpreadBps: 10_001 }, ERR.MAX_SPREAD_BPS],
     // 225 s rounds give 16 rounds; 2^41 * 128 * 16 reaches 2^52 exactly.
@@ -561,6 +562,10 @@ test("params are validated with the contract's texts", () => {
     [{ quorum: 0 }, ERR.QUORUM],
   ];
   for (const [change, text] of bad) assert.throws(() => new Market({ ...PARAMS, ...change }), refused(text), JSON.stringify(change));
+  new Market({ ...PARAMS, reportGraceSecs: 3600, voidAfterSecs: 3600 });
+  // Several faults at once are refused in the contract's order.
+  assert.throws(() => new Market({ ...PARAMS, reportGraceSecs: 3601, maxSpreadBps: 0 }), refused(ERR.VOID_AFTER));
+  assert.throws(() => new Market({ ...PARAMS, reportGraceSecs: 3601, voidAfterSecs: 3601, maxSpreadBps: 0 }), refused(ERR.GRACE));
   new Market({ ...PARAMS, minPrints: 36, voidAfterSecs: 120, maxSpreadBps: 10_000, maxCommits: 128, commitSecs: 165, maxOrderSize: 2 ** 41 - 1 });
 });
 
