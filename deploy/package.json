@@ -1,0 +1,19 @@
+{
+  "name": "@weir/deploy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Takes the built Weir contracts to NEAR testnet (or a local sandbox): accounts, contracts, test dollars, agents, function-call keys and the files the keeper and the site read.",
+  "type": "module",
+  "scripts": {
+    "plan": "node --disable-warning=ExperimentalWarning src/cli.ts plan",
+    "apply": "node --disable-warning=ExperimentalWarning src/cli.ts apply",
+    "status": "node --disable-warning=ExperimentalWarning src/cli.ts status",
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p .",
+    "e2e": "node --disable-warning=ExperimentalWarning e2e/e2e.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "^5.9.3"
+  }
+}
