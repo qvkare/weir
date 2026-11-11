@@ -151,3 +151,17 @@ Components:
 - `KeyBoards`: Can / Cannot per key type.
 - `Figure`: number, unit, source; the only way a figure renders.
 - `State`: loading, empty, error, stale wrappers for every block.
+
+## 10. Changes made while building (v1)
+
+Each departure from sections 1 to 9, and why. Where this list and the sections above differ, this list holds.
+
+- **No order form, no wallet.** The first version reads only. `/auction` shows the sealed book, the phase clock, the curves as reveals land, the last cleared round and recent rounds; where section 4 puts the order form there is a "Bid with an agent" panel linking to `/agents`. "Connect wallet" appears nowhere.
+- **Two markets.** The header carries a Weekly / Fast switch beside the Testnet tag, reflected in the URL as `?m=fast`, and a light / dark / system theme button. Weekly is the default.
+- **Series strip.** Under SPEC 0.2 auctions close `cutoff_secs` before delivery starts, so the strip shows auction rounds, the cutoff, then the delivery window and settlement, with no trading inside delivery. The home page also draws the series that is in delivery (not only the one in auction), because its band and running average are what the index chart is measured against.
+- **Index chart lines are reporters, not sources.** Source prices live only in bundles, one file per report; drawing 168 bundles per page view is not reasonable. Each reporter's own reports are the thin `--ink-3` lines, labelled at the right end, and the sources of the latest print are in the table beside the index head.
+- **Fills table has no "refunded" column.** `get_result` does not carry locks and the round's book is deleted at clearing, so the refund cannot be read from views. The page says so under the table.
+- **Exact zero dollar amounts read "none".** A real zero ("forfeited: none", "paid: none") must never look like a loading placeholder.
+- **Phone fills table.** Instead of tap-to-expand rows, the hidden columns (seq, size, limit) appear as a small second line under the owner.
+- **Bundle verifier without a bundle host.** Until `bundles_base` is set, the verifier checks the medians of recent prints and re-hashes the recorded sample in `evidence/bundles/` (its file name carries the start of its hash), labelled as a recorded sample with its bucket time.
+- **Model mode.** With `WEIR_MODEL=1` the server answers every view from the engine running a fixed script, and every page carries the ribbon "Model data, not the chain".

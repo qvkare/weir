@@ -1,0 +1,18 @@
+// The Weir site: the Next.js app and its /api routes on Cloudflare Workers, built by OpenNext.
+// Deploy with `pnpm --filter @weir/web run deploy` (needs `wrangler login`). No custom domain yet.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "weir",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    // OpenNext calls back into its own Worker. The service name must match the Worker name.
+    { "binding": "WORKER_SELF_REFERENCE", "service": "weir" }
+  ],
+  "workers_dev": true
+}

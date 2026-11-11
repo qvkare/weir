@@ -1,0 +1,35 @@
+{
+  "name": "@weir/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "dev:model": "WEIR_MODEL=1 next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --disable-warning=ExperimentalWarning \"lib/**/*.test.ts\"",
+    "smoke": "node --disable-warning=ExperimentalWarning scripts/smoke.ts",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview --port 8787",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "1.20.16",
+    "@weir/agents": "workspace:*",
+    "@weir/chain": "workspace:*",
+    "@weir/engine": "workspace:*",
+    "@weir/index": "workspace:*",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "7.0.2",
+    "wrangler": "4.158.0"
+  }
+}
