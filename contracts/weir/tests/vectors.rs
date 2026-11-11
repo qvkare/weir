@@ -336,34 +336,33 @@ fn settlement_vectors() {
         band: 400_000,
         sum: 0,
         count: 0,
-        traded_units: 0,
-        traded_value: 0,
         void_allowed: false,
         min_prints: 3,
     };
-    // 5 units at 0.21 and 15 at 0.25: a void series unwinds at 0.24.
-    let traded = SettleInput { traded_units: 20, traded_value: 5 * 210_000 + 15 * 250_000, ..base };
-    let mut inputs = vec![
+    // `traded_units` and `traded_value` stay in the shape for readers; no rule reads
+    // them, so these cases show that trades never move a void payout.
+    let traded = (20u64, 5 * 210_000 + 15 * 250_000u128);
+    let none = (0u64, 0u128);
+    let mut inputs: Vec<(SettleInput, (u64, u128))> = vec![
         // At min_prints, and one short of it, with and without the void window.
-        SettleInput { sum: 6_000_000, count: 3, ..base },
-        SettleInput { sum: 4_000_000, count: 2, ..base },
-        SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base },
-        SettleInput { void_allowed: true, ..base },
+        (SettleInput { sum: 6_000_000, count: 3, ..base }, none),
+        (SettleInput { sum: 4_000_000, count: 2, ..base }, none),
+        (SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base }, none),
+        (SettleInput { void_allowed: true, ..base }, none),
         // Fixing below the floor, at it, and above the cap.
-        SettleInput { sum: 3_000_000, count: 3, ..base },
-        SettleInput { sum: 5_400_000, count: 3, ..base },
-        SettleInput { sum: 9_000_000, count: 3, ..base },
+        (SettleInput { sum: 3_000_000, count: 3, ..base }, none),
+        (SettleInput { sum: 5_400_000, count: 3, ..base }, none),
+        (SettleInput { sum: 9_000_000, count: 3, ..base }, none),
         // The fixing rounds down.
-        SettleInput { sum: 6_100_001, count: 3, ..base },
-        // Void after trading: the traded average, whatever the partial prints say.
-        SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..traded },
-        SettleInput { void_allowed: true, ..traded },
-        // Not yet void: trades change nothing.
-        SettleInput { sum: 4_100_001, count: 2, ..traded },
-        // Enough prints: trades are ignored.
-        SettleInput { sum: 6_000_000, count: 3, void_allowed: true, ..traded },
-        // The traded average rounds down.
-        SettleInput { traded_units: 3, traded_value: 600_001, void_allowed: true, ..base },
+        (SettleInput { sum: 6_100_001, count: 3, ..base }, none),
+        // Void after trading: the centre of the band, whatever was traded or printed.
+        (SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base }, traded),
+        (SettleInput { void_allowed: true, ..base }, traded),
+        // Wash trades one tick below the band change nothing either.
+        (SettleInput { void_allowed: true, ..base }, (10_000, 10_000 * 399_000)),
+        // Not yet void, and enough prints: trades are ignored.
+        (SettleInput { sum: 4_100_001, count: 2, ..base }, traded),
+        (SettleInput { sum: 6_000_000, count: 3, void_allowed: true, ..base }, traded),
     ];
     while inputs.len() < 500 {
         let half = rng.range(1, 5_000) * rng.pick(&[1u64, 10, 1_000]);
@@ -384,20 +383,19 @@ fn settlement_vectors() {
         } else {
             u128::from(traded_units) * u128::from(rng.range(1, 2 * half - 1)) + u128::from(rng.range(0, traded_units - 1))
         };
-        inputs.push(SettleInput {
+        let input = SettleInput {
             floor,
             band: 2 * half,
             sum,
             count,
-            traded_units,
-            traded_value,
             void_allowed: rng.chance(40),
             min_prints: rng.range(1, 2_016) as u32,
-        });
+        };
+        inputs.push((input, (traded_units, traded_value)));
     }
     let cases: Vec<Value> = inputs
         .into_iter()
-        .map(|i| {
+        .map(|(i, (traded_units, traded_value))| {
             let expect = match settlement::settle(i) {
                 Ok(s) => json!({
                     "fixing": s.fixing, "long_payout": s.long_payout,
@@ -407,12 +405,16 @@ fn settlement_vectors() {
             };
             json!({
                 "floor": i.floor, "band": i.band, "sum": i.sum.to_string(), "count": i.count,
-                "traded_units": i.traded_units, "traded_value": i.traded_value.to_string(),
+                "traded_units": traded_units, "traded_value": traded_value.to_string(),
                 "void_allowed": i.void_allowed, "min_prints": i.min_prints, "expect": expect,
             })
         })
         .collect();
     assert!(cases.iter().any(|c| c["expect"]["error"] == "not enough prints yet"));
+    assert!(cases
+        .iter()
+        .filter(|c| c["expect"]["void"] == true)
+        .all(|c| c["expect"]["long_payout"].as_u64().unwrap() * 2 == c["band"].as_u64().unwrap()));
     write_or_check("settlement.json", render(&[], &cases));
 }
 

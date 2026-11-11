@@ -7,7 +7,8 @@ export interface SettlementInput {
   /** The series' accumulator. */
   sum: bigint;
   count: number;
-  /** What the series' auctions traded: units, and units times price (section 7.3). */
+  /** What the series' auctions traded: units, and units times price (section 7.3). Kept so
+   * callers need not change; since 0.6 no rule reads them. */
   tradedUnits: number;
   tradedValue: bigint;
   /** `now >= delivery_end + void_after_secs`. */
@@ -37,10 +38,9 @@ export function settleSeries(input: SettlementInput): SettlementOutcome {
     return { fixing, void: false, ...payouts(fixing, floor, band) };
   }
   if (!input.voidAllowed) throw new Error(ERR.NOT_ENOUGH_PRINTS);
-  // A void series is unwound at the average price its own auctions traded at, so a
-  // missing index undoes the hedge instead of deciding it on a partial number.
-  const longPayout =
-    input.tradedUnits > 0 ? Number(input.tradedValue / BigInt(input.tradedUnits)) : Math.floor(band / 2);
+  // A void series pays half the band to each side, whatever was traded or printed: any
+  // input to the void case could be steered by someone who also controls when it applies.
+  const longPayout = Math.floor(band / 2);
   return { fixing: floor + longPayout, void: true, longPayout, shortPayout: band - longPayout };
 }
 

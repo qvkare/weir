@@ -402,7 +402,7 @@ test("settle decides the delivery window's open buckets, and a refused settle de
   }
 });
 
-test("a void series that never traded splits the band, whatever prints it had", () => {
+test("a void series without trades splits the band, whatever prints it had", () => {
   for (const prints of [0, 2]) {
     const m = setup();
     m.mint("alice", 0, 2);
@@ -420,7 +420,7 @@ test("a void series that never traded splits the band, whatever prints it had", 
   }
 });
 
-test("a void series unwinds at the average price its auctions traded at", () => {
+test("a void series splits the band even when its auctions traded", () => {
   const m = setup();
   const trade = (round: number, size: number, long: number, short: number, buyer: number) => {
     m.setTime(96_400 + 180 * round);
@@ -436,14 +436,13 @@ test("a void series unwinds at the average price its auctions traded at", () => 
   trade(1, 5, 300_000, 300_000, 300_000);
   m.mint("carol", 0, 1);
   assert.deepEqual([m.getSeries(0)!.tradedUnits, m.getSeries(0)!.tradedValue], [15, 3_500_000n]);
-  // Two prints are not enough; the void rule ignores them.
+  // Two prints are not enough; the void rule ignores them and the trades alike.
   for (const bucket of [100_000, 100_100]) print(m, bucket, 3_000_000);
   m.setTime(106_000);
   const s = m.settle(0);
-  // 3_500_000 / 15 = 233_333.33, rounded down.
-  assert.deepEqual([s.void, s.fixing, s.longPayout, s.shortPayout], [true, 2_033_333, 233_333, 166_667]);
-  // Alice paid 3_500_000 for 15 LONG and gets 15 * 233_333 back.
-  assert.equal(m.redeem(0, "alice"), 3_499_995n);
+  assert.deepEqual([s.void, s.fixing, s.longPayout, s.shortPayout], [true, 2_000_000, 200_000, 200_000]);
+  assert.deepEqual([m.getSeries(0)!.tradedUnits, m.getSeries(0)!.tradedValue], [15, 3_500_000n]);
+  assert.equal(m.redeem(0, "alice"), 15n * 200_000n);
   assert.equal(m.redeem(0, "carol"), 400_000n);
 });
 

@@ -650,7 +650,7 @@ impl Weir {
         let record = self.series_mut(series);
         record.open_sets = add_units(record.open_sets, outcome.volume);
         if let Some(price) = outcome.price {
-            // What the series' auctions traded, for unwinding it if it goes void.
+            // What the series' auctions traded. Information for readers: no rule reads it.
             record.traded_units = add_units(record.traded_units, outcome.volume);
             record.traded_value = add(record.traded_value, mul(outcome.volume, price));
         }
@@ -894,8 +894,6 @@ impl Weir {
             band: record.band,
             sum: acc.sum,
             count: acc.count,
-            traded_units: record.traded_units,
-            traded_value: record.traded_value,
             void_allowed: now >= end.saturating_add(void_after),
             min_prints,
         }));

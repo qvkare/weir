@@ -1,6 +1,6 @@
 # Weir contracts
 
-The NEAR side of Weir, written from `docs/SPEC.md` (version 0.5). Section numbers
+The NEAR side of Weir, written from `docs/SPEC.md` (version 0.6). Section numbers
 below refer to it.
 
 ## Files
@@ -11,7 +11,7 @@ below refer to it.
 | `weir/src/lib.rs` | The contract: state, every method of sections 5 to 10 and 14, every view of section 12, the `ERR_*` messages |
 | `weir/src/time.rs` | Section 4: delivery and auction windows, rounds, phases. Pure |
 | `weir/src/clearing.rs` | Sections 7.1 and 7.2: the clearing price and the fills. Pure |
-| `weir/src/settlement.rs` | Section 6.1 band arithmetic and section 10 fixing and payouts, including the unwinding of a void series at its traded average. Pure |
+| `weir/src/settlement.rs` | Section 6.1 band arithmetic and section 10 fixing and payouts; a void series pays the centre of its band. Pure |
 | `weir/src/index.rs` | Section 9: how a bucket's reports decide a print (median, quorum, spread) or no print. Pure |
 | `weir/src/hash.rs` | Section 6.2: the commit preimage and its sha256, and the hex checks |
 | `weir/src/types.rs` | Stored records and the JSON shapes of the views |
@@ -20,7 +20,8 @@ below refer to it.
 | `weir/tests/properties.rs` | Proptest: invariants 3 and 4 over random books; invariants 1 (as an equality), 2, 5, 6 and 7 over random call sequences, each ending by clearing, settling and redeeming everything |
 | `weir/tests/audit_findings.rs` | The audit's first eight demonstrations, now asserting that each attack fails |
 | `weir/tests/audit2_findings.rs` | The audit's second pass: `audit2_*` tests assert a fix, `limit_*` tests show what is still possible |
-| `weir/tests/sandbox.rs` | The real wasm in near-sandbox with `mock-usdc`: a whole life (with a position moved after settlement, and a void series unwound at its traded price), a failed withdraw, an agent's function-call key (trades, settles and redeems; refused on `withdraw`, `set_guard`, `transfer_position`), gas of a full `clear` and of a `settle` that decides pending buckets |
+| `weir/tests/audit3_void.rs` | The audit's third pass, on the void settlement: the wash-trade attack now fails, and the limit that remains |
+| `weir/tests/sandbox.rs` | The real wasm in near-sandbox with `mock-usdc`: a whole life (with a position moved after settlement, and a void series that traded, cancelled at the centre of its band), a failed withdraw, an agent's function-call key (trades, settles and redeems; refused on `withdraw`, `set_guard`, `transfer_position`), gas of a full `clear` and of a `settle` that decides pending buckets |
 | `weir/tests/vectors.rs` | Writes or checks `../vectors/*.json`, the shared test vectors for the TypeScript engine |
 | `mock-usdc/src/lib.rs` | A NEP-141 test dollar, `tUSDC`, 6 decimals, with an open `mint` faucet. Testnet and tests only |
 
@@ -57,8 +58,8 @@ SHORT, which is the most work a round can hold.
 
 | `max_commits` | Tgas burnt by the whole transaction |
 |---|---|
-| 64 | 26.59 |
-| 128 | 51.44 |
+| 64 | 26.55 |
+| 128 | 51.50 |
 
 `settle` that first decides the undecided buckets of its delivery window
 (`a_function_call_key_trades_but_cannot_move_money`): 3.20 Tgas for 3
@@ -70,39 +71,39 @@ most four).
 
 ## Audit
 
-An independent audit found the accounting sound on both passes. Its findings are
-either closed by a rule, with a test that keeps the attack and asserts it fails, or
-stated in the spec as a known limit, with a test that shows exactly what is still
-possible (`docs/AUDIT.md` has the reasoning).
+An independent auditor made three passes (against spec 0.3, 0.4 and 0.5) and found
+the dollar accounting sound every time. Each finding is either closed by a rule, with
+a test that keeps the attack and asserts it fails, or stated in the spec as an open
+limit, with a test that shows exactly what is still possible and the number it shows.
+`docs/AUDIT.md` has the auditor's reasoning; the numbers below come from the tests.
 
 ### Closed by a rule
 
-| Finding | Rule (spec section) | Test |
-|---|---|---|
-| Changing the guard after commit cancelled an order for free | The commit records the guard and reference; reveal applies those (6.2, 6.4) | `audit_guard_change_after_commit_no_longer_cancels` |
-| A function-call agent could forfeit an account's dollars to a confederate | Forfeits are burned (7.3); `max_round_lock` caps a round (5, 6.2) | `audit_function_call_agent_can_no_longer_drain_a_guarded_account` |
-| Evicting every rival cost nothing | Every commit pays `commit_fee`, burned at clearing (6.2) | `audit_eviction_griefing_now_costs_a_fee_per_slot` |
-| One reporter could ratchet the index | All reporters: the median; two of three: within `max_spread_bps` or no print (9) | `audit_one_reporter_can_no_longer_steer_the_index` |
-| One silent reporter froze the index after a large move | No move limit (9) | `audit_a_silent_reporter_can_no_longer_freeze_the_index` |
-| Reporting out of order bypassed the move limit | Nothing compares prints with earlier prints (9) | `audit_reporting_out_of_order_no_longer_bypasses_anything` |
-| Minting `u64::MAX` sets froze a series | `mint` stops at `2^53 - 1` less the auctions' capacity (8) | `audit_open_sets_can_no_longer_overflow` |
-| Storage grew without bound | Results keep only fills; `prune_print`, `prune_result` (12, 14) | `audit_storage_bytes_per_object_and_pruning` |
-| One reporter could force a void series to mid-band and profit | A void series unwinds at its traded average (10): the reporter's SHORT paid 1.00 $ and gets 1.00 $ back, where 0.4 paid 2.00 $ | `audit2_forcing_the_void_fixing_no_longer_pays_the_reporter` |
-| A quorum of one in three let one reporter print alone | The quorum must be a majority (3) | `audit2_a_quorum_of_one_in_three_is_refused` |
+| Pass | Finding | Rule (spec section) | Test |
+|---|---|---|---|
+| 1 | One reporter ratcheted the index through the two-report mean | All reporters: the median; one absent: the two must agree within `max_spread_bps` (9) | `audit_one_reporter_can_no_longer_steer_the_index` |
+| 1 | One silent reporter froze the index after a large move | No move limit (9) | `audit_a_silent_reporter_can_no_longer_freeze_the_index` |
+| 1 | Minting `u64::MAX` sets froze a series | `mint` stops at `2^53 - 1` less the auctions' capacity (8) | `audit_open_sets_can_no_longer_overflow` |
+| 1 | A function-call agent forfeited an account's dollars to an accomplice | Forfeits are burned (7.3); `max_round_lock` (5, 6.2). Destruction without a limit stays open, below | `audit_function_call_agent_can_no_longer_drain_a_guarded_account` |
+| 1 | Changing the guard after commit cancelled an order for free | The commit records the guard and reference (6.2, 6.4) | `audit_guard_change_after_commit_no_longer_cancels` |
+| 1 | Out-of-order reports bypassed the move limit | Nothing compares prints (9) | `audit_reporting_out_of_order_no_longer_bypasses_anything` |
+| 1 | Storage grew without bound | Results keep only fills; `prune_print`, `prune_result` (12, 14). A result of 64 unfilled orders: 220 B | `audit_storage_bytes_per_object_and_pruning` |
+| 2 | A quorum of one in three let one reporter print alone | The quorum must be a majority (3) | `audit2_a_quorum_of_one_in_three_is_refused` |
+| 2 | (soundness check) a pruned bucket could come back | It cannot: reports close before pruning opens (3) | `audit2_a_pruned_bucket_cannot_come_back` |
+| 3 | Wash trades set the 0.5 void payout (0.397 against a fair 0.200; Bob lost 19.80 $) | A void series pays the centre of its band; nothing traded is read (10). Now Bob loses 0.10 $ and Mallory 0.30 $: their fees | `audit3_wash_trades_no_longer_set_the_void_payout` |
 
-### Stated limits
+### Open limits
 
-| Limit (spec section) | What the test shows | Test |
-|---|---|---|
-| With one reporter absent, one dishonest reporter chooses which buckets print (15) | True average 2.000000, fixing 2.121000 from the 10 buckets it agreed to | `limit_one_reporter_selects_which_buckets_print` |
-| A round can be blocked at a price (15) | 64 slots at 0.02 $: 1.28 $ a round, 640 $ of capital for one round | `limit_blocking_a_round_costs_1_28_dollars` |
-| An account without `max_round_lock` can be burned by its agent (15) | 100 $ falls to 90.248889 $ in 10 rounds at a 1% forfeit | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
-| The last look: a non-reveal changes another account's fill (11) | Clearing moves from 0.150 to 0.225; the look costs 0.07 $ | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
-| One account can take a series' whole mint cap (8) | The next minter gets `too many sets`; auctions still clear | `limit_one_account_can_take_the_whole_mint_cap` |
-| Unwise but valid parameters (3) | A 100% spread lets one of two reporters print 3.0 for a true 2.0 | `limit_unwise_parameters_are_still_accepted` |
-
-`audit2_a_pruned_bucket_cannot_come_back` checks a soundness question the second pass
-raised: a pruned bucket can never take reports again.
+| Pass | Limit (spec section) | What the test shows | Test |
+|---|---|---|---|
+| 1, 2 | Blocking a round costs `max_commits * commit_fee` (15) | 1.28 $ a round at the test's 0.02 $ fee (64 slots); 6.40 $ at the deployed 0.10 $ | `limit_blocking_a_round_costs_1_28_dollars`, and `audit_eviction_griefing_now_costs_a_fee_per_slot` asserts exactly `max_commits * commit_fee` |
+| 2 | With one reporter absent, a dishonest one chooses which buckets print (15) | True average 2.000, fixing 2.121 from the 10 buckets it agreed to | `limit_one_reporter_selects_which_buckets_print` |
+| 2, 3 | A reporter can force a void, which pays half the band (10, 15) | Bought 10 SHORT at 0.10, gets 0.20: +1.00 $ | `limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side` |
+| 3 | A reporter who trades buys the cheap side after a move, then forces the void (10, 15) | SHORT at 0.04 pays 0.20: +15.90 $ on 100 units at a 0.40 $ band; up to 0.299 $ a unit at the deployed 0.60 $ band | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
+| 2 | An account without `max_round_lock` can be burned by its agent (15) | 100 $ falls to 90.248889 $ in 10 rounds at a 1% forfeit | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
+| 2 | The last look: a non-reveal changes another account's fill (11) | Clearing moves from 0.150 to 0.225; the look costs 0.07 $ | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
+| 2 | One account can take a series' whole mint cap (8) | The next minter gets `too many sets`; auctions still clear | `limit_one_account_can_take_the_whole_mint_cap` |
+| 2 | Unwise but valid parameters (3) | A 100% spread lets one of two reporters print 3.0 for a true 2.0 | `limit_unwise_parameters_are_still_accepted` |
 
 ## Error messages
 

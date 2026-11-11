@@ -450,17 +450,18 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     chain.warp_to(t2.end() + 3_600).await?;
     bob.call(weir.id(), "settle").args_json(json!({ "series": 2 })).transact().await?.into_result()?;
     let s = view(&weir, "get_series", json!({ "series": 2 })).await?["settlement"].clone();
-    // Unwound at the traded price: LONG gets 0.22 back, SHORT 0.18.
+    // Cancelled at the centre of the band: 0.20 to each side, whatever was traded.
     assert_eq!(
         (s["fixing"].as_u64(), s["long_payout"].as_u64(), s["short_payout"].as_u64(), s["prints"].as_u64(), s["void"].as_bool()),
-        (Some(2_020_000), Some(220_000), Some(180_000), Some(0), Some(true))
+        (Some(2_000_000), Some(200_000), Some(200_000), Some(0), Some(true))
     );
     for who in [&bob, &carol] {
         bob.call(weir.id(), "redeem").args_json(json!({ "series": 2, "account_id": who.id() })).transact().await?.into_result()?;
     }
-    // Each gets back exactly what it paid; only the commit fee is gone.
-    assert_eq!(free(&weir, &bob).await?, bob_before - FEE);
-    assert_eq!(free(&weir, &carol).await?, carol_before - FEE);
+    // Bob paid 0.22 a LONG and gets 0.20: -0.10 $ on 5. Carol paid 0.18 a SHORT and
+    // gets 0.20: +0.10 $. Each also paid its commit fee.
+    assert_eq!(free(&weir, &bob).await?, bob_before - FEE - 5 * 20_000);
+    assert_eq!(free(&weir, &carol).await?, carol_before - FEE + 5 * 20_000);
     assert_books_balance(&chain, &weir).await?;
     Ok(())
 }

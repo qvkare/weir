@@ -164,7 +164,8 @@ pub struct Series {
     pub band: u64,
     pub opened_at: u64,
     pub open_sets: u64,
-    /// `V*` and `V* * p*` summed over every round that traded (section 7.3).
+    /// `V*` and `V* * p*` summed over every round that traded (section 7.3). For
+    /// readers only: no rule reads them.
     pub traded_units: u64,
     pub traded_value: u128,
     /// Rounds that hold commits and have not been cleared, ascending: a round gets

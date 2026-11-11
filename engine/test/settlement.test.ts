@@ -35,28 +35,20 @@ test("too few prints before the void time panics", () => {
   assert.throws(() => settleSeries({ ...base, count: 0, sum: 0n }), { message: "not enough prints yet" });
 });
 
-test("a void series unwinds at the average traded price, ignoring a partial set of prints", () => {
-  // 10 units at 200_000 and 5 at 300_000: 3_500_000 / 15 = 233_333.33.
+test("a void series splits the band evenly, whatever was traded or printed", () => {
   const traded = { tradedUnits: 15, tradedValue: 3_500_000n };
   for (const prints of [{ count: 0, sum: 0n }, { count: 2, sum: 4_300_001n }]) {
-    assert.deepEqual(settleSeries({ ...base, ...prints, ...traded, voidAllowed: true }), {
-      fixing: 2_233_333,
-      void: true,
-      longPayout: 233_333,
-      shortPayout: 166_667,
-    });
+    for (const t of [{ tradedUnits: 0, tradedValue: 0n }, traded]) {
+      assert.deepEqual(settleSeries({ ...base, ...prints, ...t, voidAllowed: true }), {
+        fixing: 2_200_000,
+        void: true,
+        longPayout: 200_000,
+        shortPayout: 200_000,
+      });
+    }
   }
-  // Traded data does not touch a normal settlement.
+  // Traded data does not touch a normal settlement either.
   assert.equal(settleSeries({ ...base, ...traded }).fixing, 2_200_000);
-});
-
-test("a void series that never traded splits the band evenly", () => {
-  assert.deepEqual(settleSeries({ ...base, count: 2, sum: 4_300_001n, voidAllowed: true }), {
-    fixing: 2_200_000,
-    void: true,
-    longPayout: 200_000,
-    shortPayout: 200_000,
-  });
   assert.deepEqual(fixingOf({ ...base, count: 0, sum: 0n, voidAllowed: true, band: 400_001 }), { fixing: 2_200_000, void: true });
 });
 

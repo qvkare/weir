@@ -113,7 +113,7 @@ export interface SeriesView {
   band: number;
   openedAt: number;
   openSets: number;
-  /** Units the series' auctions traded, and their total price (section 7.3). */
+  /** Units the series' auctions traded, and their total price (section 7.3). Informational. */
   tradedUnits: number;
   tradedValue: bigint;
   /** Rounds, ascending, that hold commits and have not been cleared. */

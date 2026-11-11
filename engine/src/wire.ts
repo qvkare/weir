@@ -77,7 +77,7 @@ export interface WireSeries {
   band: number;
   opened_at: number;
   open_sets: number;
-  /** What the series' auctions traded (section 7.3); a void series unwinds at their average. */
+  /** What the series' auctions traded (section 7.3). Informational: no rule reads them. */
   traded_units: number;
   traded_value: U128;
   /** Rounds, ascending, that hold commits and have not been cleared. */

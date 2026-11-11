@@ -1,12 +1,13 @@
-//! Third audit pass (spec 0.5): the void unwinding. Same harness as audit2.
-//! assert that a finding is closed by a rule; tests named `limit_*` keep demonstrating
-//! exactly what is still possible, because spec 0.5 states it as a known limit rather
-//! than a fix. The numbers each limit shows are in its comment, for the README and the
-//! audit record. Each test drives the contract through its public API in near-sdk's
-//! mocked VM, one call per "transaction" (a panic rolls state back). Run with
-//! `--nocapture --test-threads=1` to see the numbers.
+//! The audit's third pass (against spec 0.5), as of spec 0.6: the void settlement.
+//! Tests named `audit3_*` assert that a finding is closed by a rule; tests named
+//! `limit_*` demonstrate exactly what is still possible, because spec 0.6 states it as
+//! a known limit. The numbers each test shows are in its comment, for the README and
+//! the audit record. Each test drives the contract through its public API in
+//! near-sdk's mocked VM, one call per "transaction" (a panic rolls state back). Run
+//! with `--nocapture --test-threads=1` to see the numbers.
 //! Economic numbers follow the `weekly` preset (agents/src/presets.ts): 2 of 3
-//! reporters, max_spread 2%, forfeit 1%, commit fee 0.02 $, 64 commits a round.
+//! reporters, max_spread 2%, forfeit 1%, commit fee 0.10 $, 64 commits a round, but a
+//! 10% band (0.40 $ at the 2.00 $ anchor); the deployed band is 15% (0.60 $).
 
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -181,15 +182,16 @@ impl H {
 
 // ---------------------------------------------------------------------------------
 
-/// A void series pays `traded_value / traded_units`, and anyone can move that average
-/// with wash trades between two accounts they control: the wash sets pay `band` in
-/// total whatever the average is, so the only cost is the commit fees. Mallory buys
-/// 100 LONG honestly from Bob at 0.200 (the fair price; the index stays at 2.000, so a
-/// normal settlement would pay LONG 0.200). Then, in a round she alone uses, she trades
-/// 10,000 units with herself at 0.399. As reporter R1, with R3 absent, she disagrees with
-/// R2 in every bucket; the series goes void and LONG pays the traded average, 0.397.
+/// CLOSED (spec 10, 0.6). Under 0.5 a void series paid `traded_value /
+/// traded_units`, and Mallory moved that average with wash trades between her own two
+/// accounts to 0.397, taking 19.40 $ from Bob. Spec 0.6 cancels a void series at the
+/// centre of its band, which nothing traded can move. The same trades now give:
+/// - Bob paid 100 x 0.200 = 20.00 $ for SHORT and gets 100 x 0.200 back: -0.10 $, his fee.
+/// - Mallory's honest 100 LONG at 0.200 come back at 0.200. Her wash, 10,000 LONG at 0.399
+///   (3,990 $) and 10,000 SHORT at 0.001 (10 $), comes back as 2 x 2,000 $: nothing.
+///   She is down her three fees, -0.30 $.
 #[test]
-fn audit3_wash_trades_set_the_void_payout() {
+fn audit3_wash_trades_no_longer_set_the_void_payout() {
     let mut h = H::with(params());
     h.open_series();
     h.fund("bob.near", 100 * DOLLAR);
@@ -213,6 +215,8 @@ fn audit3_wash_trades_set_the_void_payout() {
     h.reveal(1, s, "m2.near", Side::Short, 10_000, 399_000).unwrap();
     h.at(round_end(1));
     h.ok(STRANGER, |w| w.clear(0, 1));
+    let series = h.view(|w| w.get_series(0)).unwrap();
+    assert_eq!((series.traded_units, series.traded_value.0), (10_100, 100 * 200_000 + 10_000 * 399_000));
     // Delivery at a true 2.000; R3 absent; R1 disagrees in every bucket.
     for k in 0..100u64 {
         let bkt = T0 + 10 * k;
@@ -230,14 +234,57 @@ fn audit3_wash_trades_set_the_void_payout() {
     let mallory = (h.balance(R1) + h.balance("m2.near")) as i128 - 5_100 * DOLLAR as i128;
     let t = h.view(|w| w.get_totals());
     println!(
-        "void {} prints {} long_payout {} (fair 200000); bob {bob} micro-$, mallory {mallory} micro-$; totals free {} locked {} backing {} unredeemed {} burned {}",
-        st.void, st.prints, st.long_payout, t.free.0, t.locked.0, t.sets_backing.0, t.unredeemed.0, t.burned.0
+        "void {} prints {} long_payout {} (0.5 paid 397029); bob {bob} micro-$, mallory {mallory} micro-$; burned {}",
+        st.void, st.prints, st.long_payout, t.burned.0
     );
     assert!(st.void);
-    assert_eq!(st.long_payout, (100 * 200_000 + 10_000 * 399_000) / 10_100);
-    assert!(mallory > 19 * DOLLAR as i128, "Mallory gains about 0.197 $ a unit on the honest trade");
-    assert!(bob < -19 * DOLLAR as i128);
+    assert_eq!((st.long_payout, st.short_payout), (200_000, 200_000), "the centre of the band");
+    assert_eq!(bob, -(FEE as i128), "Bob loses only his fee");
+    assert_eq!(mallory, -3 * FEE as i128, "the wash gains Mallory nothing");
     // Solvency stays exact: everything is either free or burned.
     assert_eq!(t.free.0 + t.burned.0, deposits);
     assert_eq!(t.unredeemed.0 + t.locked.0 + t.sets_backing.0, 0);
+}
+
+/// LIMIT (spec 10, 15). What remains: a reporter who also trades can buy, after the
+/// market has moved, the side that costs less than half the band, then cause the void
+/// (with another reporter absent, by disagreeing in every bucket) and be paid half the
+/// band for it. The gain is `band / 2 - price paid` per unit, at most `band / 2 - tick`.
+/// Shown here, band 0.40 $: the index moved to the band top, an honest buyer pays 0.36
+/// for LONG, the reporter takes SHORT at 0.04 and gets 0.20: +0.16 $ a unit, 15.90 $ on
+/// 100 units after the 0.10 $ fee, where the true price would have paid it nothing. At
+/// the deployed band of 0.60 $ the same move is worth up to 0.299 $ a unit.
+#[test]
+fn limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band() {
+    let mut h = H::with(params());
+    h.open_series();
+    h.fund("honest.near", 100 * DOLLAR);
+    h.fund(R1, 100 * DOLLAR);
+    // The market has moved up: the honest buyer pays 0.36 for LONG; R1 sells it.
+    let a = h.commit(0, "honest.near", Side::Long, 100, 360_000, 36 * DOLLAR).unwrap();
+    let r = h.commit(0, R1, Side::Short, 100, 360_000, 4 * DOLLAR).unwrap();
+    h.at(reveal_start(0));
+    h.reveal(0, a, "honest.near", Side::Long, 100, 360_000).unwrap();
+    h.reveal(0, r, R1, Side::Short, 100, 360_000).unwrap();
+    h.at(round_end(0));
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    // Delivery at the band top (a true settlement pays SHORT 0); R3 absent.
+    for k in 0..100u64 {
+        let bkt = T0 + 10 * k;
+        h.at(bkt);
+        h.ok(R2, |w| w.report(bkt, 2_200_000, BUNDLE.into()));
+        h.ok(R1, |w| w.report(bkt, 1_000_000, BUNDLE.into()));
+    }
+    h.at(END + 500);
+    h.ok(STRANGER, |w| w.settle(0));
+    let st = h.view(|w| w.get_series(0)).unwrap().settlement.unwrap();
+    for who in ["honest.near", R1] {
+        h.ok(STRANGER, |w| w.redeem(0, Some(id(who))));
+    }
+    let reporter = h.balance(R1) as i128 - 100 * DOLLAR as i128;
+    let honest = h.balance("honest.near") as i128 - 100 * DOLLAR as i128;
+    println!("void {} at {}; reporter {reporter} micro-$ (true settlement: -4.10 $); honest {honest} micro-$", st.void, st.long_payout);
+    assert!(st.void);
+    assert_eq!(reporter, 100 * (200_000 - 40_000) - FEE as i128);
+    assert_eq!(honest, -(100 * (360_000 - 200_000)) - FEE as i128);
 }

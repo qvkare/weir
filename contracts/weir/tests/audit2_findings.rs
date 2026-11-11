@@ -220,13 +220,14 @@ fn limit_one_reporter_selects_which_buckets_print() {
     assert!(!s.void);
 }
 
-/// CLOSED (spec 10). Same situation, other branch: the dishonest reporter disagrees in
-/// every bucket, so the series has no prints and goes void. Under 0.4 a void series
-/// settled at mid-band, so a reporter holding SHORT bought cheaply could force 0.20 a
-/// unit for a hedge the true price (band top) says is worth 0. Under 0.5 a void
-/// series unwinds at its traded average: the reporter gets back what it paid.
+/// LIMIT (spec 10, 15; under 0.6). Same situation, other branch: the dishonest
+/// reporter disagrees in every bucket, so the series has no prints and goes void. Spec
+/// 0.6 cancels a void series at the centre of the band. Shown: the reporter bought 10
+/// SHORT at 0.10 (paid 1.00 $) and gets 0.20 a unit, 2.00 $: +1.00 $, where the true
+/// price (band top) pays SHORT nothing. The 0.5 rule paid it back 1.00 $ here only
+/// because this series has one trade; see audit3_void.rs for why that rule was dropped.
 #[test]
-fn audit2_forcing_the_void_fixing_no_longer_pays_the_reporter() {
+fn limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side() {
     let mut h = H::with(params());
     h.open_series();
     h.fund("a.near", 100 * DOLLAR);
@@ -255,16 +256,11 @@ fn audit2_forcing_the_void_fixing_no_longer_pays_the_reporter() {
     let before = h.balance(R1);
     h.ok(STRANGER, |w| w.redeem(0, Some(id(R1))));
     let got = h.balance(R1) - before;
-    let under_0_4 = 10 * 200_000u128; // mid-band SHORT payout
-    let truthful = 0u128; // the band top pays SHORT nothing
-    println!(
-        "settle at end+grace: {early:?}; void {} at long_payout {}; reporter paid {paid} for 10 SHORT, gets {got} (0.4 rule: {under_0_4}, true price: {truthful})",
-        s.void, s.long_payout
-    );
+    println!("settle at end+grace: {early:?}; void {} at long_payout {}; reporter paid {paid} for 10 SHORT, gets {got} (true price: 0)", s.void, s.long_payout);
     assert!(s.void);
-    assert_eq!((s.long_payout, s.short_payout), (300_000, 100_000), "the traded average");
-    assert_eq!(got, paid, "the reporter's position is worth what it paid: no gain");
-    assert!(got < under_0_4);
+    assert_eq!((s.long_payout, s.short_payout), (200_000, 200_000), "the centre of the band");
+    assert_eq!(paid, DOLLAR);
+    assert_eq!(got, 2 * DOLLAR, "+1.00 $ for forcing the void");
 }
 
 /// LIMIT (spec 15, "Blocking a round"). Blocking a round costs max_commits *

@@ -18,7 +18,7 @@ Dollar amounts are `bigint` micro-USDC. Prices, sizes and times are `number`.
 | `src/sha256.ts` | 6.2 | Synchronous SHA-256 in plain TypeScript, checked against `node:crypto` |
 | `src/clearing.ts` | 7.1, 7.2 | `clearRound(orders, tick)`: price, volume and per-order fills; `curves(orders)` for charts |
 | `src/index.ts` | 9 | `decidePrint` and `printDecision`: when a bucket is decided and what it prints |
-| `src/settlement.ts` | 10 | Fixing, payouts, the void rule (unwind at the series' average traded price), redeem amounts |
+| `src/settlement.ts` | 10 | Fixing, payouts, the void rule (half the band to each side), redeem amounts |
 | `src/errors.ts` | 16 | `ERR`: the contract's refusal texts, under the contract's constant names |
 | `src/market.ts` | 5 to 14 | `Market`: the whole contract state machine in memory, with a clock you set |
 | `src/wire.ts` | 3, 5-14 | The contract's JSON interface served from a `Market`: wire types, `callView`, `callChange`, `wireEvent` |
@@ -29,8 +29,9 @@ validates fully before it changes anything, so a call that throws leaves the sta
 was, like a panicking transaction. A refused call throws the contract's own text, from
 `ERR` (section 16), so a client can match on `err.message === ERR.ROUND_FULL` against
 either. Forfeits and commit fees are burned: they stay in the contract, count in
-`getTotals().burned`, and nobody can claim them. Each series records what its auctions
-traded (`tradedUnits`, `tradedValue`); a void series pays LONG their average price. It leaves out what only exists on chain:
+`getTotals().burned`, and nobody can claim them. A void series pays half the band to each
+side, whatever was traded or printed. Each series still records what its auctions traded
+(`tradedUnits`, `tradedValue`), for information only. It leaves out what only exists on chain:
 the registration fee, the 1 yoctoNEAR deposits and the token contract (`deposit` stands in
 for `ft_on_transfer`). Events of section 13 collect in `market.events`; their fields are
 camelCase, and `wireEvent`/`eventLog` give the contract's form. Views return copies.

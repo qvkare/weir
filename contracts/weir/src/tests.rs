@@ -1197,7 +1197,7 @@ fn settle_decides_the_undecided_buckets_of_its_window_first() {
 }
 
 #[test]
-fn a_void_series_ignores_its_partial_prints_and_unwinds_at_the_traded_price() {
+fn a_void_series_ignores_its_partial_prints_and_pays_the_centre_of_the_band() {
     // The crossed round traded 8 at 0.21; two prints are not enough.
     let mut h = delivered(&[2_100_000, 2_000_001]);
     h.refused(STRANGER, ERR_NOT_ENOUGH_PRINTS, |w| w.settle(0));
@@ -1206,24 +1206,25 @@ fn a_void_series_ignores_its_partial_prints_and_unwinds_at_the_traded_price() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_010_000, 210_000, 190_000, 2, true));
-    // Alice bought 8 LONG at 0.21 and Carol 8 SHORT at 0.19: each gets that back.
+    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_000_000, 200_000, 200_000, 2, true));
+    // Alice paid 0.21 a LONG and Carol 0.19 a SHORT: both get 0.20.
     let (alice, carol) = (h.balance(ALICE), h.balance(CAROL));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(CAROL))));
-    assert_eq!(h.balance(ALICE) - alice, 8 * 210_000);
-    assert_eq!(h.balance(CAROL) - carol, 8 * 190_000);
+    assert_eq!(h.balance(ALICE) - alice, 8 * 200_000);
+    assert_eq!(h.balance(CAROL) - carol, 8 * 200_000);
 }
 
-#[test]
-fn a_void_series_unwinds_at_the_average_of_several_rounds() {
+/// Trades `rounds` of (size, LONG limit, SHORT limit) between Alice and Bob, then
+/// voids the series with no prints and returns the settlement.
+fn void_after_trades(rounds: &[(u64, u64, u64)]) -> (H, SettlementView) {
     let mut params = params();
     params.max_commits = 8;
     let mut h = H::with(params);
     h.funded(&[ALICE, BOB]);
     h.open_at_round(0);
-    // Round 0: 3 at 0.21. Round 1: 5 at 0.25. Round 2: 4 at 0.20 (mixed: midpoint).
-    for (round, size, long_price, short_price) in [(0, 3, 210_000, 210_000), (1, 5, 250_000, 250_000), (2, 4, 220_000, 180_000)] {
+    for (round, &(size, long_price, short_price)) in rounds.iter().enumerate() {
+        let round = round as u64;
         h.at(round_start(round));
         let a = h.commit(ALICE, Side::Long, size, long_price, 5 * DOLLAR);
         let b = h.commit(BOB, Side::Short, size, short_price, 5 * DOLLAR);
@@ -1233,20 +1234,38 @@ fn a_void_series_unwinds_at_the_average_of_several_rounds() {
         h.at(round_end(round));
         h.ok(STRANGER, |w| w.clear(0, round));
     }
-    let series = h.series(0);
-    // 3 * 0.21 + 5 * 0.25 + 4 * 0.20 = 2.68 over 12 units: 0.223333.
-    assert_eq!((series.traded_units, series.traded_value), (12, U128(3 * 210_000 + 5 * 250_000 + 4 * 200_000)));
-    let json = serde_json::to_value(&series).unwrap();
-    assert_eq!((json["traded_units"].as_u64(), json["traded_value"].as_str()), (Some(12), Some("2680000")));
-    h.ok(ALICE, |w| w.mint(0, 2));
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_023_333, 223_333, 176_667, true));
-    let alice = h.balance(ALICE);
+    (h, s)
+}
+
+#[test]
+fn a_void_series_pays_half_the_band_after_trades_at_several_prices() {
+    // 3 at 0.21, 5 at 0.25, 4 at 0.20: recorded, but no rule reads them.
+    let (mut h, s) = void_after_trades(&[(3, 210_000, 210_000), (5, 250_000, 250_000), (4, 220_000, 180_000)]);
+    let series = h.series(0);
+    assert_eq!((series.traded_units, series.traded_value), (12, U128(3 * 210_000 + 5 * 250_000 + 4 * 200_000)));
+    let json = serde_json::to_value(&series).unwrap();
+    assert_eq!((json["traded_units"].as_u64(), json["traded_value"].as_str()), (Some(12), Some("2680000")));
+    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_000_000, 200_000, 200_000, true));
+    let (alice, bob) = (h.balance(ALICE), h.balance(BOB));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
-    // 14 LONG (12 bought, 2 minted) and 2 SHORT.
-    assert_eq!(h.balance(ALICE) - alice, 14 * 223_333 + 2 * 176_667);
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(BOB))));
+    assert_eq!((h.balance(ALICE) - alice, h.balance(BOB) - bob), (12 * 200_000, 12 * 200_000));
+}
+
+#[test]
+fn a_void_series_pays_half_the_band_after_wash_trades_at_an_extreme_price() {
+    // 10 units at 0.399, one tick below the band: the payout does not move.
+    let (mut h, s) = void_after_trades(&[(10, 399_000, 399_000)]);
+    assert_eq!(h.series(0).traded_value, U128(10 * 399_000));
+    assert_eq!((s.long_payout, s.short_payout), (200_000, 200_000));
+    let (alice, bob) = (h.balance(ALICE), h.balance(BOB));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(BOB))));
+    // Together the two sides get the band per set, as they paid it: a wash gains nothing.
+    assert_eq!(h.balance(ALICE) - alice + h.balance(BOB) - bob, 10 * u128::from(BAND));
 }
 
 #[test]
