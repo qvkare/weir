@@ -12,7 +12,7 @@ Workers. A test checks that no file but the CLI imports a Node built-in.
 
 | File | What it is |
 |---|---|
-| `src/tx.ts` | Base58, base64, `KeyPair` from a NEAR secret key `ed25519:<base58>` (64-byte or 32-byte form), the borsh encoding of a transaction of function-call actions, and `signTransaction` (ed25519 over `sha256(borsh(tx))`). |
+| `src/tx.ts` | Base58, base64, `KeyPair` from a NEAR secret key `ed25519:<base58>` (64-byte or 32-byte form), the borsh encoding of a transaction of function-call actions, and `signTransaction` (ed25519 over `sha256(borsh(tx))`). `AnyTransaction` may also carry the account-setup actions (create account, deploy contract, transfer, add a full-access or function-call key), which the integration test uses to set up the sandbox; nothing in `src/` sends them. |
 | `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL` (polling `tx` if the node times out). Fails over between URLs on network errors, per-call timeouts, HTTP 429/5xx and node `INTERNAL_ERROR`/`TIMEOUT_ERROR`; any other JSON-RPC error is an answer and is thrown at once. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and rereads the nonce once on `InvalidNonce`. |
 | `src/weir.ts` | `WeirPort`, typed by `@weir/engine`'s wire types (`ViewMethods`, `ChangeMethods`), never redefined here. `ChainWeir` (over `near.ts`) and `ModelWeir` (over an engine `Market` through `callView`/`callChange`, settable clock, plus a synchronous `sync` face). A failed chain call throws `CallFailed`, whose message is the contract's bare panic text, the same text `ModelWeir` throws. `paramsFromWire` turns `get_params` JSON into engine `Params`. `AGENT_KEY_METHODS` is what an agent's function-call key may call (SPEC section 15): `commit, reveal, clear, mint, merge, settle, redeem`. |
 | `src/token.ts` | `Token`: `storage_deposit`, `ft_balance_of`, `storage_balance_of`, `ft_transfer_call` into Weir (the optional beneficiary goes in `msg`, SPEC section 5) and the test token's open `mint(account_id, amount)`. |
@@ -87,6 +87,9 @@ WEIR_LIVE=1 pnpm --filter @weir/chain test   # adds one read-only call to NEAR t
 - `weir.test.ts`: every state change sends the spec's argument names (SPEC sections 5 to 14)
   with the gas and deposit above, every view sends the spec's argument names, the
   model/chain transcript test, `CallFailed`, `ModelWeir` copies and shared clock.
+- `tx_actions.test.ts`: 200 random transactions mixing the setup actions with function calls
+  (random keys, code, deposits, allowances, method lists) encoded and signed byte-identically
+  to `@near-js`; out-of-range values refused.
 - `token.test.ts`, `intents.test.ts` (against real 1Click responses saved in
   `test/fixtures/` on 2026-11-11), `portable.test.ts`, `live.test.ts`.
 
@@ -129,3 +132,7 @@ these JSON shapes (for example `Option` fields left out, u128 as strings, `side`
 `ft_transfer_call` round trip through a real token, function-call-key permissions, and the
 RPC behaviour under real `send_tx` timeouts and nonce races. The only live call made is the
 read-only `ft_metadata` above.
+
+Since 2026-11-12, `integration/` runs `ChainWeir` and `Token` against the real wasm on a local
+near-sandbox node, with the model alongside; what that proved, and what it cannot, is in
+`integration/RESULTS.md`.

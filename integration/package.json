@@ -1,0 +1,16 @@
+{
+  "name": "@weir/integration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "End-to-end test of Weir on a local near-sandbox node: the real wasm, the TypeScript chain client, the agents and the keeper, against the engine model.",
+  "type": "module",
+  "scripts": {
+    "e2e": "node --disable-warning=ExperimentalWarning src/e2e.ts",
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "^5.9.3"
+  }
+}

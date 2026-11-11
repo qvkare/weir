@@ -96,6 +96,19 @@ export interface FunctionCall {
   deposit: bigint;
 }
 
+/** An access key's permission (borsh enum `AccessKeyPermission`). */
+export type KeyPermission = "FullAccess" | { receiverId: string; methodNames: string[]; allowance: bigint | null };
+
+/** The account-setup actions, for deployments and tests: create an account, fund it, give it
+ * a key, deploy code. A plain `FunctionCall` (no `type`) is still the common case. */
+export type SetupAction =
+  | { type: "CreateAccount" }
+  | { type: "DeployContract"; code: Uint8Array }
+  | { type: "Transfer"; deposit: bigint }
+  | { type: "AddKey"; publicKey: Uint8Array; permission: KeyPermission };
+
+export type Action = FunctionCall | SetupAction;
+
 /** A transaction (V0) whose actions are all function calls; ed25519 keys only. */
 export interface Transaction {
   signerId: string;
@@ -106,8 +119,15 @@ export interface Transaction {
   actions: FunctionCall[];
 }
 
+/** A transaction that may also carry setup actions. */
+export interface AnyTransaction extends Omit<Transaction, "actions"> {
+  actions: Action[];
+}
+
 const ED25519 = 0;
 const FUNCTION_CALL = 2;
+/** Borsh enum indices of `Action`. */
+const ACTION_INDEX = { CreateAccount: 0, DeployContract: 1, Transfer: 3, AddKey: 5 } as const;
 
 class Writer {
   readonly #bytes: number[] = [];
@@ -146,25 +166,44 @@ class Writer {
   }
 }
 
-function writeTransaction(w: Writer, tx: Transaction): Writer {
+function writeTransaction(w: Writer, tx: AnyTransaction): Writer {
   w.string(tx.signerId).u8(ED25519).fixed(tx.publicKey, 32, "public key");
   w.uint(tx.nonce, 8, "nonce").string(tx.receiverId).fixed(tx.blockHash, 32, "block hash");
   w.uint(BigInt(tx.actions.length), 4, "action count");
   for (const a of tx.actions) {
-    w.u8(FUNCTION_CALL).string(a.methodName).vec(a.args).uint(a.gas, 8, "gas").uint(a.deposit, 16, "deposit");
+    if (!("type" in a)) {
+      w.u8(FUNCTION_CALL).string(a.methodName).vec(a.args).uint(a.gas, 8, "gas").uint(a.deposit, 16, "deposit");
+      continue;
+    }
+    w.u8(ACTION_INDEX[a.type]);
+    if (a.type === "DeployContract") w.vec(a.code);
+    else if (a.type === "Transfer") w.uint(a.deposit, 16, "deposit");
+    else if (a.type === "AddKey") {
+      // PublicKey, then AccessKey { nonce: u64, permission }.
+      w.u8(ED25519).fixed(a.publicKey, 32, "public key").uint(0n, 8, "nonce");
+      if (a.permission === "FullAccess") w.u8(1);
+      else {
+        const p = a.permission;
+        w.u8(0);
+        if (p.allowance === null) w.u8(0);
+        else w.u8(1).uint(p.allowance, 16, "allowance");
+        w.string(p.receiverId).uint(BigInt(p.methodNames.length), 4, "method count");
+        for (const m of p.methodNames) w.string(m);
+      }
+    }
   }
   return w;
 }
 
-export const encodeTransaction = (tx: Transaction): Uint8Array => writeTransaction(new Writer(), tx).done();
+export const encodeTransaction = (tx: AnyTransaction): Uint8Array => writeTransaction(new Writer(), tx).done();
 
-export function encodeSignedTransaction(tx: Transaction, signature: Uint8Array): Uint8Array {
+export function encodeSignedTransaction(tx: AnyTransaction, signature: Uint8Array): Uint8Array {
   return writeTransaction(new Writer(), tx).u8(ED25519).fixed(signature, 64, "signature").done();
 }
 
 /** Signs `sha256(borsh(tx))`, as NEAR does. `hash` is the transaction hash (base58 of it is the tx id). */
 export async function signTransaction(
-  tx: Transaction,
+  tx: AnyTransaction,
   key: KeyPair,
 ): Promise<{ hash: Uint8Array; signature: Uint8Array; signed: Uint8Array }> {
   if (!equalBytes(tx.publicKey, key.publicKey)) throw new Error("transaction public key is not the signer's");
