@@ -1,0 +1,25 @@
+{
+  "name": "@weir/agents",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trading strategies, a deterministic market simulation and a stateless swarm runner for Weir.",
+  "type": "module",
+  "exports": {
+    ".": "./src/mod.ts",
+    "./sim": "./src/sim.ts",
+    "./swarm": "./src/swarm.ts"
+  },
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p .",
+    "sim": "node --disable-warning=ExperimentalWarning src/cli.ts sim"
+  },
+  "dependencies": {
+    "@weir/chain": "workspace:*",
+    "@weir/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "typescript": "^5.9.3"
+  }
+}
