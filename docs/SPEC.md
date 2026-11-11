@@ -1,6 +1,6 @@
 # Weir specification
 
-Version 0.4. This file is the source of truth. The NEAR contract (`contracts/weir`) and
+Version 0.5. This file is the source of truth. The NEAR contract (`contracts/weir`) and
 the TypeScript engine (`engine/`) are written from it independently and must agree
 on every number. Where code and this file differ, the code is wrong.
 
@@ -77,7 +77,8 @@ can never take a report after it may be pruned; `0 < max_spread_bps <= 10000`;
 `max_order_size * max_commits * rounds_per_series < 2^52`, where `rounds_per_series =
 (lead_secs - cutoff_secs) / round_secs`; `t0` and `period_secs` are multiples of
 `print_interval_secs`, so a delivery window is a whole number of print buckets;
-reporters and quorum are as above.
+reporters and quorum are as above, and the quorum is a majority:
+`quorum * 2 > reporters.len()`.
 
 ## 4. Time
 
@@ -276,7 +277,8 @@ stay in the contract and belong to nobody: there is no method that pays them out
 They are burned rather than shared so that nobody can profit from another account's
 forfeit, and so that taking a slot in a round always costs something.
 
-`V*` is added to the series' `open_sets`. The contract stores a result for the round
+`V*` is added to the series' `open_sets`, and the series' record of what its auctions
+traded gains `traded_units += V*` and `traded_value += V* * p*`. The contract stores a result for the round
 (section 12) and deletes the round's book.
 
 Every matched LONG unit and SHORT unit together paid `p* + (band - p*) = band`, so
@@ -355,8 +357,11 @@ affected.
 Why these rules: with every reporter present the print is the median, which fewer
 than half of them cannot move beyond what the others report. When a reporter is
 missing and an even number decide, they must agree with each other within
-`max_spread_bps`; a single reporter can then stop a print by disagreeing, and can
-move it by at most half that tolerance, but cannot steer it.
+`max_spread_bps`, so one of them can move a print by at most half that tolerance.
+What one of them still can do, while another is absent, is refuse to agree: that
+leaves a bucket without a print. Refusing only in the buckets it dislikes shifts the
+average of the rest, and refusing in enough of them pushes the series below
+`min_prints`. Section 10 limits what that is worth, and section 15 says what remains.
 
 ## 10. Settlement
 
@@ -370,15 +375,21 @@ move it by at most half that tolerance, but cannot steer it.
 It first decides every undecided bucket of the delivery window that has reports
 (their windows have all closed). Then, with the series' accumulator `(sum, count)`:
 
-- if `count >= min_prints`: `fixing = sum / count` (rounded down), `void = false`;
-- else if `now >= delivery_end + void_after_secs`: `fixing = sum / count` if
-  `count >= 1`, otherwise `fixing = floor + band / 2`; `void = true`;
+- if `count >= min_prints`: `fixing = sum / count` (rounded down), `void = false`, and
+  `long_payout = min(max(fixing - floor, 0), band)`;
+- else if `now >= delivery_end + void_after_secs`: the series is **void** and is
+  unwound at the average price its own auctions traded at:
+  `long_payout = traded_value / traded_units` (rounded down) if `traded_units > 0`,
+  otherwise `band / 2`; `fixing = floor + long_payout`; `void = true`;
 - else it panics with `not enough prints yet`.
 
-```
-long_payout  = min(max(fixing - floor, 0), band)
-short_payout = band - long_payout
-```
+In every case `short_payout = band - long_payout`.
+
+A void series pays each side, on average, what that side paid in the auctions, so a
+series the index failed to price is undone and not decided by a stale number. It
+also means that stopping the index from printing cannot be turned into a payout: the
+most it does is cancel the hedge. Sets that were minted and never traded are split
+evenly when nothing was traded at all.
 
 `redeem(series, account_id?)`. Anyone may call it for any account after settlement.
 It credits `long * long_payout + short * short_payout` to that account's free balance
@@ -399,8 +410,7 @@ These hold after every call and are checked by property tests.
    size. No LONG is filled at a price above its limit and no SHORT below its limit.
 4. **No better price.** No other tick price trades more volume than `p*`.
 5. **Bounded loss.** An account can never lose more than it locked or paid.
-6. **No gain from a forfeit.** No account's balance can rise because another
-   account's commit was not revealed.
+6. **Burned stays burned.** Forfeits and fees are never credited to any account.
 7. **Always clearable.** A round that is over can be cleared, and a series whose
    rounds are cleared can be settled once its time comes, whatever anyone did.
 
@@ -412,7 +422,7 @@ All views are free and take JSON.
 |---|---|
 | `get_params()` | The parameters of section 3 |
 | `get_status()` | `{ now, live: [{ series, delivery_start, delivery_end, auction_open, auction_close, round, phase, phase_ends_at }] }` for every series whose auction window contains `now`. `phase` is `Commit` or `Reveal`; `round` is null and `phase` is `Closed` when no round is in progress |
-| `get_series(series)` | `{ series, anchor, floor, band, opened_at, open_sets, pending_rounds, settlement }` or null. `settlement` is null or `{ fixing, long_payout, short_payout, prints, void, settled_at }` |
+| `get_series(series)` | `{ series, anchor, floor, band, opened_at, open_sets, traded_units, traded_value, pending_rounds, settlement }` or null. `settlement` is null or `{ fixing, long_payout, short_payout, prints, void, settled_at }` |
 | `get_account(account_id)` | `{ balance, guard, max_round_lock }` or null |
 | `get_position(series, account_id)` | `{ long, short }` |
 | `get_round(series, round)` | `{ next_seq, commits: [{ seq, owner, hash, lock, fee, state, order }] }` or null once cleared. `state` is `Committed`, `Revealed` or `Void`; `order` is `{ side, size, price }` once revealed |
@@ -433,6 +443,7 @@ Details:
 
 - `get_status`: `phase_ends_at` is null when `phase` is `Closed`. At most 32 series are
   listed.
+- `get_series`: `traded_units` is a number and `traded_value` a decimal string.
 - `get_series`: `pending_rounds` is the list of round numbers, ascending, that hold
   commits and have not been cleared. A series can be settled only when it is empty.
 - `get_result`: `long_size`, `short_size` and `orders` count the revealed orders that
@@ -491,30 +502,43 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
 
 ## 15. Trust
 
-- **Reporters.** The index is what the reporters say it is. When all of them report,
-  a print is the median of their reports, so fewer than half cannot move it past
-  what the others say. When some are missing, at least `quorum` must report and, if
-  an even number decide, the two middle reports must agree within `max_spread_bps`,
-  or there is no print. A reporter can therefore stop a print when another is absent,
-  which pushes a series towards the void rule of section 10, but cannot steer one.
-  Every report carries the hash of the raw data behind it, which is published so
-  anyone can recompute it. Reporters cannot take funds. A majority of reporters
-  acting together can set the fixing.
+- **Reporters.** The index is what the reporters say it is, and a majority of them
+  acting together can set the fixing. With every reporter present, a print is the
+  median of their reports and a minority cannot move it past what the others say.
+  With one of three absent, the two that remain must agree within `max_spread_bps`
+  for a bucket to print, so either of them can leave a bucket without a print. By
+  doing that selectively it can shift a fixing by the difference between the
+  average of all buckets and the average of those it lets through, as long as at
+  least `min_prints` remain; by doing it more often it makes the series void, which
+  unwinds it at its auction prices (section 10) and so cancels the hedge without
+  paying the reporter anything. Every report carries the hash of the raw data
+  behind it, which is published so anyone can recompute it. Reporters cannot take
+  funds. The remedy for all of this is more reporters run by independent parties,
+  which this deployment does not have.
 - **USDC.** The contract trusts the `usdc` token contract.
 - **No admin.** There is no owner, pause, fee switch or upgrade method. Once the
   contract account's keys are deleted, the code cannot change. `new` must be called
-  in the transaction that deploys the code.
+  in the transaction that deploys the code, and its parameters are whatever the
+  deployer chose: `new` refuses only what cannot work, not what is unwise (a
+  spread tolerance of 100%, or no fee and no forfeit at all). Read `get_params`
+  before trusting a deployment.
 - **Agents.** An account that holds only a function-call key limited to `commit`,
   `reveal`, `clear`, `mint`, `merge`, `settle` and `redeem` can trade with the
   dollars already deposited for it. It cannot withdraw, cannot move positions and
   cannot change its guard or its round lock limit, because those need 1 yoctoNEAR.
   The worst such a key can do in a round is forfeit `forfeit_bps` of
   `max_round_lock`, pay `commit_fee` per commit, and trade at prices within the
-  guard of the reference.
+  guard of the reference. Both limits are off until the account sets them: set them
+  before handing a key to an agent.
+- **A last look.** Reveals are public and happen one after another, so a bidder who
+  reveals late has seen the others and can still choose not to reveal. That choice
+  costs `forfeit_bps` of the lock and the fee, and it can change who else is filled.
 - **Blocking a round.** A round has `max_commits` slots. Someone can fill them, and a
   larger lock evicts a smaller one, so a determined bidder with capital can keep
-  others out of a round; each slot they take costs them `commit_fee`. This raises
-  the price of blocking; it does not make it impossible.
+  others out of a round; each slot they take costs them `commit_fee`. This puts a
+  price on blocking; it does not make it impossible.
+- **Storage.** Nobody is paid to prune or to send the contract NEAR. A deployment
+  needs someone, in practice whoever runs the reporters, to do both.
 
 ## 16. Error messages
 
