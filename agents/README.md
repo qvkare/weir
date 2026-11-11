@@ -42,14 +42,15 @@ paid: auction fills; received: payout at settlement; fees: commit fees and forfe
 ```
 
 With `--void` the reporters sit out series 0's delivery window, so it cannot reach
-`min_prints` and settles void (SPEC section 10): every position is unwound at the average
-price its auctions traded at. The closing lines then read:
+`min_prints` and settles void (SPEC section 10): the series is cancelled at the centre of the
+band, every LONG and every SHORT paid half the band whatever was traded, so wash trades
+cannot steer a void payout. The closing lines then read:
 
 ```
-20 of 20 rounds traded. Series 0 void, unwound at $0.421 per LONG (its average traded price). Series 1 fixed at $2.981, LONG paid $0.476.
+20 of 20 rounds traded. Series 0 void: cancelled at the centre of the band, $0.441 to every LONG and every SHORT. Series 1 fixed at $2.981, LONG paid $0.476.
 Burned: $32.20 in commit fees and $0.00 in forfeits ($32.20 in all; burned dollars belong to nobody).
 Money check: deposits $3090.00 = free $3057.80 + locked $0.00 + sets $0.00 + unredeemed $0.00 + burned $32.20.
-Series 0 is void: the reporters were silent through its delivery, so every position was unwound at $0.421 per LONG and $0.461 per SHORT.
+Series 0 is void: the reporters were silent through its delivery, so it was cancelled and every LONG and every SHORT paid $0.441, half the band.
 ```
 
 `LONG price` is the uniform clearing price `p*` (SPEC section 7); `forward` is `floor + p*`,
@@ -246,7 +247,7 @@ pnpm --filter @weir/agents typecheck   # tsc --noEmit
   24 of the first 24 rounds on every market (asserted: at least 20); price replay; the weekly
   preset; every market checked against every rule of SPEC section 3 (including a majority
   quorum) plus Weir's own choices; each chip's index starting at its level; a void series
-  unwound at its average traded price with the money check balanced.
+  paying half the band to every LONG and SHORT, with the money check balanced.
 - `portable.test.ts`.
 
 ## Not proven

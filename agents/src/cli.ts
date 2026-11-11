@@ -63,7 +63,7 @@ function sim(argv: string[]): void {
   const settled = s.market.events.flatMap((e) => (e.event === "settle" ? [e.data] : []));
   const t = s.market.getTotals();
   const deposits = s.agents.reduce((sum, a) => sum + BigInt(a.deposit), 0n);
-  console.log(`${traded} of ${rounds} rounds traded. ` + settled.map((x) => (x.void ? `Series ${x.series} void, unwound at ${per(x.longPayout)} per LONG (its average traded price).` : `Series ${x.series} fixed at ${per(x.fixing)}, LONG paid ${per(x.longPayout)}.`)).join(" "));
+  console.log(`${traded} of ${rounds} rounds traded. ` + settled.map((x) => (x.void ? `Series ${x.series} void: cancelled at the centre of the band, ${per(x.longPayout)} to every LONG and every SHORT.` : `Series ${x.series} fixed at ${per(x.fixing)}, LONG paid ${per(x.longPayout)}.`)).join(" "));
   const b = burned(s.market);
   console.log(`Burned: ${usd(b.fees)} in commit fees and ${usd(b.forfeits)} in forfeits (${usd(t.burned)} in all; burned dollars belong to nobody).`);
   console.log(`Money check: deposits ${usd(deposits)} = free ${usd(t.free)} + locked ${usd(t.locked)} + sets ${usd(t.setsBacking)} + unredeemed ${usd(t.unredeemed)} + burned ${usd(t.burned)}.`);
@@ -72,7 +72,7 @@ function sim(argv: string[]): void {
     console.log(`${r.id.padEnd(10)}  ${r.role.padEnd(6)} ${pad(r.long, 5)}  ${pad(r.short, 5)}  ${pad(usd(r.paid), 8)}  ${pad(usd(r.received), 8)}  ${pad(usd(r.fees + r.forfeited), 5)}  ${pad(usd(r.result, true), 7)}`);
   }
   for (const x of settled.filter((x) => x.void)) {
-    console.log(`Series ${x.series} is void: the reporters were silent through its delivery, so every position was unwound at ${per(x.longPayout)} per LONG and ${per(x.shortPayout)} per SHORT.`);
+    console.log(`Series ${x.series} is void: the reporters were silent through its delivery, so it was cancelled and every LONG and every SHORT paid ${per(x.longPayout)}, half the band.`);
   }
   console.log("paid: auction fills; received: payout at settlement; fees: commit fees and forfeits burned; result: balance now minus deposit.");
 }

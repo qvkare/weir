@@ -25,8 +25,7 @@ export interface SimConfig {
    * Without it the index is a seeded random walk with occasional jumps. */
   prices?: readonly number[];
   /** A series whose delivery window the reporters sit out, so it cannot reach `min_prints`
-   * and settles void (SPEC section 10): its positions are unwound at the average price its
-   * auctions traded at. */
+   * and settles void (SPEC section 10): every LONG and every SHORT is paid half the band. */
   silentSeries?: number;
 }
 
@@ -174,7 +173,7 @@ function describe(e: WeirEvent, band: (series: number) => { floor: number; band:
       return { text: `result of round ${e.data.round} of series ${e.data.series} pruned` };
     case "settle":
       if (e.data.void) {
-        return { text: `series ${e.data.series} void, unwound at ${usd(e.data.longPayout, 3)} per LONG (the average its auctions traded at), ${usd(e.data.shortPayout, 3)} per SHORT` };
+        return { text: `series ${e.data.series} void: cancelled at the centre of the band, ${usd(e.data.longPayout, 3)} to every LONG and every SHORT` };
       }
       return { text: `series ${e.data.series} settled at ${per(e.data.fixing)}: LONG pays ${usd(e.data.longPayout, 3)}, SHORT ${usd(e.data.shortPayout, 3)}` };
     case "redeem":

@@ -143,16 +143,17 @@ test("default agents trade in most rounds on every market, with the 10-cent fee"
   }
 });
 
-test("a void series: reporters silent through its delivery, unwound at its average traded price, money check balances", () => {
+test("a void series: reporters silent through its delivery, every LONG and SHORT paid half the band, money check balances", () => {
   const s = createSimulation({ ...DEFAULT, silentSeries: 0 });
   s.runRounds(14);
   s.settleAll();
   const series = s.market.getSeries(0)!;
   const settlement = series.settlement!;
   assert.equal(settlement.void, true);
-  assert.equal(settlement.longPayout, Number(series.tradedValue / BigInt(series.tradedUnits)));
+  assert.equal(settlement.longPayout, series.band / 2);
+  assert.equal(settlement.shortPayout, series.band / 2);
   assert.equal(settlement.fixing, series.floor + settlement.longPayout);
-  assert.ok(s.log.some((e) => e.kind === "settle" && e.text.includes("void, unwound at")));
+  assert.ok(s.log.some((e) => e.kind === "settle" && e.text.includes("void: cancelled at the centre of the band")));
   const t = s.market.getTotals();
   const deposits = s.agents.reduce((sum, a) => sum + BigInt(a.deposit), 0n);
   assert.equal(t.locked + t.setsBacking + t.unredeemed, 0n);
