@@ -1,0 +1,1302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heatsink Exchange Board</title>
+<meta name="description" content="Art-direction proposal for Heatsink: the exchange floor and the auction room.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+/* ---------- Tokens ---------- */
+:root{
+  --paper:#F3EFE4; --card:#FBF8F1; --panel:#E7E0CF; --rule:#C9C0AA; --rule-2:#DDD5C3;
+  --ink:#12110E; --ink-2:#4A463C; --ink-3:#7A735F;
+  --house:#C42A1C;            /* hammer vermilion: the call, stamps, primary action */
+  --long:#2340C4;             /* bid cobalt: buyers, LONG */
+  --short:#8A5200;            /* offer saffron (text strength) */
+  --short-fill:#E89B0C;       /* offer saffron (fills, bars) */
+  --long-fill:#2340C4;
+  --long-soft:#DCE1F6; --short-soft:#F6E5C2;
+  --manila:#DCCCA6; --manila-ink:#3B3220;
+  /* the board is a physical object: it is black in both themes */
+  --board:#0B0B0A; --flap:#1C1B18; --flap-ink:#EFEADC; --flap-dim:#6B675D;
+  --b-long:#8AA2FF; --b-short:#FFB43C; --b-house:#FF5B38;
+  --f-display:"Big Shoulders Display", "Arial Narrow", sans-serif;
+  --f-text:"Newsreader", Georgia, serif;
+  --f-mono:"JetBrains Mono", ui-monospace, Menlo, monospace;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px; --s8:64px; --s9:96px;
+  --gut:clamp(16px,4vw,56px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11100D; --card:#191814; --panel:#201E19; --rule:#3A362C; --rule-2:#2A2721;
+    --ink:#EFEADC; --ink-2:#B1AA98; --ink-3:#857E6C;
+    --house:#FF5B38; --long:#8EA6FF; --short:#F5B23F; --short-fill:#F5B23F; --long-fill:#7E97FF;
+    --long-soft:#1D2440; --short-soft:#3A2C12; --manila:#3A3324; --manila-ink:#EADDBB;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11100D; --card:#191814; --panel:#201E19; --rule:#3A362C; --rule-2:#2A2721;
+  --ink:#EFEADC; --ink-2:#B1AA98; --ink-3:#857E6C;
+  --house:#FF5B38; --long:#8EA6FF; --short:#F5B23F; --short-fill:#F5B23F; --long-fill:#7E97FF;
+  --long-soft:#1D2440; --short-soft:#3A2C12; --manila:#3A3324; --manila-ink:#EADDBB;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--f-text);font-size:18px;line-height:1.5;font-optical-sizing:auto;font-variant-numeric:tabular-nums lining-nums}
+a{color:inherit}
+.wrap{max-width:1280px;margin:0 auto;padding:0 var(--gut)}
+.mono{font-family:var(--f-mono)}
+.kick{font-family:var(--f-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.disp{font-family:var(--f-display);font-weight:900;letter-spacing:-.005em;line-height:.9}
+
+/* ---------- Masthead ---------- */
+.mast{border-bottom:3px double var(--ink);padding:var(--s4) 0 var(--s3)}
+.mast .row{display:flex;justify-content:space-between;align-items:center;gap:var(--s4);flex-wrap:wrap}
+.mast h1{margin:0;font-family:var(--f-display);font-weight:900;font-size:clamp(40px,7vw,92px);line-height:.85;letter-spacing:-.01em;text-transform:uppercase}
+.mast .meta{display:flex;gap:var(--s5);font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);border-top:1px solid var(--ink);margin-top:var(--s3);padding-top:var(--s2);flex-wrap:wrap}
+.theme{display:inline-flex;border:1px solid var(--ink);font-family:var(--f-mono);font-size:12px}
+.theme button{all:unset;cursor:pointer;padding:6px 10px;text-transform:uppercase;letter-spacing:.08em}
+.theme button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.theme button:focus-visible{outline:2px solid var(--house);outline-offset:2px}
+
+/* ---------- Section heads ---------- */
+section.sec{padding:var(--s8) 0 var(--s7);border-bottom:1px solid var(--rule)}
+.sh{display:grid;grid-template-columns:auto 1fr;gap:var(--s4);align-items:baseline;border-top:6px solid var(--ink);padding-top:var(--s3);margin-bottom:var(--s6)}
+.sh .no{font-family:var(--f-display);font-weight:900;font-size:56px;line-height:.8}
+.sh h2{margin:0;font-family:var(--f-display);font-weight:800;font-size:clamp(30px,4vw,48px);line-height:.95;text-transform:uppercase;letter-spacing:.01em}
+.sh p{grid-column:2;margin:var(--s2) 0 0;color:var(--ink-2);max-width:62ch}
+
+/* ---------- 1 Direction ---------- */
+.dir{display:grid;grid-template-columns:1.25fr 1fr;gap:var(--s7)}
+.dir .name{font-family:var(--f-display);font-weight:900;font-size:clamp(72px,13vw,184px);line-height:.8;text-transform:uppercase;letter-spacing:-.01em;margin:0}
+.dir .name span{color:var(--house)}
+.dir .rat{font-size:21px;line-height:1.45;columns:1}
+.dir .rat p{margin:0 0 var(--s4)}
+.dir .rat p:first-child::first-letter{font-family:var(--f-display);font-weight:900;float:left;font-size:88px;line-height:.78;padding:6px 8px 0 0;color:var(--house)}
+.feel{margin-top:var(--s5);border:2px solid var(--ink);padding:var(--s4) var(--s5);display:flex;gap:var(--s4);align-items:center}
+.feel b{font-family:var(--f-display);font-weight:800;font-size:30px;text-transform:uppercase;line-height:1}
+.refs{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--ink);margin-top:var(--s6)}
+.refs div{padding:var(--s3) var(--s3) 0 0;font-size:15px;color:var(--ink-2)}
+.refs div b{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);margin-bottom:4px}
+
+/* ---------- 2 Logos ---------- */
+.logo{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--s3);margin-bottom:var(--s8)}
+.logo h3{grid-column:1/-1;margin:0;display:flex;gap:var(--s4);align-items:baseline;border-bottom:1px solid var(--ink);padding-bottom:var(--s2)}
+.logo h3 .t{font-family:var(--f-display);font-weight:900;font-size:40px;text-transform:uppercase;line-height:1}
+.logo h3 .c{font-size:16px;color:var(--ink-2);font-weight:400}
+.plate{position:relative;border:1px solid var(--rule);background:var(--card);display:grid;place-items:center;min-height:200px;padding:var(--s5)}
+.plate .lab{position:absolute;left:10px;top:8px;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.plate.dark{background:var(--board);border-color:var(--board)}
+.plate.dark .lab{color:#8A8478}
+.plate.light{background:#F3EFE4;border-color:#C9C0AA}
+.plate.light .lab{color:#7A735F}
+.plate.mono{background:var(--panel)}
+.p-mark{grid-column:span 3}
+.p-lock{grid-column:span 6}
+.p-one{grid-column:span 3}
+.p-l{grid-column:span 4}.p-d{grid-column:span 4}.p-icon{grid-column:span 4}
+.p-board{grid-column:1/-1;min-height:150px}
+.p-sizes{grid-column:1/-1;min-height:0;display:flex;align-items:flex-end;justify-content:flex-start;gap:var(--s6);padding:var(--s6) var(--s5) var(--s4)}
+.p-sizes figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11px;color:var(--ink-3)}
+.constr{grid-column:1/-1;font-size:16px;color:var(--ink-2);margin:var(--s2) 0 0;max-width:90ch}
+.constr b{color:var(--ink);font-weight:600}
+.pick{display:inline-block;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;border:2px solid var(--house);color:var(--house);padding:2px 8px;transform:rotate(-3deg);font-weight:700}
+
+/* ---------- 3 Hero ---------- */
+.hero{position:relative;background:var(--board);color:var(--flap-ink);height:780px;overflow:hidden;isolation:isolate}
+body.solo{background:var(--board)}
+body.solo .hero{height:100vh;height:100svh;min-height:600px}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+.hero .scrim{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,rgba(11,11,10,.95) 0%,rgba(11,11,10,.88) 40%,rgba(11,11,10,.4) 56%,rgba(11,11,10,0) 66%),
+             linear-gradient(0deg,rgba(11,11,10,.85) 0%,rgba(11,11,10,0) 22%)}
+.hero nav{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:22px var(--gut)}
+.hero nav .links{display:flex;gap:28px;font-family:var(--f-mono);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:#B9B3A4}
+.hero nav .links a{text-decoration:none}
+.hero nav .links a:hover{color:#fff}
+.hero .copy{position:relative;z-index:2;padding:0 var(--gut);margin-top:clamp(40px,9vh,110px);max-width:760px}
+.hero h2.statement{margin:0;font-family:var(--f-display);font-weight:900;font-size:clamp(60px,9.4vw,138px);line-height:.84;letter-spacing:-.012em;color:#F4EFE2}
+.hero h2.statement em{font-style:normal;color:var(--b-house)}
+.hero .lede{font-family:var(--f-text);font-size:20px;line-height:1.5;color:#C9C3B3;max-width:31em;margin:28px 0 0}
+.cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
+.tk{--n:7px;position:relative;display:inline-flex;align-items:center;gap:10px;font-family:var(--f-mono);font-weight:700;font-size:13.5px;letter-spacing:.1em;text-transform:uppercase;text-decoration:none;padding:15px 22px 15px 20px;
+  -webkit-mask:radial-gradient(circle var(--n) at 0 50%,#0000 98%,#000) left/51% 100% no-repeat,radial-gradient(circle var(--n) at 100% 50%,#0000 98%,#000) right/51% 100% no-repeat;
+          mask:radial-gradient(circle var(--n) at 0 50%,#0000 98%,#000) left/51% 100% no-repeat,radial-gradient(circle var(--n) at 100% 50%,#0000 98%,#000) right/51% 100% no-repeat}
+.tk.pri{background:var(--b-house);color:#140806}
+.tk.pri:hover{background:#FF7253}
+.tk.sec{background:#24221E;color:#EFEADC}
+.tk.sec:hover{background:#2F2C27}
+.tk:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.tk .stub{border-left:1.5px dashed currentColor;opacity:.55;height:18px;margin:0 2px}
+.hero .foot{position:absolute;z-index:2;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:0 var(--gut) 22px;font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9C9687}
+.idx{display:flex;align-items:center;gap:14px}
+.idx .fig{display:flex;gap:3px}
+.idx .fig i{font-style:normal;display:inline-grid;place-items:center;width:26px;height:38px;background:#1C1B18;border-radius:3px;font-family:var(--f-display);font-weight:800;font-size:28px;color:#F4EFE2;position:relative}
+.idx .fig i::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:#0B0B0A}
+.idx .lbl{line-height:1.35}
+.idx .lbl b{color:#EFEADC;font-weight:500}
+.smp{color:var(--b-short);border:1px solid currentColor;padding:1px 6px;margin-left:4px;letter-spacing:.12em}
+.hero .note{text-align:right;max-width:34ch;line-height:1.4}
+.hero .sh-{display:none}
+
+.under{display:grid;grid-template-columns:420px 1fr;gap:var(--s7);margin-top:var(--s7);align-items:start}
+.phone{width:395px;border:10px solid #1A1916;border-radius:44px;background:#000;overflow:hidden;box-shadow:0 0 0 1px var(--rule)}
+.phone iframe{display:block;width:375px;height:760px;border:0}
+.under .notes h4{font-family:var(--f-display);font-weight:800;font-size:28px;text-transform:uppercase;margin:0 0 var(--s3)}
+.under .notes p{margin:0 0 var(--s4);color:var(--ink-2)}
+.under .notes ol{padding-left:1.2em;color:var(--ink-2);margin:0 0 var(--s4)}
+.under .notes li{margin-bottom:6px}
+
+/* ---------- Mechanism film ---------- */
+.film{margin-top:var(--s8)}
+.film-head{display:flex;justify-content:space-between;align-items:end;gap:var(--s4);border-bottom:1px solid var(--ink);padding-bottom:var(--s2);margin-bottom:var(--s4);flex-wrap:wrap}
+.film-head h3{margin:0;font-family:var(--f-display);font-weight:900;font-size:clamp(34px,4.6vw,56px);text-transform:uppercase;line-height:.9}
+.btn{all:unset;cursor:pointer;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;border:1.5px solid var(--ink);padding:8px 14px;display:inline-flex;gap:8px;align-items:center}
+.btn:hover{background:var(--ink);color:var(--paper)}
+.btn:focus-visible{outline:2px solid var(--house);outline-offset:2px}
+.stage-box{position:relative;width:100%;aspect-ratio:1000/500;outline:none;background:var(--card);border:1px solid var(--rule);overflow:hidden}
+.stage{position:absolute;left:0;top:0;width:1000px;height:500px;transform-origin:0 0}
+.colhead{position:absolute;top:26px;font-family:var(--f-mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);transition:opacity .4s}
+.lot{position:absolute;width:172px;height:66px;perspective:700px;transition:left .75s cubic-bezier(.65,0,.25,1),top .75s cubic-bezier(.65,0,.25,1),opacity .4s,transform .45s cubic-bezier(.2,.9,.3,1.3)}
+.lot.pre{opacity:0;transform:translateY(-36px) rotate(-4deg)}
+.lot .in{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .52s cubic-bezier(.5,0,.3,1)}
+.lot.open .in{transform:rotateX(-180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:3px;padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between}
+.face.back{background:var(--manila);color:var(--manila-ink);background-image:linear-gradient(162deg,transparent 49.4%,rgba(0,0,0,.14) 50%,transparent 50.6%),linear-gradient(18deg,transparent 49.4%,rgba(0,0,0,.14) 50%,transparent 50.6%)}
+.face.back .r{display:flex;justify-content:space-between;align-items:center;font-family:var(--f-mono);font-size:11px;letter-spacing:.08em}
+.face.back .seal{font-family:var(--f-mono);font-weight:700;font-size:10px;letter-spacing:.16em;color:var(--house);border:1.5px solid var(--house);padding:0 4px;transform:rotate(-4deg)}
+.face.back .lk{font-family:var(--f-display);font-weight:800;font-size:22px;line-height:1}
+.face.front{transform:rotateX(180deg);background:var(--card);border:1.5px solid var(--ink);padding-left:16px}
+.face.front::before{content:"";position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--side)}
+.lot.L{--side:var(--long-fill)} .lot.S{--side:var(--short-fill)}
+.face.front .r{display:flex;justify-content:space-between;align-items:baseline}
+.face.front .sd{font-family:var(--f-mono);font-weight:700;font-size:11px;letter-spacing:.1em;color:var(--sidetext)}
+.lot.L{--sidetext:var(--long)} .lot.S{--sidetext:var(--short)}
+.face.front .sq{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-2);white-space:nowrap}
+.face.front .px{font-family:var(--f-display);font-weight:800;font-size:25px;line-height:1}
+.face.front .px small{font-family:var(--f-mono);font-weight:400;font-size:10.5px;color:var(--ink-3);margin-right:5px;letter-spacing:.04em}
+.face.front .sz{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-2)}
+.lot .mk{position:absolute;top:21px;white-space:nowrap;font-family:var(--f-mono);font-weight:700;font-size:10.5px;letter-spacing:.12em;color:var(--house);border:2px solid var(--house);background:var(--card);padding:1px 5px;transform:rotate(6deg) scale(1.8);opacity:0;transition:opacity .18s,transform .26s cubic-bezier(.3,1.6,.5,1)}
+.lot.filled .mk{opacity:1;transform:rotate(6deg) scale(1)}
+.lot.L .mk{left:184px}.lot.S .mk{right:184px}
+.lot.nofill{opacity:.32}
+.callbox{position:absolute;left:300px;top:70px;width:400px;text-align:center;transition:opacity .4s}
+.callbox .k{font-family:var(--f-mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.digits{display:flex;justify-content:center;gap:5px;margin:14px 0 10px}
+.digits i{font-style:normal;width:62px;height:96px;display:grid;place-items:center;background:var(--board);color:#F4EFE2;border-radius:5px;font-family:var(--f-display);font-weight:900;font-size:84px;line-height:1;position:relative}
+.digits i.dot{width:26px}
+.digits i::after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;background:var(--card);opacity:.9}
+.digits i.flick{animation:flick .09s linear}
+@keyframes flick{0%{transform:scaleY(1)}50%{transform:scaleY(.82)}100%{transform:scaleY(1)}}
+.callbox .unit{font-family:var(--f-mono);font-size:13px;color:var(--ink-2)}
+.callbox .matched{margin-top:10px;font-family:var(--f-display);font-weight:800;font-size:26px;text-transform:uppercase;opacity:0;transition:opacity .4s}
+.callbox .matched.on{opacity:1}
+.stamp{position:absolute;left:372px;top:332px;width:256px;text-align:center;font-family:var(--f-display);font-weight:900;font-size:50px;letter-spacing:.06em;text-transform:uppercase;color:var(--house);border:5px solid var(--house);padding:4px 0 0;line-height:1;transform:rotate(-7deg) scale(2.6);opacity:0;transition:opacity .12s,transform .28s cubic-bezier(.3,1.5,.5,1)}
+.stamp small{display:block;font-family:var(--f-mono);font-size:11px;letter-spacing:.2em;font-weight:700;border-top:2px solid var(--house);padding:4px 0}
+.stamp.on{opacity:.93;transform:rotate(-7deg) scale(1)}
+.legend-line{position:absolute;left:290px;top:440px;width:420px;font-size:15px;line-height:1.4;color:var(--ink-2);text-align:center;opacity:0;transition:opacity .5s}
+.legend-line.on{opacity:1}
+.stage-box:focus-visible{box-shadow:0 0 0 2px var(--house)}
+.figl{position:absolute;left:14px;bottom:10px;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.figl.fig-r{left:auto;right:14px}
+.ctl{display:grid;grid-template-columns:52px repeat(5,1fr) 52px 112px;border:1px solid var(--rule);border-top:0;background:var(--card)}
+.ctl button{all:unset;cursor:pointer;box-sizing:border-box;position:relative;padding:14px 14px 13px;font-family:var(--f-mono);font-size:12px;letter-spacing:.06em;color:var(--ink-3);border-right:1px solid var(--rule-2);text-align:left;transition:color .25s,background .25s}
+.ctl button:last-child{border-right:0}
+.ctl button:hover{color:var(--ink);background:var(--panel)}
+.ctl button:focus-visible{outline:2px solid var(--house);outline-offset:-2px}
+.ctl .nv{text-align:center;font-size:16px;color:var(--ink)}
+.ctl .pl{text-align:center;color:var(--paper);background:var(--ink);font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.ctl .pl:hover{background:var(--house);color:#fff}
+.ctl .sb b{font-weight:700;margin-right:8px}
+.ctl .sb::before{content:"";position:absolute;left:0;top:-1px;height:3px;width:0;background:var(--house);transition:width .35s}
+.ctl .sb.on{color:var(--ink)}
+.ctl .sb.on::before,.ctl .sb.done::before{width:100%}
+.ctl .sb.done{color:var(--ink-2)}
+.hint{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);margin:8px 0 0;letter-spacing:.04em}
+.hint kbd{font-family:inherit;border:1px solid var(--rule);padding:0 5px;border-radius:2px;color:var(--ink-2)}
+
+.specimen{display:grid;grid-template-columns:1.35fr 1fr;gap:0;margin-top:var(--s8);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.spec-obj{position:relative;margin:0;min-height:420px;display:grid;place-items:center;border-right:1px solid var(--rule);perspective:1100px;overflow:hidden;
+  background-image:radial-gradient(var(--rule-2) .8px,transparent .9px);background-size:14px 14px}
+.spec-obj .lab{position:absolute;left:0;top:12px;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.spec-obj .lab.r{left:auto;right:16px}
+.env{width:min(440px,84%);transform-style:preserve-3d;animation:turn 9s ease-in-out infinite;filter:drop-shadow(0 18px 18px rgba(30,20,0,.18))}
+@keyframes turn{0%,100%{transform:rotateY(-14deg) rotateX(6deg) rotateZ(-2deg)}50%{transform:rotateY(12deg) rotateX(3deg) rotateZ(1deg)}}
+.spec-sheet{padding:var(--s5) 0 var(--s5) var(--s5);font-family:var(--f-mono);font-size:12px;line-height:1.5}
+.spec-sheet h4{margin:0 0 var(--s4);font-family:var(--f-display);font-weight:900;font-size:34px;line-height:.9;text-transform:uppercase}
+.spec-sheet dl{display:grid;grid-template-columns:128px 1fr;margin:0;border-top:1px solid var(--rule)}
+.spec-sheet dt,.spec-sheet dd{margin:0;padding:7px 0;border-bottom:1px solid var(--rule-2)}
+.spec-sheet dt{color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;padding-top:9px}
+.spec-sheet dd{color:var(--ink)}
+.spec-sheet .wit{margin-top:var(--s4);font-family:var(--f-text);font-style:italic;font-size:17px;color:var(--ink-2)}
+
+.room{display:grid;grid-template-columns:1fr 1fr;gap:var(--s5);margin-top:var(--s8)}
+.room-h{grid-column:1/-1;border-bottom:1px solid var(--ink);padding-bottom:var(--s2)}
+.room-h h3{margin:0;font-family:var(--f-display);font-weight:900;font-size:clamp(34px,4.6vw,56px);text-transform:uppercase;line-height:.9}
+.side-card{display:grid;grid-template-columns:110px 1fr;gap:var(--s5);align-items:start;padding:var(--s4) 0}
+.side-card .who{font-family:var(--f-mono);font-weight:700;font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.side-card.L .who{color:var(--long)} .side-card.S .who{color:var(--short)}
+.side-card p{margin:0 0 10px}
+.side-card p b{font-weight:600}
+.side-card .sm{font-size:15px;color:var(--ink-2)}
+.roster{font-family:var(--f-mono);font-size:12px;color:var(--ink-2);border-top:1px solid var(--rule-2);padding-top:8px}
+.smp2{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-left:6px}
+.paddle{transform-origin:50% 95%;animation:raise 6s ease-in-out infinite}
+.side-card.S .paddle{animation-delay:-3s}
+@keyframes raise{0%,70%,100%{transform:rotate(-4deg) translateY(0)}78%{transform:rotate(3deg) translateY(-10px)}86%{transform:rotate(-1deg) translateY(-4px)}}
+.hwspec{margin-top:var(--s7)}
+.hwspec .spec-obj{min-height:460px}
+.hw{width:min(470px,88%)}
+.hwtabs{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;border:1px solid var(--ink);background:var(--card)}
+.hwtabs button{all:unset;cursor:pointer;font-family:var(--f-mono);font-size:12px;letter-spacing:.1em;padding:6px 14px}
+.hwtabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.hwtabs button:focus-visible{outline:2px solid var(--house);outline-offset:2px}
+.p-mat{grid-column:1/-1;min-height:0;display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:0;place-items:stretch}
+.p-mat figure{margin:0;padding:34px 18px 14px;display:flex;flex-direction:column;align-items:center;gap:10px;border-right:1px solid var(--rule)}
+.p-mat figure:last-child{border-right:0}
+.p-mat figure > div{width:132px;height:132px;display:grid;place-items:center}
+.p-mat figcaption{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.p-mat .m-led{background:#0B0B0A}
+.p-mat .m-led figcaption{color:#8A8478}
+.p-mat .m-eng{background:#EDE6D2}
+.p-mat .m-eng figcaption{color:#6F6852}
+.p-mat .m-stp{background:#F6F1E6}
+.p-mat .m-stp figcaption{color:#7A735F}
+.p-mat .m-lp{background:#E9E3D6}
+.p-mat .m-lp figcaption{color:#7A735F}
+.film-cap{font-size:15px;color:var(--ink-2);margin-top:var(--s3);max-width:90ch}
+
+/* ---------- 4 System ---------- */
+.figs{display:grid;grid-template-columns:repeat(3,1fr);border-top:6px solid var(--ink);border-bottom:1px solid var(--ink)}
+.figs > div{padding:var(--s4) var(--s5) var(--s5) 0;border-right:1px solid var(--rule)}
+.figs > div + div{padding-left:var(--s5)}
+.figs > div:last-child{border-right:0}
+.figs .v{font-family:var(--f-display);font-weight:900;font-size:clamp(56px,7vw,96px);line-height:.85;margin:6px 0 8px;letter-spacing:-.01em}
+.figs .v small{font-size:.32em;font-weight:700;letter-spacing:.02em;margin-left:4px;color:var(--ink-2)}
+.figs .v.call{color:var(--house)}
+.figs p{margin:0;font-size:15px;color:var(--ink-2)}
+.sys{display:grid;grid-template-columns:1.25fr 1fr;gap:var(--s7);margin-top:var(--s7)}
+.tblhead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.tblhead h3{margin:0;font-family:var(--f-display);font-weight:800;font-size:26px;text-transform:uppercase}
+.tablewrap{overflow-x:auto}
+.sys > div,.under > div,.dir > div{min-width:0}
+table.book{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:13px;min-width:600px}
+.book th{font-weight:500;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:8px 8px 6px;border-bottom:1px solid var(--ink)}
+.book td{padding:7px 8px;border-bottom:1px solid var(--rule-2);white-space:nowrap}
+.book td.n,.book th.n{text-align:right}
+.book tr:nth-child(5n) td{border-bottom-color:var(--rule)}
+.book tbody tr:hover td{background:var(--panel)}
+.side{font-weight:700;letter-spacing:.06em}
+.side.L{color:var(--long)} .side.S{color:var(--short)} .side.U{color:var(--ink-3);font-weight:400}
+.st{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.12em;padding:1px 6px;border:1.5px solid currentColor}
+.st.f{color:var(--house)} .st.p{color:var(--house);border-style:dashed} .st.n{color:var(--ink-3)} .st.x{color:var(--ink);background:var(--panel);border-color:var(--rule)}
+.agent{font-size:10px;letter-spacing:.08em;color:var(--ink-2);border:1px solid var(--rule);padding:0 4px;margin-left:6px}
+.chart svg{width:100%;height:auto;display:block}
+.tnote{font-size:13.5px;color:var(--ink-3);margin-top:8px;font-family:var(--f-mono)}
+
+/* ---------- 5 Tokens ---------- */
+.tok{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}
+.sw{border:1px solid var(--rule);background:var(--card)}
+.sw .chip{height:76px;display:flex}
+.sw .chip span{flex:1}
+.sw .d{padding:8px 10px 10px;font-family:var(--f-mono);font-size:11.5px;line-height:1.55;color:var(--ink-2)}
+.sw .d b{display:block;font-family:var(--f-display);font-weight:800;font-size:19px;color:var(--ink);text-transform:uppercase;letter-spacing:.01em;margin-bottom:2px}
+.sw .d em{font-style:normal;color:var(--ink)}
+.types{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:var(--s5);margin-top:var(--s7)}
+.types > div{border-top:2px solid var(--ink);padding-top:var(--s3)}
+.types .spec{font-family:var(--f-mono);font-size:12px;color:var(--ink-2);margin-top:var(--s3);line-height:1.6}
+.scale{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s7);margin-top:var(--s7)}
+.scale table{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:12.5px}
+.scale td,.scale th{border-bottom:1px solid var(--rule-2);padding:6px 6px;text-align:left}
+.scale th{font-weight:500;color:var(--ink-3);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--ink)}
+.bar{display:inline-block;height:10px;background:var(--ink);vertical-align:middle}
+.foot-page{padding:var(--s6) 0 var(--s8);font-family:var(--f-mono);font-size:12px;color:var(--ink-3);letter-spacing:.06em}
+
+/* ---------- Responsive ---------- */
+@media (max-width:980px){
+  .dir,.sys,.under{grid-template-columns:1fr}
+  .p-mark,.p-one{grid-column:span 6}.p-lock{grid-column:1/-1}
+  .p-l,.p-d,.p-icon{grid-column:span 6}
+  .tok{grid-template-columns:repeat(2,1fr)}
+  .types,.scale{grid-template-columns:1fr}
+  .refs{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:760px){
+  .hero nav .links{display:none}
+  .hero .scrim{background:linear-gradient(0deg,rgba(11,11,10,.97) 0%,rgba(11,11,10,.9) 52%,rgba(11,11,10,.25) 78%,rgba(11,11,10,.55) 100%)}
+  .hero .copy{position:absolute;left:0;right:0;bottom:104px;margin:0}
+  .hero .lg{display:none}.hero .sh-{display:inline}
+  .cta{gap:10px;flex-wrap:nowrap}
+  .tk{padding:13px 14px;font-size:11.5px;letter-spacing:.08em;gap:8px}
+  .hero h2.statement{font-size:clamp(50px,14vw,84px)}
+  .hero .lede{font-size:17px;margin-top:18px}
+  .cta{margin-top:22px}
+  .hero .foot{flex-direction:column;align-items:flex-start;gap:6px;padding-bottom:16px;font-size:11px}
+  .hero .note{text-align:left}
+  .idx .fig i{width:20px;height:30px;font-size:22px}
+  .phone{width:100%;max-width:395px}
+  .phone iframe{width:100%}
+  .figs{grid-template-columns:1fr}
+  .figs > div{border-right:0;border-bottom:1px solid var(--rule);padding-left:0 !important}
+  .p-mark,.p-one,.p-l,.p-d,.p-icon{grid-column:1/-1}
+  .p-sizes{gap:var(--s4);overflow-x:auto}
+  .tok{grid-template-columns:1fr}
+  .ctl{grid-template-columns:44px repeat(5,1fr) 44px 64px}
+  .ctl .sb{font-size:0;padding:14px 4px;text-align:center}
+  .ctl .sb b{font-size:12px;margin:0}
+  .specimen{grid-template-columns:1fr}
+  .room{grid-template-columns:1fr}
+  .side-card{grid-template-columns:76px 1fr;gap:var(--s4)}
+  .spec-obj{border-right:0;border-bottom:1px solid var(--rule);min-height:300px}
+  .spec-sheet{padding-left:0}
+  .spec-sheet dl{grid-template-columns:104px 1fr}
+  .p-mat{grid-template-columns:repeat(2,1fr)}
+  .p-mat figure:nth-child(2){border-right:0}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .env{animation:none;transform:rotateY(-8deg) rotateX(4deg)}
+  .paddle{animation:none}
+  *,*::before,*::after{transition-duration:0s !important;animation-duration:0s !important}
+}
+</style>
+</head>
+<body>
+<header class="mast" id="top">
+  <div class="wrap">
+    <div class="row">
+      <h1>The Exchange</h1>
+      <div class="theme" role="group" aria-label="Colour theme">
+        <button type="button" data-t="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-t="light" aria-pressed="false">Light</button>
+        <button type="button" data-t="dark" aria-pressed="false">Dark</button>
+      </div>
+    </div>
+    <div class="meta"><span>Heatsink, art-direction proposal</span><span>Direction: Exchange</span><span>12 November 2026</span><span>All figures on this sheet are samples</span></div>
+  </div>
+</header>
+
+<main>
+<!-- 1 DIRECTION -->
+<section class="sec" id="direction">
+  <div class="wrap">
+    <div class="sh"><span class="no">1</span><h2>Direction</h2></div>
+    <div class="dir">
+      <div>
+        <p class="name">Ex&shy;change<span>.</span></p>
+        <div class="feel"><span class="kick">The feeling</span><b>The hammer falls, and the price is fair.</b></div>
+      </div>
+      <div class="rat">
+        <p>This is a market for a new commodity, the hour of an accelerator, and a room with two kinds of people in it: AI teams and their agents who need GPU time, and the people who own the GPUs. Markets have a century of physical culture we can borrow: the departure board, the sealed envelope, the paddle, the catalogue plate and the moment one price is called.</p>
+        <p>We set the brand in the language of that floor: a black board that flips, newsprint for the record, heavy condensed type for the call, and exactly three loud colours with fixed jobs, cobalt for buyers, saffron for sellers and vermilion for the price that belongs to neither.</p>
+        <p>It should read as an institution that has always existed and opened this week: grave enough to trust with next week's compute bill, alive enough that you want to watch the board.</p>
+        <p><b>Heatsink</b> is the part of a GPU everyone recognises, and its job is to take the heat out. The product does that to a compute bill: it fixes next week's price for a GPU-hour, so the spikes never reach you. Working line: <i>Takes the spikes out of the GPU bill.</i> We keep heat literal and mechanical (fins, metal, the ticket), never flames, thermometers or red-to-blue.</p>
+      </div>
+    </div>
+    <div class="refs">
+      <div><b>The board</b>Split-flap departure and price boards: the hero, the index, every big figure.</div>
+      <div><b>The specimen</b>The chip drawn like a catalogue plate, with a tiny spec sheet; sealed lots as manila envelopes.</div>
+      <div><b>The stamp</b>Vermilion, used only for the call: CLEARED, FILLED, the price.</div>
+      <div><b>The market page</b>Newspaper tables and charts: hairlines, mono figures, units on every number.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 LOGOS -->
+<section class="sec" id="logos">
+  <div class="wrap">
+    <div class="sh"><span class="no">2</span><h2>Two marks</h2><p>Both are drawn, not typed: every glyph below is SVG geometry on a 64-unit grid, apart from the set wordmark in B. Neither uses the rejected level-line W. A is the board's character; B carries the name's own object, the fins.</p></div>
+
+    <div class="logo" id="logoA">
+      <h3><span class="t">A. The Flap</span><span class="c">One split flap with an H. Eight of them spell the name across a board; the single flap is the mark, the favicon and the app icon.</span></h3>
+      <div class="plate p-mark"><span class="lab">Mark</span><div data-svg="A-mark" style="width:136px"></div></div>
+      <div class="plate p-lock"><span class="lab">Mark + wordmark</span><div data-svg="A-lock" style="width:100%;max-width:440px"></div></div>
+      <div class="plate p-one mono"><span class="lab">One colour</span><div data-svg="A-one" style="width:112px"></div></div>
+      <div class="plate p-l light"><span class="lab">Light ground</span><div data-svg="A-light" style="width:100%;max-width:300px"></div></div>
+      <div class="plate p-d dark"><span class="lab">Dark ground</span><div data-svg="A-dark" style="width:100%;max-width:300px"></div></div>
+      <div class="plate p-icon"><span class="lab">App icon</span><div data-svg="A-icon" style="width:128px"></div></div>
+      <div class="plate p-board dark"><span class="lab">Signage: the full board</span><div data-svg="A-board" style="width:100%;max-width:760px"></div></div>
+      <div class="plate p-sizes" data-sizes="A"><span class="lab">16, 24, 48, 160 px</span></div>
+      <div class="plate p-mat"><span class="lab">In material: the mark is simple enough to be made of anything</span>
+        <figure class="m-led"><div id="matLed"></div><figcaption>Price-board LEDs</figcaption></figure>
+        <figure class="m-eng"><div id="matEng"></div><figcaption>Share-certificate engraving</figcaption></figure>
+        <figure class="m-stp"><div id="matStp"></div><figcaption>Rubber stamp</figcaption></figure>
+        <figure class="m-lp"><div id="matLp"></div><figcaption>Blind letterpress</figcaption></figure>
+      </div>
+      <p class="constr"><b>Construction.</b> A 56-unit tile with 6-unit corners and two 3-unit hinge pins on the half-height line. Letters are cut out of the tile on an 11 to 53 cap band, and a 1.8-unit seam at exactly half height cuts the letter but not the tile, as on a real flap (an early version cut the tile too and a W read as the won sign). Verticals 7.5, horizontals 6, thinner as in a real face. Every crossbar (H, E, A) sits wholly above the seam, so the flap never cuts a bar in half; that rule gives the face its high-waisted, departure-board look. The compact lockup sets the word in Big Shoulders Display 900 beside one flap; the eight-flap board is for signage and the hero.</p>
+    </div>
+
+    <div class="logo" id="logoB">
+      <h3><span class="t">B. The Fin Ticket</span><span class="c">A punched lot ticket whose body is a heatsink: the fins are cut into the ticket itself, and their tops are dead level, the spikes taken out.</span><span class="pick">Recommended</span></h3>
+      <div class="plate p-mark"><span class="lab">Mark</span><div data-svg="B-mark" style="width:150px"></div></div>
+      <div class="plate p-lock"><span class="lab">Mark + wordmark</span><div data-svg="B-lock" style="width:100%;max-width:440px"></div></div>
+      <div class="plate p-one mono"><span class="lab">One colour</span><div data-svg="B-one" style="width:120px"></div></div>
+      <div class="plate p-l light"><span class="lab">Light ground</span><div data-svg="B-light" style="width:100%;max-width:300px"></div></div>
+      <div class="plate p-d dark"><span class="lab">Dark ground</span><div data-svg="B-dark" style="width:100%;max-width:300px"></div></div>
+      <div class="plate p-icon"><span class="lab">App icon</span><div data-svg="B-icon" style="width:128px"></div></div>
+      <div class="plate p-sizes" data-sizes="B"><span class="lab">16, 24, 48, 160 px</span></div>
+      <p class="constr"><b>Construction.</b> A 60 by 34 ticket with 3.5-unit corners; two 4.5-unit bites mark the tear line a third of the way in, perforated by seven 0.9-unit holes. The stub carries one punch hole (the fill). The body is cut by five 2.8-unit slots, 21 units deep with round roots, leaving six 3.6-unit fins on a 13-unit base plate: a heatsink in section, open at the top so the silhouette itself is finned. The fins stand to one level line, the ticket's top edge. No squares, so the earlier sprocket-hole reading is gone. Wordmark: Newsreader 600 at display optical size, tracked -1%, with a mono line set to the ticket's height.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 HERO -->
+<section class="sec" id="hero-sec" style="padding-bottom:var(--s8)">
+  <div class="wrap">
+    <div class="sh"><span class="no">3</span><h2>The first screen</h2><p>A statement and an atmosphere. A wall of split flaps shuffles, then locks row by row onto one called price, a different round each time; the mechanics live below the fold.</p></div>
+  </div>
+  <div class="hero" id="hero">
+    <canvas id="wall" aria-hidden="true"></canvas>
+    <div class="scrim"></div>
+    <nav>
+      <a href="#top" aria-label="Heatsink home" data-svg="B-nav" style="display:block;width:190px"></a>
+      <div class="links"><a href="#film">Auction</a><a href="#system">Index</a><a href="#film">How it clears</a><a href="#tokens">Docs</a></div>
+    </nav>
+    <div class="copy">
+      <h2 class="statement">Next week's compute, <em>called</em> today.</h2>
+      <p class="lede"><span class="lg">AI teams and their agents who need GPU time meet the people who own the GPUs in one sealed auction for next week's H100 hour. One price is called for everyone filled, and every position is paid in full when it opens, so nothing is ever liquidated.</span><span class="sh-">Teams and agents who need GPU time meet the people who own GPUs. One sealed auction, one price for everyone filled, nothing ever liquidated.</span></p>
+      <div class="cta">
+        <a class="tk pri" href="#film"><span class="lg">Bid in this week's round</span><span class="sh-">Bid this week</span> <span class="stub"></span> &rarr;</a>
+        <a class="tk sec" href="#film"><span class="lg">See a round called</span><span class="sh-">How it clears</span></a>
+      </div>
+    </div>
+    <div class="foot">
+      <div class="idx">
+        <div class="fig" aria-hidden="true"><i>$</i><i>2</i><i>.</i><i>7</i><i>6</i></div>
+        <div class="lbl"><b>H100 index</b> per GPU-hour<span class="smp">Sample</span><br><span class="lg">Median of posted prices, on NEAR</span><span class="sh-">Median of posted prices</span></div>
+      </div>
+      <div class="note"><span class="lg">Board shows illustrative lots and calls, not live data</span><span class="sh-">Board is illustrative, not live</span></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="under">
+      <div class="phone"><iframe src="board.html?hero" title="Hero at 375 pixels wide" loading="lazy"></iframe></div>
+      <div class="notes">
+        <h4>Why a wall, not a diagram</h4>
+        <p>The first screen has one job: make a judge feel this is a real market before reading a word. A board is the most recognisable image of a market there is, and it is generative here: every cycle deals a new round of lots, the ripples start from a random place, and the row order of the lock varies, so it never quite repeats.</p>
+        <p>Why not a wafer map or a rack wall? Considered and set aside: they say "hardware company", not "market", and a die map has no people in it. The board carries all three at once: the chip in its title row (H100 SXM, one GPU-hour, delivery week), the people as named bidders coloured by side, and the one called price down the middle. The hardware gets its own close-up below, drawn like a catalogue plate.</p>
+        <ol>
+          <li><b>Shuffle.</b> Flaps ripple outward from a random point, about 3 s.</li>
+          <li><b>Lock.</b> Rows land top to bottom, each flap tumbling through two to four characters first, about 2.5 s.</li>
+          <li><b>Hold.</b> Every row shows a different lot and one vermilion column of the same price: one price for everyone. Still for 4.5 s.</li>
+          <li><b>Release.</b> A wave from the price column clears the board and the next round deals.</li>
+        </ol>
+        <p>Canvas, no library, one cached glyph atlas, and only flipping cells are redrawn. It pauses off screen and in a hidden tab. Under reduced motion it draws the locked board once and stops. At 375 px the copy drops to the lower half over a scrim and the board compacts to side, size and price.</p>
+      </div>
+    </div>
+
+
+    <div class="room">
+      <div class="room-h"><div class="kick">Who is in the room</div><h3>Two kinds of people, one price</h3></div>
+      <div class="side-card L">
+        <div class="paddle" data-paddle="L"></div>
+        <div><div class="who">&#9650; Buyers hold LONG</div>
+          <p><b>AI teams, and the agents they run,</b> who need GPU time next week. If the week's average price rises, LONG pays them the difference, so their compute bill holds.</p>
+          <p class="sm">An agent bids with a key that can commit and reveal but can never withdraw.</p>
+          <div class="roster">lab-north &middot; agent-17 &middot; tinyllm &middot; studio-b <span class="smp2">sample bidders</span></div></div>
+      </div>
+      <div class="side-card S">
+        <div class="paddle" data-paddle="S"></div>
+        <div><div class="who">&#9660; Sellers hold SHORT</div>
+          <p><b>People who own GPUs:</b> neoclouds, labs with spare racks, university clusters, data centres. If the week's price falls, SHORT pays them, so their revenue holds.</p>
+          <p class="sm">Both sides lock dollars up front. Nobody owes more than they locked.</p>
+          <div class="roster">gpu-farm-7 &middot; rack-and-co &middot; eu-dc-2 &middot; coldspare <span class="smp2">sample bidders</span></div></div>
+      </div>
+    </div>
+
+    <div class="specimen hwspec" id="hw">
+      <figure class="spec-obj"><span class="lab">&nbsp;Fig. 2</span><span class="lab r" id="hwlab">The commodity, drawn</span>
+        <div class="env hw" id="hwsvg"></div>
+        <div class="hwtabs" role="group" aria-label="Market">
+          <button type="button" data-k="h100" aria-pressed="true">H100</button>
+          <button type="button" data-k="h200" aria-pressed="false">H200</button>
+          <button type="button" data-k="mi300x" aria-pressed="false">MI300X</button>
+        </div>
+      </figure>
+      <div class="spec-sheet"><h4 id="hwtitle">Item: one GPU-hour</h4><dl id="hwdl"></dl><p class="wit" id="hwwit"></p></div>
+    </div>
+    <div class="film" id="film">
+      <div class="film-head">
+        <div><div class="kick">Below the fold</div><h3>How a round is called</h3></div>
+        <span class="kick">Operate it</span>
+      </div>
+      <div class="stage-box" id="stagebox" tabindex="0" aria-label="Figure 1: one round, step by step. Use the left and right arrow keys to step, space to play."><div class="stage" id="stage" role="img" aria-label="Ten sealed lots arrive showing only their locks, open to show side, size and limit, sort into buyers high to low and sellers low to high, and the board calls one clearing price of 2.74 dollars per GPU-hour; filled lots are stamped."></div></div>
+      <div class="ctl" id="ctl" role="group" aria-label="Steps of the round">
+        <button type="button" class="nv" data-a="prev" aria-label="Previous step">&larr;</button>
+        <button type="button" class="sb" data-s="0"><b>01</b>Sealed</button>
+        <button type="button" class="sb" data-s="1"><b>02</b>Revealed</button>
+        <button type="button" class="sb" data-s="2"><b>03</b>Sorted</button>
+        <button type="button" class="sb" data-s="3"><b>04</b>Called</button>
+        <button type="button" class="sb" data-s="4"><b>05</b>Filled</button>
+        <button type="button" class="nv" data-a="next" aria-label="Next step">&rarr;</button>
+        <button type="button" class="pl" data-a="play" id="playbtn">&#9654; Play</button>
+      </div>
+      <p class="hint">Click the board, then <kbd>&larr;</kbd> <kbd>&rarr;</kbd> to step and <kbd>space</kbd> to play.</p>
+      <p class="film-cap">Sample round, ten lots, computed live on this page with the clearing rule of SPEC section 7 (largest matched volume, then smallest imbalance). Prices are the implied forward price per GPU-hour (floor plus LONG price); band $2.07 to $3.45 around a $2.76 sample anchor.</p>
+    </div>
+    <div class="specimen" id="specimen">
+      <figure class="spec-obj"><span class="lab">&nbsp;Fig. 3</span><span class="lab r">One sealed lot</span>
+        <svg class="env" viewBox="0 0 480 300" role="img" aria-label="A sealed manila envelope labelled Lot 03 with a lock of 470 dollars, stamped Sealed in vermilion.">
+          <defs>
+            <pattern id="paperH" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 4 L4 0" stroke="#000" stroke-opacity=".035" stroke-width="1"/></pattern>
+            <filter id="ink" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.45" result="a"/><feComposite in="SourceGraphic" in2="a" operator="in" result="s"/><feTurbulence type="turbulence" baseFrequency=".05" numOctaves="2" seed="2" result="w"/><feDisplacementMap in="s" in2="w" scale="2.4"/></filter>
+          </defs>
+          <rect x="10" y="10" width="460" height="280" rx="4" fill="#DCCCA6"/>
+          <rect x="10" y="10" width="460" height="280" rx="4" fill="url(#paperH)"/>
+          <path d="M10 14 L240 168 L470 14" fill="none" stroke="#B9A77D" stroke-width="1.4"/>
+          <path d="M10 286 L196 150 M470 286 L284 150" fill="none" stroke="#C9B78E" stroke-width="1"/>
+          <path d="M14 12 H466 L240 162 Z" fill="#D3C29A"/>
+          <path d="M14 12 H466 L240 162 Z" fill="url(#paperH)"/>
+          <g font-family="JetBrains Mono, monospace" fill="#3B3220">
+            <text x="30" y="250" font-size="11" letter-spacing="1.6">LOCK</text>
+            <text x="30" y="272" font-size="9" letter-spacing="1" fill-opacity=".7">SHA256 9F2C 77A0 &#8230; 1B4E E41A</text>
+            <text x="450" y="272" font-size="9" letter-spacing="1" text-anchor="end" fill-opacity=".7">SERIES 47 &#183; ROUND 3 &#183; SAMPLE</text>
+          </g>
+          <text x="70" y="252" font-family="Big Shoulders Display, sans-serif" font-weight="900" font-size="40" fill="#22190A">$470</text>
+          <g transform="translate(30 30)">
+            <rect width="34" height="48" rx="4" fill="#12110E"/><rect x="38" width="34" height="48" rx="4" fill="#12110E"/>
+            <text x="17" y="39" text-anchor="middle" font-family="Big Shoulders Display, sans-serif" font-weight="800" font-size="42" fill="#F1ECDF">0</text>
+            <text x="55" y="39" text-anchor="middle" font-family="Big Shoulders Display, sans-serif" font-weight="800" font-size="42" fill="#F1ECDF">3</text>
+            <rect y="23.2" width="72" height="1.6" fill="#DCCCA6"/>
+            <text x="0" y="66" font-family="JetBrains Mono, monospace" font-size="9" letter-spacing="1.6" fill="#3B3220">LOT</text>
+          </g>
+          <g transform="translate(330 196) rotate(-8)" filter="url(#ink)" fill="none" stroke="#C42A1C">
+            <rect x="-86" y="-30" width="172" height="60" stroke-width="4"/>
+            <rect x="-80" y="-24" width="160" height="48" stroke-width="1.4"/>
+            <text x="0" y="12" text-anchor="middle" fill="#C42A1C" stroke="none" font-family="Big Shoulders Display, sans-serif" font-weight="900" font-size="36" letter-spacing="4">SEALED</text>
+          </g>
+        </svg>
+      </figure>
+      <div class="spec-sheet">
+        <h4>Item: one sealed lot</h4>
+        <dl>
+          <dt>Lot</dt><dd>03, round 3 (sample)</dd>
+          <dt>Shows</dt><dd>Its lock. Not side, size or price.</dd>
+          <dt>Lock</dt><dd>$470 USDC, the most it can cost</dd>
+          <dt>Seal</dt><dd>sha256 of weir:v1 | series | round | account | side | size | price | salt</dd>
+          <dt>Opens</dt><dd>In the reveal phase, by its owner</dd>
+          <dt>If forgotten</dt><dd>Lock returned, less a forfeit (5%, sample rate)</dd>
+          <dt>Agent keys</dt><dd>May commit and reveal; can never withdraw</dd>
+          <dt>Liquidation</dt><dd>None. Fully paid when it fills.</dd>
+        </dl>
+        <p class="wit">Nobody, including us, knows what is inside until its owner says.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- 4 SYSTEM -->
+<section class="sec" id="system">
+  <div class="wrap">
+    <div class="sh"><span class="no">4</span><h2>The system in use</h2><p>The same sample round as a product page: market-page density, hairlines, mono figures, the stamp only where the round speaks.</p></div>
+    <div class="figs" id="figs"></div>
+    <div class="sys">
+      <div>
+        <div class="tblhead"><h3>Sealed book, round 3</h3><span class="kick">Sample, illustrative</span></div>
+        <div class="tablewrap"><table class="book" id="book"></table></div>
+        <p class="tnote">Before reveal a commit shows only its lock. Seq 10 never revealed: 5% of its lock is forfeit to the bonus pool (sample forfeit rate).</p>
+      </div>
+      <div class="chart">
+        <div class="tblhead"><h3>Supply meets demand</h3><span class="kick">Sample</span></div>
+        <div id="chart"></div>
+        <p class="tnote">Steps: demand (cobalt, solid) and supply (saffron, dashed) by limit. Vermilion: the called price.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 TOKENS -->
+<section class="sec" id="tokens">
+  <div class="wrap">
+    <div class="sh"><span class="no">5</span><h2>Tokens</h2><p>Contrast ratios are computed on this page from the hex values, against the theme's paper (light) and paper (dark). The board colours are measured against the board.</p></div>
+    <div class="tok" id="tok"></div>
+    <div class="types">
+      <div>
+        <div class="kick">Display</div>
+        <div style="font-family:var(--f-display);font-weight:900;font-size:76px;line-height:.85;margin-top:10px">Big Shoulders<br><span style="color:var(--house)">$2.74</span></div>
+        <div class="spec">Big Shoulders Display 900 / 800 / 700. Headlines, the call, board flaps, key figures. Born of Chicago, the city of the trading pits; condensed so a price can be enormous and still fit. Tracking -0.01 em at 60 px and above.</div>
+      </div>
+      <div>
+        <div class="kick">Text</div>
+        <div style="font-family:var(--f-text);font-size:30px;line-height:1.15;margin-top:10px">The round calls one price for everyone filled.</div>
+        <div class="spec">Newsreader 400 / 600, italic 400, optical size 6 to 72. Body, ledes, the B wordmark. The voice of the financial page, a counterweight to the board.</div>
+      </div>
+      <div>
+        <div class="kick">Figures</div>
+        <div style="font-family:var(--f-mono);font-size:22px;line-height:1.35;margin-top:10px">SEQ 004 &#9650; LONG<br>300 GPU-h @ 2.71</div>
+        <div class="spec">JetBrains Mono 400 / 500 / 700. Tables, tickets, labels, accounts, hashes. Tabular by design; labels in caps at +0.12 em.</div>
+      </div>
+    </div>
+    <div class="scale">
+      <div>
+        <table>
+          <thead><tr><th>Type step</th><th>Size</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr><td>Statement</td><td>clamp(60, 9.4vw, 138) / .84</td><td>Hero claim</td></tr>
+            <tr><td>Figure</td><td>clamp(56, 7vw, 96) / .85</td><td>Key figures, the call</td></tr>
+            <tr><td>Head</td><td>48 / 32 / 26</td><td>Section, card, table</td></tr>
+            <tr><td>Lede</td><td>20 / 1.5</td><td>Hero paragraph</td></tr>
+            <tr><td>Body</td><td>18 / 1.5; 15 secondary</td><td>Prose</td></tr>
+            <tr><td>Data</td><td>13 / 11 caps</td><td>Tables, labels</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <table>
+          <thead><tr><th>Motion</th><th>Time</th><th>Curve</th></tr></thead>
+          <tbody>
+            <tr><td>Flap flip (one character)</td><td>150 ms</td><td>linear halves</td></tr>
+            <tr><td>Row lock stagger</td><td>70 ms row, 9 ms cell</td><td>top to bottom</td></tr>
+            <tr><td>Lot turn (reveal)</td><td>520 ms</td><td>cubic-bezier(.5,0,.3,1)</td></tr>
+            <tr><td>Lot sort</td><td>750 ms</td><td>cubic-bezier(.65,0,.25,1)</td></tr>
+            <tr><td>Stamp</td><td>280 ms</td><td>cubic-bezier(.3,1.5,.5,1)</td></tr>
+            <tr><td>Hold on the call</td><td>4.5 s</td><td>still</td></tr>
+          </tbody>
+        </table>
+        <p class="tnote">Space: 4, 8, 12, 16, 24, 32, 48, 64, 96 px. Gutter 16 px at 375, 4vw, 56 max. Radius: 3 px lots, 6/64 of a flap, none on rules.</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="foot-page"><div class="wrap">Heatsink, Exchange direction. Self-contained proposal page; fonts from Google Fonts. Every figure is a sample.</div></footer>
+
+<script>
+(function(){
+"use strict";
+const SOLO = new URLSearchParams(location.search).has('hero');
+if (SOLO){
+  document.body.classList.add('solo');
+  for (const el of document.querySelectorAll('.mast, main > section:not(#hero-sec), footer, #hero-sec > .wrap')) el.style.display='none';
+  const hs=document.getElementById('hero-sec'); hs.style.padding='0'; hs.style.border='0';
+}
+const RM = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+/* ---------- theme switch ---------- */
+const tbtn=[...document.querySelectorAll('.theme button')];
+function setTheme(t){
+  if(t==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',t);
+  tbtn.forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.t===t)));
+  try{localStorage.setItem('weir-ex-theme',t)}catch(e){}
+  if (window.__drawSys) window.__drawSys();
+}
+tbtn.forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.t)));
+try{const s=localStorage.getItem('weir-ex-theme'); if(s) setTheme(s);}catch(e){}
+
+/* =====================================================================
+   LOGOS
+   ===================================================================== */
+let uid=0;
+const BOARD='#0B0B0A', CREAM='#F1ECDF', VERM='#E0341F', INK='#12110E';
+// Mask-cut glyphs for logo A (64 grid; tile 4..60, cap band 11..53, seam 31..33)
+function glyphA(ch, cid){
+  const clip=`clip-path="url(#${cid})"`;
+  switch(ch){
+    case 'W': return `<g ${clip}><polyline points="8.5,-8 21,58 32,38.5 43,58 55.5,-8" fill="none" stroke="#000" stroke-width="7.5" stroke-linejoin="miter" stroke-miterlimit="12"/></g>`;
+    case 'E': return `<rect x="17.5" y="11" width="7.5" height="42"/><rect x="17.5" y="11" width="28" height="6"/><rect x="17.5" y="22.5" width="23" height="5.5"/><rect x="17.5" y="47" width="28" height="6"/>`;
+    case 'I': return `<rect x="28.25" y="11" width="7.5" height="42"/><rect x="21" y="11" width="22" height="6"/><rect x="21" y="47" width="22" height="6"/>`;
+    case 'H': return `<rect x="17" y="11" width="7.5" height="42"/><rect x="39.5" y="11" width="7.5" height="42"/><rect x="17" y="23.5" width="30" height="6"/>`;
+    case 'T': return `<rect x="15" y="11" width="34" height="6"/><rect x="28.25" y="11" width="7.5" height="42"/>`;
+    case 'A': return `<path d="M17 53 V18.5 L24.5 11 H39.5 L47 18.5 V53 H39.5 V30 H24.5 V53 Z M24.5 17 H39.5 V24 H24.5 Z" fill-rule="evenodd"/>`;
+    case 'S': return `<rect x="17" y="11" width="30" height="6"/><rect x="17" y="11" width="7.5" height="19"/><rect x="17" y="24" width="30" height="6"/><rect x="39.5" y="24" width="7.5" height="29"/><rect x="17" y="47" width="30" height="6"/>`;
+    case 'N': return `<rect x="17" y="11" width="7.5" height="42"/><rect x="39.5" y="11" width="7.5" height="42"/><polygon points="17,11 25,11 47,53 39,53"/>`;
+    case 'K': return `<rect x="17" y="11" width="7.5" height="42"/><polygon points="24.5,24 37.5,11 47,11 24.5,33.5"/><g ${clip}><polygon points="29,26.5 37,26.5 49,60 41,60"/></g>`;
+    case 'R': return `<rect x="17" y="11" width="7.5" height="42"/><path d="M17 11 H38.5 L46.5 18.5 V21 L39 28.5 H17 Z M24.5 17 H36 L39 19.8 L36.2 22.5 H24.5 Z" fill-rule="evenodd"/><g ${clip}><polygon points="31.5,28.5 39.5,28.5 50,60 42,60"/></g>`;
+  }
+  return '';
+}
+function tileA(ch, fg, x=0){
+  const m='m'+(++uid), c='c'+uid;
+  return `<defs><clipPath id="${c}"><rect x="0" y="11" width="64" height="42"/></clipPath>
+    <mask id="${m}" maskUnits="userSpaceOnUse" x="${x-2}" y="-2" width="68" height="68"><rect x="${x-2}" y="-2" width="68" height="68" fill="#fff"/><g transform="translate(${x} 0)"><g fill="#000">${glyphA(ch,c)}</g><rect x="4" y="31.1" width="56" height="1.8" fill="#fff"/></g></mask></defs>
+    <g mask="url(#${m})" fill="${fg}"><g transform="translate(${x} 0)">
+      <rect x="4" y="4" width="56" height="56" rx="6"/>
+      <rect x="1" y="29.5" width="3" height="5" rx="1"/><rect x="60" y="29.5" width="3" height="5" rx="1"/>
+    </g></g>`;
+}
+function svgA(kind, fg){
+  if(kind==='mark') return `<svg viewBox="0 0 64 64" width="100%" style="display:block">${tileA('H',fg)}</svg>`;
+  if(kind==='board'){ const s='HEATSINK'.split('').map((c,i)=>tileA(c,fg,i*66)).join(''); return `<svg viewBox="0 0 526 64" width="100%" style="display:block">${s}</svg>`; }
+  if(kind==='lock') return `<svg viewBox="0 0 236 64" width="100%" style="display:block">${tileA('H',fg)}<text x="74" y="47.5" font-family="Big Shoulders Display, sans-serif" font-weight="900" font-size="47" letter-spacing=".3" fill="${fg}">Heatsink</text></svg>`;
+  if(kind==='icon'){ return `<svg viewBox="0 0 64 64" width="100%" style="display:block"><rect width="64" height="64" rx="14" fill="${VERM}"/><g transform="translate(9.6 9.6) scale(.7)">${tileA('H',BOARD)}</g></svg>`; }
+}
+// Logo B: lot ticket
+function ticketB(fg){
+  const m='m'+(++uid);
+  let dots=''; for(let y=21;y<=45;y+=4) dots+=`<circle cx="20" cy="${y}" r=".9" fill="#000"/>`;
+  // heatsink in section: five slots cut down from the top edge, six fins on a base plate
+  const chip=[0,1,2,3,4].map(k=>{const x=(27.2+k*6.4).toFixed(1); return `<rect x="${x}" y="10" width="2.8" height="26" rx="1.4" fill="#000"/>`;}).join('');
+  return `<defs><mask id="${m}" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><rect width="64" height="64" fill="#fff"/><g fill="#000">
+   <circle cx="20" cy="15" r="4.5"/><circle cx="20" cy="49" r="4.5"/>${dots}<circle cx="11" cy="32" r="3.4"/>${chip}</g></mask></defs>
+   <rect x="2" y="15" width="60" height="34" rx="3.5" fill="${fg}" mask="url(#${m})"/>`;
+}
+function svgB(kind, fg, sub){
+  if(kind==='mark') return `<svg viewBox="0 12 64 40" width="100%" style="display:block">${ticketB(fg)}</svg>`;
+  if(kind==='lock') return `<svg viewBox="0 12 318 40" width="100%" style="display:block">${ticketB(fg)}
+     <text x="74" y="43" font-family="Newsreader, Georgia, serif" font-weight="600" font-size="36" letter-spacing="-.4" fill="${fg}" style="font-variation-settings:'opsz' 72">Heatsink</text>
+     <text x="236" y="25.5" font-family="JetBrains Mono, monospace" font-size="6.4" letter-spacing="1.1" fill="${sub||fg}">THE GPU-HOUR</text>
+     <text x="236" y="34" font-family="JetBrains Mono, monospace" font-size="6.4" letter-spacing="1.1" fill="${sub||fg}">AUCTION</text>
+     <text x="236" y="42.6" font-family="JetBrains Mono, monospace" font-size="6.4" letter-spacing="1.1" fill="${sub||fg}">EST. 2026</text>
+     <rect x="230" y="18" width=".8" height="27" fill="${sub||fg}"/></svg>`;
+  if(kind==='icon') return `<svg viewBox="0 0 64 64" width="100%" style="display:block"><rect width="64" height="64" rx="14" fill="${BOARD}"/><g transform="translate(4.8 4.8) scale(.85)">${ticketB(CREAM)}</g></svg>`;
+}
+const LOGO={
+  'A-mark':()=>svgA('mark','var(--ink)'), 'A-lock':()=>svgA('lock','var(--ink)'), 'A-one':()=>svgA('mark','currentColor'),
+  'A-light':()=>svgA('lock',INK), 'A-dark':()=>svgA('lock',CREAM), 'A-icon':()=>svgA('icon'), 'A-board':()=>svgA('board',CREAM), 'A-nav':()=>svgA('lock',CREAM),
+  'B-mark':()=>svgB('mark','var(--ink)'), 'B-lock':()=>svgB('lock','var(--ink)','var(--ink-2)'), 'B-one':()=>svgB('mark','currentColor'),
+  'B-light':()=>svgB('lock',INK,'#4A463C'), 'B-dark':()=>svgB('lock',CREAM,'#B1AA98'), 'B-icon':()=>svgB('icon'), 'B-nav':()=>svgB('lock',CREAM,'#B1AA98'),
+};
+document.querySelectorAll('[data-svg]').forEach(el=>{el.innerHTML=LOGO[el.dataset.svg]();});
+document.querySelectorAll('[data-sizes]').forEach(el=>{
+  const k=el.dataset.sizes;
+  [16,24,48,160].forEach(px=>{
+    const f=document.createElement('figure');
+    const box=document.createElement('div'); box.style.width=px+'px';
+    box.innerHTML = k==='A' ? svgA('mark','var(--ink)') : svgB('mark','var(--ink)');
+    f.appendChild(box); const cap=document.createElement('figcaption'); cap.textContent=px+' px'; f.appendChild(cap); el.appendChild(f);
+  });
+  const f=document.createElement('figure'); const box=document.createElement('div'); box.style.width='48px';
+  box.innerHTML = k==='A'?svgA('icon'):svgB('icon'); f.appendChild(box);
+  const cap=document.createElement('figcaption'); cap.textContent='icon 48'; f.appendChild(cap); el.appendChild(f);
+});
+
+/* =====================================================================
+   SAMPLE ROUND + CLEARING (SPEC 7)
+   ===================================================================== */
+const FLOOR=2.07, BAND=1.38, TICK=0.01;
+const C = v => Math.round(v*100);              // cents, exact integers
+const ORD=[ // seq, side, size GPU-h, limit (forward $/GPU-h), owner
+  [0,'L',400,2.95,'lab-north.near'],[1,'S',300,2.60,'gpu-farm-7.near'],[2,'L',250,2.82,'agent-17.lab-north.near',1],
+  [3,'S',600,2.74,'rack-and-co.near'],[4,'L',300,2.71,'tinyllm.near'],[5,'S',200,2.88,'eu-dc-2.near'],
+  [6,'L',150,2.79,'agent-04.evals.near',1],[7,'S',250,2.79,'gpu-farm-7.near'],[8,'L',200,2.66,'studio-b.near'],[9,'S',150,2.95,'coldspare.near']
+].map(([seq,side,size,lim,owner,agent])=>{
+  const p=C(lim)-C(FLOOR), need = side==='L' ? size*p : size*(C(BAND)-p);   // cents
+  const lock=Math.ceil(need*1.08/1000)*1000;                                  // rounded up to $10
+  return {seq,side,size,lim,owner,agent:!!agent,lock};
+});
+function clear(orders){
+  const c=[...new Set(orders.map(o=>C(o.lim)))].sort((a,b)=>a-b);
+  const rows=c.map(p=>{const D=orders.filter(o=>o.side==='L'&&C(o.lim)>=p).reduce((a,o)=>a+o.size,0);
+                       const S=orders.filter(o=>o.side==='S'&&C(o.lim)<=p).reduce((a,o)=>a+o.size,0);
+                       return {p,D,S,V:Math.min(D,S),g:Math.abs(D-S)};});
+  const V=Math.max(...rows.map(r=>r.V)); if(!V) return null;
+  let k=rows.filter(r=>r.V===V); const g=Math.min(...k.map(r=>r.g)); k=k.filter(r=>r.g===g);
+  const lo=k[0].p, hi=k[k.length-1].p;
+  let pc; if(k.every(r=>r.D>r.S)) pc=hi; else if(k.every(r=>r.D<r.S)) pc=lo; else pc=Math.floor((lo+hi)/2);
+  const fill={}; let rem=V;
+  orders.filter(o=>o.side==='L'&&C(o.lim)>=pc).sort((a,b)=>C(b.lim)-C(a.lim)||a.seq-b.seq).forEach(o=>{const f=Math.min(o.size,rem);fill[o.seq]=f;rem-=f;});
+  rem=V;
+  orders.filter(o=>o.side==='S'&&C(o.lim)<=pc).sort((a,b)=>C(a.lim)-C(b.lim)||a.seq-b.seq).forEach(o=>{const f=Math.min(o.size,rem);fill[o.seq]=f;rem-=f;});
+  return {p:pc/100,V,fill};
+}
+const RES=clear(ORD);
+const usd=(cents)=>'$'+(cents/100).toLocaleString('en-US',{maximumFractionDigits:0});
+const px2=v=>v.toFixed(2);
+
+/* =====================================================================
+   HERO: the flap wall (canvas, no library)
+   ===================================================================== */
+function FlapWall(canvas){
+  const ctx=canvas.getContext('2d',{alpha:false});
+  const CH=' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$.,/-:#^v';   // ^ = up triangle, v (lower) = down triangle
+  const PAL=[['dim','#5E5A51'],['ink','#E9E4D6'],['long','#8AA2FF'],['short','#FFB43C'],['house','#FF5B38'],['faint','#36342E']];
+  const PI={}; PAL.forEach((p,i)=>PI[p[0]]=i);
+  const NC=CH.length;
+  let W=0,H=0,dpr=1,cw=0,ch=0,cols=0,rows=0,N=0,atlas=null,off=0;
+  let cur,nxt,t0,hops,due,tgt,busy;
+  let running=false,visible=true,raf=0,phase='boot',phaseAt=0,waves=[],cycle=0,lastNow=0;
+  const FLIP=150;
+  const key=(c,col)=>PI[col]*NC+Math.max(0,CH.indexOf(c));
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+  const ri=n=>Math.floor(Math.random()*n);
+
+  function buildAtlas(){
+    atlas=document.createElement('canvas'); atlas.width=cw*NC; atlas.height=ch*PAL.length;
+    const a=atlas.getContext('2d'); const pad=Math.max(1,Math.round(cw*.07)), r=Math.max(2,Math.round(cw*.12));
+    const fs=Math.round(ch*.74);
+    a.textAlign='center'; a.textBaseline='middle';
+    PAL.forEach(([,col],pi)=>{ for(let i=0;i<NC;i++){
+      const x=i*cw, y=pi*ch, w=cw-pad*2, h=ch-pad*2, hh=Math.floor(ch/2);
+      a.fillStyle='#0B0B0A'; a.fillRect(x,y,cw,ch);
+      a.beginPath(); a.roundRect(x+pad,y+pad,w,h,r); a.fillStyle='#1E1D1A'; a.fill();
+      a.save(); a.beginPath(); a.rect(x,y+hh,cw,ch-hh); a.clip(); a.beginPath(); a.roundRect(x+pad,y+pad,w,h,r); a.fillStyle='#181714'; a.fill(); a.restore();
+      const c=CH[i]; a.fillStyle=col;
+      if(c==='^'||c==='v'){ const s=cw*.26, cx=x+cw/2, cy=y+ch/2; a.beginPath();
+        if(c==='^'){a.moveTo(cx-s,cy+s*.75);a.lineTo(cx+s,cy+s*.75);a.lineTo(cx,cy-s*.95);} else {a.moveTo(cx-s,cy-s*.75);a.lineTo(cx+s,cy-s*.75);a.lineTo(cx,cy+s*.95);} a.fill(); }
+      else if(c!==' '){ a.font=`800 ${fs}px "Big Shoulders Display", "Arial Narrow", sans-serif`; a.fillText(c,x+cw/2,y+ch/2+fs*.04); }
+      a.fillStyle='#0B0B0A'; a.fillRect(x,y+hh,cw,Math.max(1,Math.round(dpr*.9)));
+    }});
+  }
+  function resize(){
+    const r=canvas.getBoundingClientRect(); dpr=Math.min(2,window.devicePixelRatio||1);
+    W=Math.round(r.width*dpr); H=Math.round(r.height*dpr); if(!W||!H) return false;
+    canvas.width=W; canvas.height=H;
+    const narrow=r.width<760; const cssw=narrow?15:Math.max(18,Math.min(23,r.width/62));
+    cw=Math.round(cssw*dpr); ch=Math.round(cssw*1.42*dpr);
+    cols=Math.ceil(W/cw); rows=Math.ceil(H/ch); N=cols*rows; off=Math.round((W-cols*cw)/2);
+    cur=new Uint16Array(N); nxt=new Uint16Array(N); t0=new Float64Array(N).fill(-1); hops=new Uint8Array(N); due=new Float64Array(N).fill(-1); tgt=new Uint16Array(N); busy=[];
+    const blank=key(' ','dim'); cur.fill(blank); nxt.fill(blank);
+    buildAtlas();
+    ctx.fillStyle='#0B0B0A'; ctx.fillRect(0,0,W,H);
+    for(let i=0;i<N;i++) drawCell(i,1);
+    return true;
+  }
+  function drawCell(i,p){
+    const c=i%cols, r=(i/cols)|0, x=off+c*cw, y=r*ch, hh=Math.floor(ch/2);
+    const k0=cur[i], k1=nxt[i];
+    const ax=k=>(k%NC)*cw, ay=k=>((k/NC)|0)*ch;
+    if(p>=1||k0===k1){ ctx.drawImage(atlas,ax(k1),ay(k1),cw,ch,x,y,cw,ch); return; }
+    // static: new top, old bottom
+    ctx.drawImage(atlas,ax(k1),ay(k1),cw,hh,x,y,cw,hh);
+    ctx.drawImage(atlas,ax(k0),ay(k0)+hh,cw,ch-hh,x,y+hh,cw,ch-hh);
+    if(p<.5){ const s=1-p*2, h=Math.max(1,Math.round(hh*s));
+      ctx.drawImage(atlas,ax(k0),ay(k0),cw,hh,x,y+hh-h,cw,h);
+      ctx.fillStyle=`rgba(0,0,0,${(.45*p*2).toFixed(3)})`; ctx.fillRect(x,y+hh-h,cw,h);
+    } else { const s=p*2-1, h=Math.max(1,Math.round((ch-hh)*s));
+      ctx.drawImage(atlas,ax(k1),ay(k1)+hh,cw,ch-hh,x,y+hh,cw,h);
+      ctx.fillStyle=`rgba(255,250,235,${(.06*(1-s)).toFixed(3)})`; ctx.fillRect(x,y+hh,cw,h);
+    }
+  }
+  function startFlip(i,to,now){
+    if(t0[i]>=0){ cur[i]=nxt[i]; }
+    else cur[i]=nxt[i];
+    nxt[i]=to; if(cur[i]===to){ return; }
+    if(t0[i]<0) busy.push(i);
+    t0[i]=now;
+  }
+  const RAND_CH='0123456789$.ABCDEFGHKLMNPRSTUVWXYZ/-:^v';
+  function randKey(bright){
+    const c=RAND_CH[ri(RAND_CH.length)]; let col='dim';
+    if(bright){ const r=Math.random(); col = r<.18?'long':r<.36?'short':r<.42?'house':'ink'; }
+    else if(Math.random()<.35) col='faint';
+    return key(c,col);
+  }
+  const BUYERS=['LAB-NORTH','AGENT-17','TINYLLM','STUDIO-B','AGENT-04','EVALS-AI','AGENT-31','PROTEINAI','VOICE-LAB','AGENT-88','RL-GYM','SEARCHCO'];
+  const SELLERS=['GPU-FARM7','RACK-CO','EU-DC-2','COLDSPARE','NEOCLOUD9','UNI-HPC','MINER-X','DC-OSLO','SPAREGPUS','EDGE-RACK'];
+  // ----- content of one locked round -----
+  function layout(){
+    const narrow=cols<44;
+    const price=(2.71+ri(11)/100).toFixed(2);
+    const grid=[];                       // per row: array of [char,colour] of length cols
+    let lot=100+ri(800);
+    const pc = narrow ? cols-7 : cols-14;
+    for(let r=0;r<rows;r++){
+      const row=new Array(cols).fill(null).map(()=>[' ','dim']);
+      const put=(s,col,at)=>{for(let j=0;j<s.length;j++){const x=at+j; if(x>=0&&x<cols) row[x]=[s[j],col];}};
+      if(r<2||r===rows-1){ grid.push(row); continue; }
+      if(r===2){ // market title
+        if(narrow) put('H100 SXM / WK 47','ink',pc-17); else put('H100 SXM / ONE GPU-HOUR / DELIVERY WK 47','ink',pc-27);
+        grid.push(row); continue; }
+      if(r===3){ // header row
+        if(narrow){ put('BIDDER','dim',pc-15); put('GPU-H','dim',pc-6); put('CALL','dim',pc); }
+        else { put('LOT','dim',pc-23); put('BIDDER','dim',pc-18); put('GPU-H','dim',pc-6); put('CALL','dim',pc); put('STATE','dim',pc+6); }
+        grid.push(row); continue;
+      }
+      if(Math.random()<.12){ grid.push(row); continue; }   // breathing gaps
+      const L=Math.random()<.5, size=String(50*(1+ri(12))).padStart(3,' ');
+      const filled=Math.random(), st= filled<.62?'FILLED':filled<.75?'PART':'-----';
+      const sideCol=L?'long':'short';
+      const who = (L?BUYERS:SELLERS)[ri((L?BUYERS:SELLERS).length)];
+      if(narrow){
+        put(L?'^':'v',sideCol,pc-17); put(who.slice(0,9),sideCol,pc-15); put(size,'ink',pc-5);
+      } else {
+        put(String(lot+=1+ri(5)).padStart(4,'0'),'dim',pc-23);
+        put(L?'^':'v',sideCol,pc-18); put(who,sideCol,pc-16);
+        put(size,'ink',pc-5);
+        put(st,st==='-----'?'dim':'ink',pc+6);
+      }
+      put(price,'house',pc);
+      grid.push(row);
+    }
+    // sprinkle a few dim fragments far left so the dark side is not empty
+    return {grid,price};
+  }
+  let current=null;
+  function schedLock(now){
+    current=layout();
+    const order=Math.random()<.5?1:-1;                      // top-down or bottom-up
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      const i=r*cols+c, [chh,col]=current.grid[r][c];
+      const rr = order>0 ? r : rows-1-r;
+      tgt[i]=key(chh,col);
+      const blank = chh===' ';
+      const curBlank = (nxt[i]%NC)===0;
+      if(blank && curBlank){ due[i]=-1; continue; }
+      due[i]=now+rr*70+c*9+rnd(0,60);
+      hops[i]= blank ? 1 : 2+ri(3);
+    }
+  }
+  function wave(now,cx,cy,speed,bright,clearTo){
+    waves.push({cx,cy,at:now,speed,last:-1,bright,clearTo});
+  }
+  function tick(now){
+    if(!running) return;
+    raf=requestAnimationFrame(tick);
+    const el=now-phaseAt;
+    // phase machine
+    if(phase==='boot'){ phase='shuffle'; phaseAt=now; for(let i=0;i<N;i++){ if(Math.random()<.55){ cur[i]=nxt[i]=randKey(false); drawCell(i,1);} } wave(now,ri(cols),ri(rows),.035,false); }
+    else if(phase==='shuffle'){
+      if(Math.random()<.02 && waves.length<3) wave(now,ri(cols),ri(rows),rnd(.02,.04),Math.random()<.4);
+      const sprinkle=Math.max(1,(N*.004)|0); for(let s=0;s<sprinkle;s++){const i=ri(N); if(t0[i]<0) startFlip(i,randKey(Math.random()<.2),now);}
+      if(el>(cycle===0?1200:3000)){ phase='lock'; phaseAt=now; waves=[]; schedLock(now); }
+    }
+    else if(phase==='lock'){
+      if(el>rows*70+cols*9+900 && busy.length===0){ phase='hold'; phaseAt=now; }
+    }
+    else if(phase==='hold'){
+      if(el>4500){ phase='release'; phaseAt=now; const pc=current?0:0; wave(now,cols-12,ri(rows),.03,false,true); }
+    }
+    else if(phase==='release'){
+      if(el>900){ phase='shuffle'; phaseAt=now; cycle++; }
+    }
+    // waves
+    for(let w=waves.length-1;w>=0;w--){
+      const wv=waves[w], rad=(now-wv.at)*wv.speed, prev=wv.last;
+      if(rad>Math.hypot(cols,rows*1.4)+2){ waves.splice(w,1); continue; }
+      for(let r=0;r<rows;r++){ const dy=(r-wv.cy)*1.4;
+        for(let c=0;c<cols;c++){ const d=Math.hypot(c-wv.cx,dy);
+          if(d>prev && d<=rad){ const i=r*cols+c;
+            if(due[i]>=0) continue;
+            if(wv.clearTo){ if(Math.random()<.7) startFlip(i,randKey(false),now); else startFlip(i,key(' ','dim'),now); }
+            else if(Math.random()<.55) startFlip(i,randKey(wv.bright&&Math.random()<.3),now);
+          } } }
+      wv.last=rad;
+    }
+    // scheduled lock cascades
+    if(phase==='lock'){
+      for(let i=0;i<N;i++){ if(due[i]>=0 && now>=due[i] && t0[i]<0){
+        if(hops[i]>1){ hops[i]--; startFlip(i,randKey(Math.random()<.3),now); due[i]=now+FLIP; }
+        else { startFlip(i,tgt[i],now); due[i]=-1; }
+      } }
+    }
+    // advance flips
+    for(let b=busy.length-1;b>=0;b--){
+      const i=busy[b]; const p=(now-t0[i])/FLIP;
+      if(p>=1){ cur[i]=nxt[i]; t0[i]=-1; drawCell(i,1); busy.splice(b,1); }
+      else drawCell(i,p);
+    }
+  }
+  function stillFrame(){
+    // reduced motion: compose a locked round and draw it once
+    current=layout();
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ const i=r*cols+c,[chh,col]=current.grid[r][c]; cur[i]=nxt[i]=key(chh,col); drawCell(i,1); }
+  }
+  function play(){ if(running||RM.matches||!busy) return; running=true; lastNow=performance.now(); raf=requestAnimationFrame(tick); }
+  function pause(){ running=false; cancelAnimationFrame(raf); }
+  async function init(){
+    try{ await document.fonts.load('800 30px "Big Shoulders Display"'); }catch(e){}
+    if(!resize()) return;
+    if(RM.matches||new URLSearchParams(location.search).has('still')){ stillFrame(); return; }
+    phase='boot'; play();
+  }
+  let rt=0;
+  window.addEventListener('resize',()=>{clearTimeout(rt); rt=setTimeout(()=>{pause(); waves=[]; cycle=0; if(resize()){ if(RM.matches) stillFrame(); else {phase='boot'; if(visible&&!document.hidden) play();} }},180);});
+  new IntersectionObserver(es=>{ visible=es[0].isIntersecting; if(visible&&!document.hidden) play(); else pause(); },{threshold:0}).observe(canvas);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) pause(); else if(visible) play(); });
+  RM.addEventListener && RM.addEventListener('change',()=>{ pause(); if(RM.matches) stillFrame(); else play(); });
+  init();
+}
+FlapWall(document.getElementById('wall'));
+
+/* =====================================================================
+   FILM: how a round is called (DOM, below the fold)
+   ===================================================================== */
+const stage=document.getElementById('stage'), sbox=document.getElementById('stagebox');
+if(stage && !SOLO){
+  const fit=()=>{stage.style.transform=`scale(${sbox.clientWidth/1000})`;};
+  new ResizeObserver(fit).observe(sbox); fit();
+  const pstr=RES.p.toFixed(2);
+  stage.innerHTML=`
+    <div class="colhead" id="hd-buy" style="left:40px;opacity:0"><b style="color:var(--long)">&#9650; Buyers, LONG</b> &middot; high to low</div>
+    <div class="colhead" id="hd-sell" style="right:40px;opacity:0"><b style="color:var(--short)">&#9660; Sellers, SHORT</b> &middot; low to high</div>
+    <div class="colhead" id="hd-in" style="left:40px">Commits arrive sealed &middot; only the lock is visible</div>
+    <div class="callbox" id="callbox" style="opacity:0"><div class="k">Called price</div>
+      <div class="digits" id="digits"><i>$</i><i data-d>-</i><i class="dot">.</i><i data-d>-</i><i data-d>-</i></div>
+      <div class="unit">per GPU-hour, for every filled lot</div>
+      <div class="matched" id="matched">${RES.V.toLocaleString('en-US')} GPU-h matched</div></div>
+    <div class="stamp" id="stamp">Cleared<small>ROUND 3 &middot; SAMPLE</small></div>
+    <div class="legend-line" id="legend">Sold, to everyone filled, at $${pstr}: buyers at or above it, sellers at or below it. Paid in full now, so nothing can be liquidated.</div>
+    <div class="figl">Fig. 1 &middot; One round, ten lots</div><div class="figl fig-r">Sample &middot; SPEC &sect;7</div>`;
+  const lots=ORD.map(o=>{
+    const d=document.createElement('div'); d.className='lot pre '+o.side;
+    const fl=RES.fill[o.seq]||0;
+    d.innerHTML=`<div class="in">
+      <div class="face back"><div class="r"><span>LOT ${String(o.seq).padStart(2,'0')} &middot; H100</span><span class="seal">SEALED</span></div><div class="r"><span>LOCK</span><span class="lk">${usd(o.lock)}</span></div></div>
+      <div class="face front"><div class="r"><span class="sd">${o.side==='L'?'&#9650; BUY':'&#9660; SELL'}</span><span class="sq">${o.owner.split('.')[0].slice(0,12)}</span></div>
+        <div class="r"><span class="sz">${o.size} GPU-h</span><span class="px"><small>${o.side==='L'?'max':'min'}</small>$${px2(o.lim)}</span></div></div></div>
+      <div class="mk">${fl===o.size?'FILLED':fl>0?`PART ${fl}/${o.size}`:''}</div>`;
+    stage.appendChild(d); return {o,d,fl};
+  });
+  const posGrid=i=>({x:40+(i%5)*188, y:110+Math.floor(i/5)*92});
+  const buys=lots.filter(l=>l.o.side==='L').sort((a,b)=>b.o.lim-a.o.lim||a.o.seq-b.o.seq);
+  const sells=lots.filter(l=>l.o.side==='S').sort((a,b)=>a.o.lim-b.o.lim||a.o.seq-b.o.seq);
+  const place=(l,x,y)=>{l.d.style.left=x+'px'; l.d.style.top=y+'px';};
+  const $=id=>document.getElementById(id);
+  const sbs=[...document.querySelectorAll('#ctl .sb')];
+  const playBtn=$('playbtn');
+  let timers=[], ptimers=[], cur=-1;
+  const at=(ms,fn)=>timers.push(setTimeout(fn,ms));
+  function setDigits(str){ const ds=[...$('digits').querySelectorAll('[data-d]')]; str.replace('.','').split('').forEach((c,i)=>{ds[i].textContent=c;}); }
+  function rollDigits(final,dur){
+    const ds=[...$('digits').querySelectorAll('[data-d]')], fin=final.replace('.','').split('');
+    ds.forEach((d,i)=>{ let n=0; const total=5+i*3;
+      const go=()=>{ if(n>=total){d.textContent=fin[i]; d.classList.remove('flick'); void d.offsetWidth; d.classList.add('flick'); return;}
+        d.textContent=String((Math.random()*10)|0); d.classList.remove('flick'); void d.offsetWidth; d.classList.add('flick'); n++; timers.push(setTimeout(go,dur/total)); };
+      go(); });
+  }
+  const HD=['Commits arrive sealed · only the lock is visible','Reveal · side, size and limit, checked against the hash'];
+  // Render the cumulative state of step n. anim: animate the change from n-1.
+  function goTo(n, anim){
+    n=Math.max(0,Math.min(4,n)); timers.forEach(clearTimeout); timers=[];
+    const fwd = anim && n===cur+1; cur=n;
+    sbs.forEach((b,i)=>{b.classList.toggle('on',i===n); b.classList.toggle('done',i<n); b.setAttribute('aria-pressed',String(i===n));});
+    // arrival
+    if(n===0 && fwd){ lots.forEach((l,i)=>{ l.d.classList.add('pre'); at(150+i*140,()=>l.d.classList.remove('pre')); }); }
+    else lots.forEach(l=>l.d.classList.remove('pre'));
+    // reveal
+    lots.forEach((l,i)=>{ if(n>=1){ if(fwd&&n===1) at(i*120,()=>l.d.classList.add('open')); else l.d.classList.add('open'); } else l.d.classList.remove('open'); });
+    // sort
+    if(n>=2){ buys.forEach((l,i)=>{const f=()=>place(l,40,70+i*80); (fwd&&n===2)?at(i*45,f):f();});
+              sells.forEach((l,i)=>{const f=()=>place(l,788,70+i*80); (fwd&&n===2)?at(i*45,f):f();}); }
+    else lots.forEach((l,i)=>{const p=posGrid(i); place(l,p.x,p.y);});
+    $('hd-in').style.opacity = n<2 ? 1 : 0; if(n<2) $('hd-in').textContent=HD[n];
+    $('hd-buy').style.opacity = n>=2 ? 1 : 0; $('hd-sell').style.opacity = n>=2 ? 1 : 0;
+    // call
+    $('callbox').style.opacity = n>=3 ? 1 : 0;
+    if(n>=3){ if(fwd&&n===3){ setDigits('---'); at(150,()=>rollDigits(pstr,700)); at(950,()=>{$('stamp').classList.add('on'); $('matched').classList.add('on');}); }
+              else { setDigits(pstr); $('stamp').classList.add('on'); $('matched').classList.add('on'); } }
+    else { setDigits('---'); $('stamp').classList.remove('on'); $('matched').classList.remove('on'); }
+    // fill
+    const order=[...buys,...sells];
+    order.forEach((l,i)=>{ l.d.classList.remove('filled','nofill');
+      if(n>=4){ const f=()=>l.d.classList.add(l.fl>0?'filled':'nofill'); (fwd&&n===4)?at(i*110,f):f(); } });
+    if(n>=4){ (fwd)?at(1200,()=>$('legend').classList.add('on')):$('legend').classList.add('on'); } else $('legend').classList.remove('on');
+  }
+  function stopPlay(){ ptimers.forEach(clearTimeout); ptimers=[]; playBtn.innerHTML='&#9654; Play'; }
+  function play(){
+    stopPlay();
+    if(RM.matches){ goTo(4,false); return; }
+    playBtn.innerHTML='&#8635; Again';
+    cur=-1; goTo(0,true);
+    [[1,2000],[2,3700],[3,4800],[4,6300]].forEach(([n,t])=>ptimers.push(setTimeout(()=>goTo(n,true),t)));
+    ptimers.push(setTimeout(()=>{playBtn.innerHTML='&#8635; Again';},7600));
+  }
+  function stepBy(d){ stopPlay(); goTo(cur+d, !RM.matches); }
+  $('ctl').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+    if(b.dataset.a==='play') play(); else if(b.dataset.a==='prev') stepBy(-1); else if(b.dataset.a==='next') stepBy(1);
+    else if(b.dataset.s){ stopPlay(); const n=+b.dataset.s; goTo(n, !RM.matches && n===cur+1); } });
+  sbox.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'){ e.preventDefault(); stepBy(1); }
+    else if(e.key==='ArrowLeft'){ e.preventDefault(); stepBy(-1); }
+    else if(e.key===' '||e.key==='Spacebar'){ e.preventDefault(); play(); } });
+  sbox.addEventListener('click',()=>sbox.focus({preventScroll:true}));
+  if(RM.matches) goTo(4,false); else { cur=-1; lots.forEach(l=>l.d.classList.add('pre')); sbs.forEach(b=>b.classList.remove('on')); }
+  let played=false;
+  new IntersectionObserver(es=>{ if(es[0].isIntersecting && !played){ played=true; play(); } },{threshold:.45}).observe(sbox);
+}
+
+
+/* ---------- people: paddles ---------- */
+if(!SOLO){
+  document.querySelectorAll('[data-paddle]').forEach(el=>{
+    const L=el.dataset.paddle==='L', col=L?'var(--long-fill)':'var(--short-fill)', num=L?'17':'08', g=L?'&#9650;':'&#9660;';
+    el.innerHTML=`<svg viewBox="0 0 110 190" width="100%" aria-hidden="true">
+      <rect x="47" y="112" width="16" height="74" rx="5" fill="var(--ink)"/>
+      <rect x="47" y="112" width="16" height="10" fill="var(--ink)" opacity=".6"/>
+      <rect x="6" y="6" width="98" height="116" rx="16" fill="${col}"/>
+      <rect x="13" y="13" width="84" height="102" rx="11" fill="none" stroke="${L?'#fff':'#1a1206'}" stroke-opacity=".35" stroke-width="1.2"/>
+      <text x="55" y="38" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" fill="${L?'#fff':'#1a1206'}">${g}</text>
+      <text x="55" y="98" text-anchor="middle" font-family="Big Shoulders Display, sans-serif" font-weight="900" font-size="62" fill="${L?'#fff':'#1a1206'}">${num}</text></svg>`;
+  });
+}
+
+/* ---------- the commodity: hardware specimens ---------- */
+if(!SOLO){
+  const HW={
+    h100:{title:'Item: one NVIDIA H100 GPU-hour', mem:'80 GB HBM3', stacks:'6 sites around one die', fam:'SXM module',
+      market:'Trading. Delivery week 47 (sample)', last:'$2.74 per GPU-hour, called in round 3 (sample)', index:'Median of posted H100 prices', hbm:'HBM3', layout:'one', n:3,
+      wit:'The first market. One hour of one chip, delivered next week, priced today.'},
+    h200:{title:'Item: one NVIDIA H200 GPU-hour', mem:'141 GB HBM3e', stacks:'6 stacks around one die', fam:'SXM module',
+      market:'Next market. Not trading yet', last:'None yet', index:'To be set before the market opens', hbm:'HBM3e', layout:'one', n:3,
+      wit:'Same die family, more memory. Its own market, its own price.'},
+    mi300x:{title:'Item: one AMD MI300X GPU-hour', mem:'192 GB HBM3', stacks:'8 stacks around a chiplet package', fam:'OAM module',
+      market:'Next market. Not trading yet', last:'None yet', index:'To be set before the market opens', hbm:'HBM3', layout:'chiplet', n:4,
+      wit:'A different maker and a different shape. The auction does not care whose chip it is, only whose hour.'}
+  };
+  // deterministic scatter for passives
+  const R=(seed)=>()=>{seed=(seed*16807)%2147483647; return (seed-1)/2147483646;};
+  function moduleSVG(k){
+    const d=HW[k], r=R(k.length*977+13);
+    const ink='var(--ink)', st=`stroke="${ink}" fill="none"`;
+    let pas=''; for(let i=0;i<46;i++){ const side=i%4; let x,y; const t=r();
+      if(side===0){x=40+t*320;y=30+r()*14;} else if(side===1){x=40+t*320;y=226+r()*10;} else if(side===2){x=26+r()*12;y=60+t*150;} else {x=352+r()*12;y=60+t*150;}
+      const w=r()<.5?5:3.2, h=w===5?2.6:3.2; pas+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w}" height="${h}" fill="${ink}" opacity=".55"/>`; }
+    let pads=''; for(let x=52;x<=348;x+=4.4){ if(Math.abs(x-200)<6) continue; pads+=`<rect x="${x.toFixed(1)}" y="246" width="2.4" height="9" fill="${ink}" opacity=".7"/>`; }
+    const holes=[[30,34],[370,34],[30,234],[370,234]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r="6.5" ${st} stroke-width=".9"/><circle cx="${x}" cy="${y}" r="3" fill="${ink}" opacity=".85"/>`).join('');
+    const hbm=(x,y,w,h)=>{let l=''; for(let i=1;i<6;i++) l+=`<line x1="${x+2}" x2="${x+w-2}" y1="${(y+i*h/6).toFixed(1)}" y2="${(y+i*h/6).toFixed(1)}" stroke="${ink}" stroke-width=".35" opacity=".6"/>`;
+      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="1" fill="var(--panel)" stroke="${ink}" stroke-width=".8"/>${l}`;};
+    let pkg='';
+    if(d.layout==='one'){
+      const X=118,Y=52,W=164,H=164; pkg+=`<rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="5" fill="var(--card)" stroke="${ink}" stroke-width="1.1"/><rect x="${X+6}" y="${Y+6}" width="${W-12}" height="${H-12}" rx="3" ${st} stroke-width=".4"/>`;
+      // die with SM grid
+      const dx=172,dy=74,dw=56,dh=120; let grid='';
+      for(let i=1;i<4;i++) grid+=`<line x1="${dx+i*dw/4}" x2="${dx+i*dw/4}" y1="${dy+4}" y2="${dy+dh-4}" stroke="var(--card)" stroke-width=".5" opacity=".6"/>`;
+      for(let i=1;i<10;i++) grid+=`<line x1="${dx+3}" x2="${dx+dw-3}" y1="${dy+i*dh/10}" y2="${dy+i*dh/10}" stroke="var(--card)" stroke-width=".5" opacity=".6"/>`;
+      pkg+=`<rect x="${dx}" y="${dy}" width="${dw}" height="${dh}" rx="1.5" fill="${ink}"/>${grid}`;
+      for(let i=0;i<3;i++){ pkg+=hbm(132,76+i*40,30,36)+hbm(238,76+i*40,30,36); }
+      pkg+=`<text x="200" y="208" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="6.5" letter-spacing="1" fill="${ink}" opacity=".7">${d.hbm} x6 &#183; ${k.toUpperCase()}</text>`;
+    } else {
+      const X=104,Y=44,W=192,H=180; pkg+=`<rect x="${X}" y="${Y}" width="${W}" height="${H}" rx="5" fill="var(--card)" stroke="${ink}" stroke-width="1.1"/><rect x="${X+6}" y="${Y+6}" width="${W-12}" height="${H-12}" rx="3" ${st} stroke-width=".4"/>`;
+      const qx=[156,201], qy=[66,131];
+      qx.forEach(x=>qy.forEach(y=>{ pkg+=`<rect x="${x}" y="${y}" width="43" height="63" rx="1" fill="none" stroke="${ink}" stroke-width=".9"/>`;
+        pkg+=`<rect x="${x+4}" y="${y+4}" width="35" height="26" fill="${ink}"/><rect x="${x+4}" y="${y+33}" width="35" height="26" fill="${ink}"/>`; }));
+      for(let i=0;i<4;i++){ pkg+=hbm(116,64+i*34,32,30)+hbm(252,64+i*34,32,30); }
+      pkg+=`<text x="200" y="214" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="6.5" letter-spacing="1" fill="${ink}" opacity=".7">${d.hbm} x8 &#183; MI300X</text>`;
+    }
+    return `<svg viewBox="0 0 400 270" role="img" aria-label="Line drawing of a ${k.toUpperCase()} accelerator module seen from above">
+      <defs><pattern id="pcb-${k}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="${ink}" stroke-width=".35" opacity=".18"/></pattern></defs>
+      <rect x="12" y="14" width="376" height="244" rx="10" fill="var(--card)" stroke="${ink}" stroke-width="1.1"/>
+      <rect x="12" y="14" width="376" height="244" rx="10" fill="url(#pcb-${k})"/>
+      <path d="M190 258 v-8 h20 v8" fill="var(--card)" stroke="${ink}" stroke-width=".8"/>
+      ${holes}${pas}${pads}${pkg}
+      <text x="26" y="24" font-family="JetBrains Mono, monospace" font-size="6.5" letter-spacing="1" fill="${ink}" opacity=".6">${d.fam.toUpperCase()} &#183; TOP VIEW &#183; NOT TO SCALE</text></svg>`;
+  }
+  function showHW(k){
+    const d=HW[k];
+    document.getElementById('hwsvg').innerHTML=moduleSVG(k);
+    document.getElementById('hwtitle').textContent=d.title;
+    document.getElementById('hwdl').innerHTML=[
+      ['Item','One GPU-hour of '+k.toUpperCase().replace('MI300X','MI300X')+', '+d.fam],
+      ['Memory',d.mem],['Package',d.stacks],['Delivery',d.market],['Last price',d.last],['Index',d.index],['Lot size','1 GPU-hour; orders up to the market limit']
+    ].map(([a,b])=>`<dt>${a}</dt><dd>${b}</dd>`).join('');
+    document.getElementById('hwwit').textContent=d.wit;
+    document.querySelectorAll('.hwtabs button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===k)));
+  }
+  document.querySelector('.hwtabs').addEventListener('click',e=>{const b=e.target.closest('button'); if(b) showHW(b.dataset.k);});
+  showHW('h100');
+}
+
+/* ---------- logo A in material ---------- */
+if(!SOLO){
+  const plain=(fill)=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256"><rect width="64" height="64" fill="#fff"/>${tileA('H',fill)}</svg>`;
+  // LED matrix: rasterise the mark, sample a 23 x 23 grid
+  (function(){
+    const img=new Image(); const url=URL.createObjectURL(new Blob([plain('#000')],{type:'image/svg+xml'}));
+    img.onload=()=>{ const n=23, c=document.createElement('canvas'); c.width=c.height=n*4; const g=c.getContext('2d'); g.drawImage(img,0,0,n*4,n*4);
+      const d=g.getImageData(0,0,n*4,n*4).data; let dots='';
+      for(let y=0;y<n;y++) for(let x=0;x<n;x++){ let sum=0; for(let yy=0;yy<4;yy++) for(let xx=0;xx<4;xx++){ sum+=d[((y*4+yy)*n*4+(x*4+xx))*4]; } const v=sum/16/255;
+        const on=v<.5, cx=x*2.8+1.6, cy=y*2.8+1.6;
+        dots+= on?`<circle cx="${cx}" cy="${cy}" r="1.05" fill="#FFB43C"/>`:`<circle cx="${cx}" cy="${cy}" r="1.05" fill="${v>.97?'#FFE7B0':'#2A2620'}"/>`; }
+      document.getElementById('matLed').innerHTML=`<svg viewBox="0 0 65.6 65.6" width="132" height="132"><defs><filter id="glow"><feGaussianBlur stdDeviation=".6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g filter="url(#glow)">${dots}</g></svg>`;
+      URL.revokeObjectURL(url); };
+    img.src=url;
+  })();
+  // Engraving: wavy guilloche lines masked by the mark
+  (function(){
+    let lines=''; for(let y=2;y<64;y+=1.15){ let d=`M0 ${y}`; for(let x=0;x<=64;x+=4){ d+=` L${x} ${(y+Math.sin((x+y*1.7)/6)*.55).toFixed(2)}`; } lines+=`<path d="${d}"/>`; }
+    const id='eng'+(++uid);
+    document.getElementById('matEng').innerHTML=`<svg viewBox="0 0 64 64" width="132" height="132"><defs><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64"><rect width="64" height="64" fill="#000"/>${tileA('H','#fff')}</mask></defs>
+      <g mask="url(#${id})" fill="none" stroke="#1F2A22" stroke-width=".62">${lines}</g>
+      <g fill="none" stroke="#1F2A22" stroke-width=".35" opacity=".8"><rect x="4.4" y="4.4" width="55.2" height="55.2" rx="5.7"/></g></svg>`;
+  })();
+  // Rubber stamp
+  document.getElementById('matStp').innerHTML=`<svg viewBox="0 0 64 64" width="132" height="132"><defs><filter id="stp" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="2" seed="9" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.6 1.75" result="a"/><feComposite in="SourceGraphic" in2="a" operator="in" result="s"/><feTurbulence type="turbulence" baseFrequency=".09" numOctaves="1" seed="3" result="w"/><feDisplacementMap in="s" in2="w" scale="1.3"/></filter></defs><g transform="rotate(-6 32 32)" filter="url(#stp)" opacity=".92">${tileA('H','#C42A1C')}</g></svg>`;
+  // Blind letterpress (debossed)
+  document.getElementById('matLp').innerHTML=`<svg viewBox="0 0 64 64" width="132" height="132"><defs><filter id="lp" x="-10%" y="-10%" width="120%" height="120%"><feFlood flood-color="#000" flood-opacity=".38"/><feComposite in2="SourceAlpha" operator="out" result="inv"/><feOffset dx=".55" dy=".8"/><feGaussianBlur stdDeviation=".45" result="sh"/><feComposite in="sh" in2="SourceAlpha" operator="in" result="ish"/><feFlood flood-color="#fff" flood-opacity=".7"/><feComposite in2="SourceAlpha" operator="out"/><feOffset dx="-.4" dy="-.55"/><feGaussianBlur stdDeviation=".35"/><feComposite in2="SourceAlpha" operator="in" result="hl"/><feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="ish"/><feMergeNode in="hl"/></feMerge></filter></defs><g filter="url(#lp)">${tileA('H','#DDD6C6')}</g></svg>`;
+}
+
+/* =====================================================================
+   SYSTEM: figures, book, chart
+   ===================================================================== */
+if(!SOLO){
+  const totalLock=ORD.reduce((a,o)=>a+o.lock,0)+42000;
+  document.getElementById('figs').innerHTML=`
+    <div><div class="kick">Called price &middot; sample</div><div class="v call">$${RES.p.toFixed(2)}<small>/GPU-h</small></div><p>One price for every filled lot in round 3. Implied forward on next week's average H100 index.</p></div>
+    <div><div class="kick">Matched &middot; sample</div><div class="v">${RES.V.toLocaleString('en-US')}<small>GPU-h</small></div><p>Buyers filled equal sellers filled, always. ${RES.V.toLocaleString('en-US')} new sets, each backed by the full $${BAND.toFixed(2)} band.</p></div>
+    <div><div class="kick">Locked in the round &middot; sample</div><div class="v">${usd(totalLock)}<small>USDC</small></div><p>Eleven commits. Unused lock returns at clearing; nothing is ever borrowed.</p></div>`;
+  // book
+  const rowsB=[...ORD.map(o=>({...o,rev:true})),{seq:10,owner:'quiet-bidder.near',lock:42000,rev:false}];
+  const head=`<thead><tr><th class="n">Seq</th><th>Owner</th><th class="n">Lock</th><th>Side</th><th class="n">Size</th><th class="n">Limit</th><th>State</th></tr></thead>`;
+  const body=rowsB.map(o=>{
+    let side,size,lim,state;
+    if(!o.rev){ side='<span class="side U">sealed</span>'; size='&mdash;'; lim='&mdash;'; state=`<span class="st x">FORFEIT ${usd(Math.floor(o.lock*.05))}</span>`; }
+    else { const f=RES.fill[o.seq]||0;
+      side=`<span class="side ${o.side}">${o.side==='L'?'&#9650; LONG':'&#9660; SHORT'}</span>`;
+      size=`${o.size} GPU-h`; lim=`$${px2(o.lim)}`;
+      state= f===o.size?'<span class="st f">FILLED</span>': f>0?`<span class="st p">PART ${f}/${o.size}</span>`:'<span class="st n">NO FILL</span>'; }
+    return `<tr><td class="n">${String(o.seq).padStart(3,'0')}</td><td>${o.owner}${o.agent?'<span class="agent">AGENT KEY</span>':''}</td><td class="n">${usd(o.lock)}</td><td>${side}</td><td class="n">${size}</td><td class="n">${lim}</td><td>${state}</td></tr>`;
+  }).join('');
+  document.getElementById('book').innerHTML=head+'<tbody>'+body+'</tbody>';
+
+  // chart
+  window.__drawSys=function(){
+    const cs=getComputedStyle(document.documentElement), v=n=>cs.getPropertyValue(n).trim();
+    const w=560,h=380,m={l:54,r:96,t:22,b:44};
+    const ymin=2.55,ymax=3.00,xmax=1400;
+    const X=q=>m.l+(q/xmax)*(w-m.l-m.r), Y=p=>m.t+(1-(p-ymin)/(ymax-ymin))*(h-m.t-m.b);
+    const D=ORD.filter(o=>o.side==='L').sort((a,b)=>b.lim-a.lim), S=ORD.filter(o=>o.side==='S').sort((a,b)=>a.lim-b.lim);
+    const step=(arr)=>{let q=0,d=`M${X(0)} ${Y(arr[0].lim)}`; arr.forEach((o,i)=>{q+=o.size; d+=` H${X(q)}`; if(i<arr.length-1) d+=` V${Y(arr[i+1].lim)}`;}); return {d,q};};
+    const sd=step(D), ss=step(S);
+    let grid='';
+    for(let p=2.6;p<=3.0001;p+=.1){ grid+=`<line x1="${m.l}" x2="${w-m.r}" y1="${Y(p)}" y2="${Y(p)}" stroke="${v('--rule-2')}"/><text x="${m.l-8}" y="${Y(p)+4}" text-anchor="end" font-size="11" fill="${v('--ink-3')}">$${p.toFixed(2)}</text>`; }
+    for(let q=0;q<=1400;q+=200){ grid+=`<line x1="${X(q)}" x2="${X(q)}" y1="${h-m.b}" y2="${h-m.b+5}" stroke="${v('--ink')}"/><text x="${X(q)}" y="${h-m.b+19}" text-anchor="middle" font-size="11" fill="${v('--ink-3')}">${q.toLocaleString('en-US')}</text>`; }
+    const pc=RES.p;
+    document.getElementById('chart').innerHTML=`<svg viewBox="0 0 ${w} ${h}" font-family="JetBrains Mono, monospace" role="img" aria-label="Sample demand and supply steps crossing at a called price of $${pc.toFixed(2)} per GPU-hour with ${RES.V} GPU-hours matched">
+      ${grid}
+      <line x1="${m.l}" x2="${w-m.r}" y1="${h-m.b}" y2="${h-m.b}" stroke="${v('--ink')}"/>
+      <text x="${w-m.r}" y="${h-6}" text-anchor="end" font-size="10.5" fill="${v('--ink-2')}" letter-spacing="1">CUMULATIVE GPU-H</text>
+      <text x="${m.l-8}" y="12" text-anchor="end" font-size="10.5" fill="${v('--ink-2')}" letter-spacing="1">$/GPU-H</text>
+      <rect x="${X(0)}" y="${Y(pc)}" width="${X(RES.V)-X(0)}" height="2" fill="none"/>
+      <line x1="${X(RES.V)}" x2="${X(RES.V)}" y1="${Y(pc)}" y2="${h-m.b}" stroke="${v('--ink-3')}" stroke-dasharray="2 3"/>
+      <path d="${sd.d}" fill="none" stroke="${v('--long-fill')}" stroke-width="2.5"/>
+      <path d="${ss.d}" fill="none" stroke="${v('--short-fill')}" stroke-width="2.5" stroke-dasharray="7 4"/>
+      <text x="${X(sd.q)+6}" y="${Y(D[D.length-1].lim)+4}" font-size="11" font-weight="700" fill="${v('--long')}">&#9650; DEMAND</text>
+      <text x="${X(ss.q)+6}" y="${Y(S[S.length-1].lim)+4}" font-size="11" font-weight="700" fill="${v('--short')}">&#9660; SUPPLY</text>
+      <line x1="${m.l}" x2="${w-m.r+8}" y1="${Y(pc)}" y2="${Y(pc)}" stroke="${v('--house')}" stroke-width="2"/>
+      <g transform="translate(${w-m.r+12} ${Y(pc)}) rotate(-5)"><rect x="0" y="-15" width="78" height="30" fill="none" stroke="${v('--house')}" stroke-width="2"/>
+      <text x="39" y="-3" text-anchor="middle" font-size="9" font-weight="700" letter-spacing="1.5" fill="${v('--house')}">CALLED</text>
+      <text x="39" y="10" text-anchor="middle" font-size="12" font-weight="700" fill="${v('--house')}">$${pc.toFixed(2)}</text></g>
+      <circle cx="${X(RES.V)}" cy="${Y(pc)}" r="4.5" fill="${v('--house')}"/>
+      <text x="${X(RES.V)+8}" y="${h-m.b-8}" font-size="11" fill="${v('--ink-2')}">${RES.V} GPU-h matched</text>
+    </svg>`;
+  };
+  window.__drawSys();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{window.__drawSys();buildTokens();});
+
+  /* ---------- tokens ---------- */
+  const lum=h=>{const c=h.match(/\w\w/g).map(x=>parseInt(x,16)/255).map(u=>u<=.03928?u/12.92:Math.pow((u+.055)/1.055,2.4));return .2126*c[0]+.7152*c[1]+.0722*c[2];};
+  const cr=(a,b)=>{const x=lum(a),y=lum(b);return ((Math.max(x,y)+.05)/(Math.min(x,y)+.05)).toFixed(1);};
+  const PL='#F3EFE4', PD='#11100D', BD='#0B0B0A';
+  const T=[
+    ['Newsprint','Ground', '#F3EFE4','#11100D',null],
+    ['Ink','Text, rules, the board in light mode','#12110E','#EFEADC','t'],
+    ['Ink 2','Secondary text','#4A463C','#B1AA98','t'],
+    ['Hammer vermilion','The call, stamps, primary action. Never a side.','#C42A1C','#FF5B38','t'],
+    ['Bid cobalt','Buyers, LONG, demand. Glyph ▲','#2340C4','#8EA6FF','t'],
+    ['Offer saffron','Sellers, SHORT, supply. Glyph ▼. Text tone / fill tone','#8A5200','#F5B23F','t','#E89B0C'],
+    ['Manila','Sealed lots (face down)','#DCCCA6','#3A3324',null],
+    ['Board','The flap wall, in both themes. Flap ink on board','#0B0B0A','#1C1B18','b'],
+  ];
+  window.buildTokens=function(){
+    document.getElementById('tok').innerHTML=T.map(([n,u,l,d,m,extra])=>{
+      let c='';
+      if(m==='t') c=`<br>on paper: <em>${cr(l,PL)}:1</em> light &middot; <em>${cr(d,PD)}:1</em> dark`;
+      if(m==='b') c=`<br>flap ink #EFEADC: <em>${cr('#EFEADC',BD)}:1</em><br>board cobalt #8AA2FF ${cr('#8AA2FF',BD)}:1 &middot; saffron #FFB43C ${cr('#FFB43C',BD)}:1 &middot; vermilion #FF5B38 ${cr('#FF5B38',BD)}:1`;
+      return `<div class="sw"><div class="chip"><span style="background:${l}"></span>${extra?`<span style="background:${extra}"></span>`:''}<span style="background:${d}"></span></div><div class="d"><b>${n}</b>${u}<br>light <em>${l}</em> &middot; dark <em>${d}</em>${extra?` &middot; fill <em>${extra}</em>`:''}${c}</div></div>`;
+    }).join('')+`<div class="sw" style="grid-column:span 2"><div class="d" style="padding:12px 14px"><b>Colour rules</b>Cobalt and saffron are a blue/yellow pair, the axis every common colour-vision deficiency keeps; they also always travel with a glyph (▲ LONG, ▼ SHORT) and with a solid versus dashed line in charts. Vermilion is the only red and belongs to neither side: it marks the price both sides share. Three loud colours, each with one job; everything else is ink on newsprint or cream on the board.</div></div>`;
+  };
+  buildTokens();
+}
+})();
+</script>
+</body>
+</html>

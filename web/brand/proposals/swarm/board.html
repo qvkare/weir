@@ -1,0 +1,1398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weir Swarm Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@87.5,400..600&display=swap">
+<style>
+:root{
+  --ground:#F3F4F7; --surface:#FFFFFF; --panel:#E9EBF1; --line:#D5D8E2;
+  --ink:#12121C; --ink-2:#4A4C5E; --ink-3:#83869A;
+  --long:#3E3BF0; --long-ink:#3E3BF0; --long-on:#FFFFFF; --long-soft:#E3E3FD;
+  --short:#FFA41B; --short-ink:#9A4E00; --short-on:#12121C; --short-soft:#FFEBCB;
+  --flag:#B5175A;
+  --display:"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --text:"Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono:"Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px; --s8:64px; --s9:96px;
+  --r-token:7px; --r-card:14px; --r-pill:999px;
+  --t-hop:280ms; --t-flip:240ms; --t-move:900ms; --t-ui:160ms;
+  --e-hop:cubic-bezier(.3,1.45,.55,1); --e-move:cubic-bezier(.65,0,.35,1); --e-ui:cubic-bezier(.2,.7,.2,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C0D13; --surface:#14151D; --panel:#1B1D27; --line:#2B2E3B;
+    --ink:#F0F1F6; --ink-2:#A8ABBD; --ink-3:#6E7185;
+    --long:#8C89FF; --long-ink:#8C89FF; --long-on:#0C0D13; --long-soft:#232250;
+    --short:#FFB13D; --short-ink:#FFB13D; --short-on:#0C0D13; --short-soft:#3A2A10;
+    --flag:#FF7AAE; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C0D13; --surface:#14151D; --panel:#1B1D27; --line:#2B2E3B;
+  --ink:#F0F1F6; --ink-2:#A8ABBD; --ink-3:#6E7185;
+  --long:#8C89FF; --long-ink:#8C89FF; --long-on:#0C0D13; --long-soft:#232250;
+  --short:#FFB13D; --short-ink:#FFB13D; --short-on:#0C0D13; --short-soft:#3A2A10;
+  --flag:#FF7AAE; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:400 16px/1.55 var(--text);font-feature-settings:"tnum" 1;}
+a{color:inherit}
+.num,.mono{font-family:var(--mono);font-stretch:87.5%;font-feature-settings:"tnum" 1,"zero" 1}
+.wrap{max-width:1240px;margin:0 auto;padding:0 16px}
+@media (min-width:700px){.wrap{padding:0 4vw}}
+@media (min-width:1400px){.wrap{padding:0 56px}}
+
+/* board chrome */
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--ground) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.topbar .wrap{display:flex;align-items:center;gap:16px;height:56px}
+.topbar .t{font:600 13px/1 var(--mono);font-stretch:87.5%;letter-spacing:.02em;color:var(--ink-2)}
+.topbar .sp{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r-pill);padding:3px;background:var(--surface)}
+.seg button{all:unset;cursor:pointer;font:500 12px/1 var(--text);padding:7px 12px;border-radius:var(--r-pill);color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--ground)}
+.seg button:focus-visible{outline:2px solid var(--long);outline-offset:2px}
+
+section.sec{padding:var(--s8) 0;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;align-items:center;gap:10px;font:500 12px/1 var(--mono);font-stretch:87.5%;letter-spacing:.04em;color:var(--ink-2);text-transform:uppercase;margin:0 0 var(--s5)}
+.eyebrow .dots{display:inline-flex;gap:3px}
+.eyebrow .dots i{display:block;width:8px;height:8px}
+.eyebrow .dots i:first-child{background:var(--long);border-radius:2px}
+.eyebrow .dots i:last-child{background:var(--short);border-radius:50%}
+h2.title{font:700 clamp(30px,4.2vw,52px)/1.02 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.03em;margin:0 0 var(--s4);max-width:20ch}
+.lede{font-size:18px;color:var(--ink-2);max-width:62ch;margin:0}
+.note{font-size:13px;color:var(--ink-2)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
+.label{font:500 11px/1.2 var(--mono);font-stretch:87.5%;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+
+/* 1 Direction */
+.dir-grid{display:grid;gap:var(--s6);grid-template-columns:minmax(0,1fr)}
+@media (min-width:960px){.dir-grid{grid-template-columns:1.05fr .95fr;align-items:start}}
+.dir-name{font:800 clamp(64px,11vw,148px)/.86 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.05em;margin:0 0 var(--s5)}
+.dir-name span{color:var(--long-ink)}
+.feeling{margin-top:var(--s5);padding:var(--s4) var(--s5);border-left:3px solid var(--ink);font:600 22px/1.3 var(--display);letter-spacing:-.01em}
+.feeling small{display:block;font:500 11px/1 var(--mono);font-stretch:87.5%;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);margin-bottom:8px}
+.kit{padding:var(--s5)}
+.kit svg{width:100%;height:auto;display:block}
+.kit-cap{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:var(--s3)}
+.kit-cap div{font-size:12px;color:var(--ink-2);line-height:1.35}
+.kit-cap b{display:block;color:var(--ink);font-weight:600;font-size:13px}
+.kit-rules{margin:var(--s4) 0 0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
+.kit-rules li{padding-left:16px;position:relative}
+.kit-rules li:before{content:"";position:absolute;left:0;top:.6em;width:6px;height:6px;background:var(--ink-3);border-radius:1.5px}
+
+/* 2 Logos */
+.logo-grid{display:grid;gap:var(--s5);grid-template-columns:minmax(0,1fr)}
+@media (min-width:1000px){.logo-grid{grid-template-columns:1fr 1fr}}
+.logo-card{padding:var(--s5);display:flex;flex-direction:column;gap:var(--s4)}
+.logo-card h3{font:700 26px/1.1 var(--display);letter-spacing:-.02em;margin:0}
+.logo-card h3 em{font-style:normal;color:var(--ink-2);font-weight:500}
+.hero-mark{display:grid;place-items:center;height:240px;border-radius:10px;background:var(--ground);border:1px solid var(--line)}
+.hero-mark svg{width:200px;height:auto}
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s3)}
+.tile{border-radius:10px;padding:18px;display:flex;align-items:center;justify-content:center;min-height:96px;border:1px solid var(--line)}
+.tile.lt{background:#F3F4F7;color:#12121C;--long:#3E3BF0;--short:#FFA41B;--long-on:#fff;--short-on:#12121C}
+.tile.dk{background:#0C0D13;color:#F0F1F6;--long:#8C89FF;--short:#FFB13D;border-color:#0C0D13}
+.tile.bl{background:#3E3BF0;color:#fff;border-color:#3E3BF0}
+.tile.or{background:#FFA41B;color:#12121C;border-color:#FFA41B}
+.tile .cap{position:absolute}
+.lockup{display:inline-flex;align-items:center;gap:.26em;font:800 40px/1 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.045em}
+.lockup svg{height:.9em;width:auto;display:block;transform:translateY(.04em)}
+.tile-row{display:flex;align-items:flex-end;gap:var(--s4);flex-wrap:wrap}
+.appicon{border-radius:22.5%;display:grid;place-items:center;overflow:hidden;flex:none}
+.appicon svg{width:62%;height:auto}
+.sizes{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;padding:16px;border-radius:10px;background:var(--ground);border:1px solid var(--line)}
+.sizes figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.sizes figure{max-width:100%} .sizes figure svg{max-width:100%;height:auto}
+.sizes figcaption{font:500 10px/1 var(--mono);color:var(--ink-2)}
+.construct{font-size:14px;color:var(--ink-2);margin:0}
+.construct b{color:var(--ink)}
+.pick{display:inline-flex;align-items:center;gap:8px;font:600 12px/1 var(--mono);font-stretch:87.5%;text-transform:uppercase;letter-spacing:.04em;background:var(--ink);color:var(--ground);padding:7px 10px;border-radius:var(--r-pill);align-self:flex-start}
+
+/* 3 Hero */
+.screens{display:grid;gap:var(--s6);grid-template-columns:1fr}
+.below{display:grid;gap:var(--s6);grid-template-columns:minmax(0,1fr);margin-top:56px}
+@media (min-width:1100px){.below{grid-template-columns:391px minmax(0,1fr);align-items:start}}
+.frame{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--ground);box-shadow:0 1px 0 var(--line),0 30px 60px -40px rgba(10,10,30,.35)}
+.frame .chrome{height:30px;display:flex;align-items:center;gap:6px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.frame .chrome i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.frame .chrome span{margin-left:10px;font:500 11px/1 var(--mono);font-stretch:87.5%;color:var(--ink-2)}
+.frame.narrow{width:100%;max-width:391px;margin:0 auto;border-radius:30px;padding:8px;background:var(--panel)}
+.frame.narrow .screen{border-radius:22px;overflow:hidden;border:1px solid var(--line);background:var(--ground);width:100%;max-width:375px;margin:0 auto}
+.screen-cap{margin-top:10px;font-size:12px;color:var(--ink-2);text-align:center}
+
+/* the product hero component (container query driven) */
+.first{position:relative;isolation:isolate;overflow:hidden}
+.weir-hero{container-type:inline-size;container-name:hero;position:relative;background:var(--ground);color:var(--ink);overflow:hidden;isolation:isolate}
+.weir-hero canvas.flock{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+.weir-hero .scrim{position:absolute;inset:auto 0 0 0;height:58%;z-index:1;pointer-events:none;
+  background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--ground) 72%,transparent) 55%,var(--ground))}
+.hero-in{position:relative;z-index:2;display:flex;flex-direction:column;min-height:720px;padding:0 20px 28px}
+.hnav{display:flex;align-items:center;height:64px;gap:24px}
+.hnav .lockup{font-size:25px}
+.hnav .links{display:none;gap:26px;margin-left:auto;font:500 14px/1 var(--text);color:var(--ink-2)}
+.hnav .links a{text-decoration:none}
+.hnav .menu{margin-left:auto;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.hnav .menu i{display:block;width:14px;height:1.6px;background:var(--ink);box-shadow:0 -4.5px 0 var(--ink),0 4.5px 0 var(--ink)}
+.hnav .btn-sm{display:none}
+.hero-copy{margin-top:auto}
+.idx{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 8px;max-width:100%;padding:5px 10px 5px 5px;border-radius:var(--r-pill);border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 80%,transparent);backdrop-filter:blur(6px);font-size:12px;color:var(--ink-2);margin-bottom:20px}
+.idx .pulse{width:20px;height:20px;border-radius:50%;background:var(--ink);display:grid;place-items:center}
+.idx .pulse i{width:6px;height:6px;border-radius:50%;background:var(--ground)}
+.idx b{white-space:nowrap;font:600 12px/1 var(--mono);font-stretch:87.5%;color:var(--ink)}
+.idx em{font-style:normal;font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:3px 6px;border-radius:4px;background:var(--panel);color:var(--ink-2)}
+.hero-h1{font:800 clamp(46px,12.4cqi,112px)/.9 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.055em;margin:0 0 22px;text-wrap:balance}
+.hero-h1 .l{display:block}
+.hero-p{font-size:17px;line-height:1.5;color:var(--ink-2);max-width:44ch;margin:0 0 26px}
+.ctas{display:flex;gap:10px;flex-wrap:wrap}
+.pill{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 22px;border-radius:var(--r-pill);font:600 15px/1 var(--text);transition:transform var(--t-ui) var(--e-ui),background var(--t-ui)}
+.pill.primary{background:var(--ink);color:var(--ground)}
+.pill.primary .tok{display:inline-flex;gap:3px}
+.pill.primary .tok i{width:7px;height:7px;background:var(--long);border-radius:1.6px}
+.pill.primary .tok i+i{background:var(--short);border-radius:50%}
+.pill.ghost{border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 70%,transparent)}
+.pill:hover{transform:translateY(-1px)}
+.pill:focus-visible{outline:2px solid var(--long);outline-offset:3px}
+.hero-foot{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:26px;font-size:12px;color:var(--ink-2)}
+.hero-foot .k{display:inline-flex;align-items:center;gap:7px}
+.k .sq{width:9px;height:9px;background:var(--long);border-radius:2px}
+.k .ho,.side .ho{width:10px;height:10px;border:2px solid var(--short);border-radius:2.5px;box-sizing:border-box}
+.level-tag{position:absolute;z-index:2;right:20px;display:flex;align-items:center;gap:8px;font:500 11px/1 var(--mono);font-stretch:87.5%;color:var(--ink-2);opacity:0;transition:opacity .6s var(--e-ui);transform:translateY(calc(-100% - 22px))}
+.level-tag b{color:var(--ink);font-weight:600;font-size:13px}
+.level-tag.on{opacity:1}
+@container hero (min-width:860px){
+  .idx{font-size:13px;gap:10px;padding:6px 12px 6px 6px} .idx b{font-size:13px}
+  .hero-in{padding:0 48px 52px;min-height:800px}
+  .hero-h1{font-size:min(8.8cqi,118px)}
+  .hnav{height:76px}
+  .hnav .links{display:flex}
+  .hnav .menu{display:none}
+  .hnav .btn-sm{display:inline-flex;height:38px;padding:0 16px;font-size:14px}
+  .hero-copy{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:40px}
+  .hero-p{font-size:19px}
+  .level-tag{right:48px}
+  .hero-foot{justify-content:flex-end;flex-direction:column;align-items:flex-end;margin:0}
+}
+
+/* Fig. 1: the floor (pill window) */
+.floor-sec{position:relative;z-index:2;padding:8px 20px 36px}
+.floor-head{display:flex;align-items:baseline;gap:12px;margin:0 0 14px}
+.floor-head .figno{white-space:nowrap;font:500 11px/1 var(--mono);font-stretch:87.5%;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.floor-head h2{font:700 22px/1.1 var(--display);letter-spacing:-.02em;margin:0}
+.bezel{padding:7px;border-radius:52px;background:var(--panel);border:1px solid var(--line);box-shadow:inset 0 1px 0 color-mix(in srgb,var(--surface) 70%,transparent),0 24px 50px -30px rgba(10,10,40,.45)}
+.bezel svg{display:block;width:100%;height:auto;border-radius:46px}
+.floor-bar{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.floor-status{flex:1 1 260px;min-height:2.9em;font-size:15px;color:var(--ink);line-height:1.45}
+.floor-note{width:100%;font-size:12px;color:var(--ink-2);margin:2px 0 0}
+.ctl{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:600 13px/1 var(--text);padding:9px 14px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--surface)}
+.ctl:focus-visible{outline:2px solid var(--long);outline-offset:2px}
+@container hero (min-width:860px){
+  .floor-sec{padding:12px 48px 56px}
+  .bezel{border-radius:999px;padding:9px}
+  .bezel svg{border-radius:999px}
+  .floor-status{text-align:center}
+  .floor-bar{justify-content:center}
+  .floor-note{text-align:center}
+}
+/* svg kit classes */
+.ag-L .body,.ag-L .fin{fill:var(--long)} .ag-S .body,.ag-S .fin{fill:var(--short)}
+.ag-L .eye{fill:var(--long-on)} .ag-S .eye{fill:var(--short-on)}
+.ag-L .ihs{stroke:var(--long-on)} .ag-S .ihs{stroke:var(--short-on)}
+.ihs{fill:none;stroke-width:1;opacity:.3}
+.pin{fill:var(--ink)}
+.ant{stroke:var(--ink);stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.antk{fill:var(--ink)}
+.sled-b{fill:var(--surface);stroke-width:1.4}
+.sled-L .sled-b{stroke:var(--long)} .sled-S .sled-b{stroke:var(--short)}
+.sled-L .sled-h{fill:var(--long)} .sled-S .sled-h{fill:var(--short)}
+.sled-t{font:600 8.5px var(--mono);font-stretch:87.5%;fill:var(--ink)}
+.led{fill:var(--ink-3)}
+.cover{fill:var(--panel);stroke:var(--ink);stroke-width:1.2}
+.lock{fill:none;stroke:var(--ink);stroke-width:1.2;stroke-linecap:round}
+.lockb{fill:var(--ink)}
+.chk circle{fill:var(--ink)} .chk path{fill:none;stroke:var(--ground);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.hall-bg{fill:var(--surface)}
+.hall-rack{fill:var(--panel)}
+.hall-led{fill:var(--ink-3)}
+.hall-tray{stroke:var(--line);stroke-width:2;fill:none}
+.hall-floor{fill:var(--panel)}
+.hall-tile{fill:var(--line)}
+.rack-f{fill:var(--surface);stroke:var(--ink);stroke-width:1.5}
+.rack-row{stroke:var(--line);stroke-width:1}
+.rack-spine{fill:var(--panel)}
+.rack-lbl{font:500 8.5px var(--mono);font-stretch:87.5%;fill:var(--ink-2)}
+.rack-leg{fill:var(--ink)}
+.scan{stroke:var(--ink);stroke-width:2;stroke-linecap:round}
+.scan-glow{fill:var(--ink);fill-opacity:.07}
+.hit{fill:var(--ink);fill-opacity:.1}
+.pline{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55}
+.pillbg{fill:var(--ink)} .pilltx{font:600 10px var(--mono);font-stretch:87.5%;fill:var(--ground)}
+.cnt{font:600 9.5px var(--mono);font-stretch:87.5%;letter-spacing:.04em}
+.cnt.L{fill:var(--long-ink)} .cnt.S{fill:var(--short-ink)}
+.plate rect{fill:var(--ink)} .plate text{font:600 9px var(--mono);font-stretch:87.5%;letter-spacing:.06em;fill:var(--ground)}
+.bub rect{fill:var(--surface);stroke:var(--ink);stroke-width:1.2} .bub text{font:700 10px var(--mono);fill:var(--ink)}
+.zz{font:700 10px var(--mono);fill:var(--ink-2)}
+
+/* specimens */
+.spec-grid{display:grid;gap:var(--s3);grid-template-columns:minmax(0,1fr);margin-bottom:var(--s3)}
+@media (min-width:900px){.spec-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.specimen{padding:18px;display:flex;flex-direction:column;gap:12px}
+.specimen .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.specimen h4{margin:0;font:700 20px/1.1 var(--display);letter-spacing:-.02em}
+.specimen .mk{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:4px 7px;border-radius:4px;border:1px solid var(--line);color:var(--ink-2)}
+.specimen .mk.live{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.specimen svg{width:100%;height:auto;display:block;background:var(--ground);border-radius:10px;border:1px solid var(--line)}
+.sheet{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0;font:500 11px/1.35 var(--mono);font-stretch:87.5%}
+.sheet dt{color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;font-size:10px;padding-top:1px}
+.sheet dd{margin:0;color:var(--ink)}
+.dl{stroke:var(--ink);fill:none;stroke-width:1}
+.dl2{stroke:var(--ink-2);fill:none;stroke-width:.75}
+.dlf{fill:var(--panel);stroke:var(--ink);stroke-width:1}
+.dlt{font:500 7px var(--mono);font-stretch:87.5%;fill:var(--ink-2)}
+
+/* materials */
+.mats{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:var(--s5)}
+@media (min-width:900px){.mats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.mats figure{margin:0}
+.mats svg{width:100%;height:auto;display:block;border-radius:12px}
+.mats figcaption{font:500 11px/1.3 var(--mono);font-stretch:87.5%;color:var(--ink-2);margin-top:8px}
+
+/* 4 System */
+.figs{display:grid;gap:var(--s3);grid-template-columns:1fr}
+@media (min-width:760px){.figs{grid-template-columns:repeat(3,1fr)}}
+.fig{padding:20px;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}
+.fig .v{font:700 44px/1 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.035em}
+.fig .v small{font:500 14px/1 var(--mono);font-stretch:87.5%;letter-spacing:0;color:var(--ink-2);margin-left:6px}
+.fig .s{font-size:13px;color:var(--ink-2)}
+.fig .ex{position:absolute;top:16px;right:16px} .fig .label{padding-right:72px}
+.ex{font:500 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:4px 7px;border-radius:4px;background:var(--panel);color:var(--ink-2)}
+.sys{display:grid;gap:var(--s3);grid-template-columns:minmax(0,1fr);margin-top:var(--s3)}
+@media (min-width:1180px){.sys{grid-template-columns:minmax(0,1fr) 390px;align-items:start}}
+.panelhead{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.panelhead h4{margin:0;font:700 16px/1.2 var(--display);letter-spacing:-.01em;flex:1}
+.tablewrap{overflow-x:auto}
+table.book{width:100%;border-collapse:collapse;font-size:13px;min-width:660px}
+.book th{font:500 10.5px/1 var(--mono);font-stretch:87.5%;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);text-align:left;padding:11px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.book td{padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+.book tr:last-child td{border-bottom:0}
+.book td.r,.book th.r{text-align:right}
+.book .num{font-size:11.5px} .book td:first-child,.book th:first-child{padding-left:16px}
+.own{display:inline-flex;align-items:center;gap:8px}
+.own svg{width:20px;height:20px;flex:none}
+.own .key{font:500 9.5px/1 var(--mono);padding:3px 5px;border-radius:3px;border:1px solid var(--line);color:var(--ink-2)}
+.side{display:inline-flex;align-items:center;gap:6px;font:600 11px/1 var(--mono);font-stretch:87.5%}
+.side.L{color:var(--long-ink)} .side.S{color:var(--short-ink)} .side.H{color:var(--ink-3)}
+.side .sq{width:8px;height:8px;border-radius:2px;background:var(--long)}
+.side .ci{width:9px;height:9px;border-radius:50%;background:var(--short)}
+.side .lk{width:9px;height:9px;border-radius:2px;border:1.5px solid var(--ink-3)}
+.st{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--mono);font-stretch:87.5%;padding:4px 8px;border-radius:var(--r-pill);border:1px solid var(--line);color:var(--ink-2)}
+.st.fill{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.st.part{border-color:var(--ink);color:var(--ink)}
+.st.bad{color:var(--flag);border-color:color-mix(in srgb,var(--flag) 45%,var(--line))}
+.chartbox{padding:12px 12px 6px}
+.chartbox svg{width:100%;height:auto;display:block}
+.ch-grid{stroke:var(--line);stroke-width:1}
+.ch-ax{font:500 10px var(--mono);font-stretch:87.5%;fill:var(--ink-2)}
+.ch-D{stroke:var(--long);stroke-width:1.75;fill:none;stroke-linejoin:round}
+.ch-S{stroke:var(--short);stroke-width:1.75;fill:none;stroke-linejoin:round}
+.ch-p{stroke:var(--ink);stroke-width:1.5;stroke-dasharray:1 0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:4px 18px 16px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+
+/* 5 Tokens */
+.tok-grid{display:grid;gap:var(--s3);grid-template-columns:minmax(0,1fr)}
+@media (min-width:980px){.tok-grid{grid-template-columns:1.3fr 1fr}}
+table.ct{width:100%;border-collapse:collapse;font-size:13px}
+.ct th{font:500 10.5px/1 var(--mono);font-stretch:87.5%;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.ct td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ct tr:last-child td{border-bottom:0}
+.sw{display:inline-flex;align-items:center;gap:8px}
+.sw i{width:22px;height:22px;border-radius:6px;border:1px solid rgba(128,128,140,.35);flex:none}
+.ct .cr{display:block;margin:5px 0 0 30px;font:600 11px/1 var(--mono);font-stretch:87.5%}
+.ct .cr.ok{color:var(--ink)} .ct .cr.no{color:var(--ink-3)}
+.spec{padding:20px;display:grid;gap:18px}
+.spec .row{display:grid;gap:4px}
+.typeA{font:800 46px/1 var(--display);font-variation-settings:"opsz" 96;letter-spacing:-.045em}
+.typeB{font:400 17px/1.45 var(--text)}
+.typeC{font:500 15px/1.3 var(--mono);font-stretch:87.5%}
+.spacing{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.spacing div{display:flex;flex-direction:column;align-items:center;gap:6px;font:500 10px/1 var(--mono);color:var(--ink-2)}
+.spacing i{display:block;background:var(--long);border-radius:2px;width:12px}
+.motion{display:grid;gap:8px}
+.motion div{display:grid;grid-template-columns:120px 1fr;gap:12px;font-size:13px;align-items:baseline}
+.motion code{font:500 11px/1.3 var(--mono);font-stretch:87.5%;color:var(--ink)}
+.footer{padding:var(--s7) 0 var(--s8);font-size:13px;color:var(--ink-2)}
+@media (max-width:640px){ .topbar .t{display:none} .kit-cap{grid-template-columns:repeat(2,1fr)} .lockup{font-size:32px} }
+@media (prefers-reduced-motion: reduce){ .pill,.phases span,.level-tag{transition:none} }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- Logo B, "Chip". 32 x 32 grid. -->
+    <mask id="mA" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+      <rect width="32" height="32" fill="#fff"/>
+      <rect x="11.4" y="11.4" width="3.2" height="6.6" rx="1.6" fill="#000"/>
+      <rect x="17.4" y="11.4" width="3.2" height="6.6" rx="1.6" fill="#000"/>
+    </mask>
+    <symbol id="logoA" viewBox="0 0 32 32">
+      <g mask="url(#mA)" fill="var(--a1,currentColor)">
+        <rect x="6" y="6" width="20" height="20" rx="3.4"/>
+        <rect x="9.9" y="2.4" width="2.2" height="4.2" rx=".55"/><rect x="14.9" y="2.4" width="2.2" height="4.2" rx=".55"/><rect x="19.9" y="2.4" width="2.2" height="4.2" rx=".55"/>
+        <rect x="9.9" y="25.4" width="2.2" height="4.2" rx=".55"/><rect x="14.9" y="25.4" width="2.2" height="4.2" rx=".55"/><rect x="19.9" y="25.4" width="2.2" height="4.2" rx=".55"/>
+        <rect x="2.4" y="9.9" width="4.2" height="2.2" rx=".55"/><rect x="2.4" y="14.9" width="4.2" height="2.2" rx=".55"/><rect x="2.4" y="19.9" width="4.2" height="2.2" rx=".55"/>
+        <rect x="25.4" y="9.9" width="4.2" height="2.2" rx=".55"/><rect x="25.4" y="14.9" width="4.2" height="2.2" rx=".55"/><rect x="25.4" y="19.9" width="4.2" height="2.2" rx=".55"/>
+      </g>
+      <rect x="11.4" y="11.4" width="3.2" height="6.6" rx="1.6" fill="var(--e1,none)"/>
+      <rect x="17.4" y="11.4" width="3.2" height="6.6" rx="1.6" fill="var(--e2,none)"/>
+    </symbol>
+    <!-- Logo A, "Crest": the heatsink creature. 32 x 32 grid. -->
+    <mask id="mH" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+      <rect width="32" height="32" fill="#fff"/>
+      <rect x="11.2" y="17.2" width="2.8" height="5" rx="1.4" fill="#000"/>
+      <rect x="18" y="17.2" width="2.8" height="5" rx="1.4" fill="#000"/>
+    </mask>
+    <symbol id="logoH" viewBox="0 0 32 32">
+      <g mask="url(#mH)" fill="var(--a1,currentColor)">
+        <rect x="5.8" y="10.2" width="1.8" height="4.8" rx=".9"/><rect x="8.9" y="8.6" width="1.8" height="6.4" rx=".9"/><rect x="12.0" y="7.6" width="1.8" height="7.4" rx=".9"/><rect x="15.1" y="7.2" width="1.8" height="7.8" rx=".9"/><rect x="18.2" y="7.6" width="1.8" height="7.4" rx=".9"/><rect x="21.3" y="8.6" width="1.8" height="6.4" rx=".9"/><rect x="24.4" y="10.2" width="1.8" height="4.8" rx=".9"/>
+        <rect x="5" y="14" width="22" height="13" rx="3.6"/>
+        <rect x="9.2" y="26" width="2.4" height="3.6" rx=".6"/><rect x="20.4" y="26" width="2.4" height="3.6" rx=".6"/>
+      </g>
+      <rect x="11.2" y="17.2" width="2.8" height="5" rx="1.4" fill="var(--e1,none)"/>
+      <rect x="18" y="17.2" width="2.8" height="5" rx="1.4" fill="var(--e2,none)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <div class="wrap">
+    <span class="lockup" style="font-size:22px"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoH"/></svg>Weir</span>
+    <span class="t">Art direction 3 of 3 · SWARM</span>
+    <span class="sp"></span>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-th="auto" aria-pressed="true">Auto</button>
+      <button data-th="light" aria-pressed="false">Light</button>
+      <button data-th="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- 1 DIRECTION -->
+<section class="sec" id="direction">
+  <div class="wrap dir-grid">
+    <div>
+      <p class="eyebrow"><span class="dots"><i></i><i></i></span>01 · Direction</p>
+      <h1 class="dir-name">Swarm<span>.</span></h1>
+      <p class="lede" style="font-size:19px;color:var(--ink)">This is a market between people who need GPU time, increasingly their AI agents, and people who own the GPUs, so the brand is populated by the thing they trade: small chip-people, a package with pins for legs and a face on the heat spreader, ultramarine when they buy and amber, wearing a heatsink, when they sell. The market is shown as a shift of work they do together on a data-hall floor: they bring sealed bids, open them at once, rack them by price and light the one slot where both sides meet. The wit is in behaviour (timing, glances, a late arrival turned away) and the craft is in the drawing, so the same kit carries a landing page, a spec sheet and a dense order book.</p>
+      <div class="feeling"><small>The one feeling</small>A floor full of busy little machines, and every one of them got a fair price.</div>
+      <p class="note" style="margin-top:16px">The wordmark is set as "Weir", and nothing here depends on the name: neither mark is built from a letter. The house character is a heatsink because it is the most recognisable part of a GPU, a finned creature who keeps the floor cool while the chip-people trade. No water, no flames, no thermometers, no red-to-blue gradients: cool, precise, a little dry.</p>
+    </div>
+    <div class="card kit">
+      <div class="label" style="margin-bottom:12px">The kit · one 24-unit package, four parts</div>
+      <svg id="kitSvg" viewBox="0 0 520 260" role="img" aria-label="The agent kit: buyer chip, seller chip with heatsink fins, market maker and noise trader, with a sealed bid sled and an open one."></svg>
+      <div class="kit-cap">
+        <div><b>Buyer</b>Bare package. Holds LONG. Needs compute.</div>
+        <div><b>Seller</b>Wears a three-fin heatsink. Holds SHORT. Owns GPUs.</div>
+        <div><b>Market maker</b>Either side, diamond antenna. Bids both ways.</div>
+        <div><b>Noise trader</b>Either side, zig-zag antenna. Bids on a hunch.</div>
+      </div>
+      <ul class="kit-rules">
+        <li>Side is told twice, by colour and by silhouette (fins), so it survives colour blindness and greyscale. At flock size, where fins vanish, sellers are drawn hollow.</li>
+        <li>Expression lives in the eyes (two 3.2 x 6.6 capsules) and in motion. Pins are legs and arms; there is no mouth.</li>
+        <li>A bid is a sled: sealed under a locked cover, then opened to show its price per GPU-hour.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 2 LOGOS -->
+<section class="sec" id="logos">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dots"><i></i><i></i></span>02 · Two logo proposals</p>
+    <h2 class="title">Two marks with a face, simple enough to be made of anything.</h2>
+    <div class="logo-grid" style="margin-top:32px">
+      <article class="card logo-card">
+        <span class="pick">Recommended</span>
+        <h3>A · Crest <em>the heatsink as a creature</em></h3>
+        <div class="hero-mark"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short);width:200px" aria-label="Mark A"><use href="#logoH"/></svg></div>
+        <div class="tiles">
+          <div class="tile lt"><span class="lockup"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoH"/></svg>Weir</span></div>
+          <div class="tile dk"><span class="lockup"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoH"/></svg>Weir</span></div>
+          <div class="tile lt"><span class="lockup"><svg viewBox="0 0 32 32"><use href="#logoH"/></svg>Weir</span></div>
+          <div class="tile dk"><span class="lockup"><svg viewBox="0 0 32 32"><use href="#logoH"/></svg>Weir</span></div>
+        </div>
+        <div class="tile-row">
+          <div class="appicon" style="width:96px;height:96px;background:#12121C"><svg viewBox="0 0 32 32" style="color:#F0F1F6;--e1:#8C89FF;--e2:#FFB13D;width:70%"><use href="#logoH"/></svg></div>
+          <div class="appicon" style="width:96px;height:96px;background:#3E3BF0"><svg viewBox="0 0 32 32" style="color:#fff;width:70%"><use href="#logoH"/></svg></div>
+          <div class="appicon" style="width:96px;height:96px;background:#F3F4F7;border:1px solid var(--line)"><svg viewBox="0 0 32 32" style="color:#12121C;--e1:#3E3BF0;--e2:#FFA41B;width:70%"><use href="#logoH"/></svg></div>
+          <span class="note" style="max-width:24ch">App icons: night, one colour on ultramarine, fog.</span>
+        </div>
+        <div class="sizes" id="sizesA"></div>
+        <p class="construct"><b>Construction.</b> A 22 x 13 base with 3.6-unit corners stands on two pin feet; seven fins, 1.8 wide on a 3.1 pitch, rise only 4.8 to 7.8 units out of it with rounded tops on a shallow arc, so the crest reads as a comb, a mohawk or a heatsink, never as fingers, a bar chart or a signal icon. At 16 px the fins fuse into one domed crest and the silhouette still holds. The eyes are 2.8 x 5 capsules knocked out of the base. In colour only the eyes change, one ultramarine and one amber: it is the character who looks after both sides. It is also the seller's hat in the agent kit, grown up.</p>
+      </article>
+      <article class="card logo-card">
+        <span class="pick" style="background:var(--panel);color:var(--ink-2)">Alternative</span>
+        <h3>B · Chip <em>a package that looks back at you</em></h3>
+        <div class="hero-mark"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short);width:190px" aria-label="Mark B"><use href="#logoA"/></svg></div>
+        <div class="tiles">
+          <div class="tile lt"><span class="lockup"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoA"/></svg>Weir</span></div>
+          <div class="tile dk"><span class="lockup"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoA"/></svg>Weir</span></div>
+          <div class="tile lt"><span class="lockup"><svg viewBox="0 0 32 32"><use href="#logoA"/></svg>Weir</span></div>
+          <div class="tile dk"><span class="lockup"><svg viewBox="0 0 32 32"><use href="#logoA"/></svg>Weir</span></div>
+        </div>
+        <div class="tile-row">
+          <div class="appicon" style="width:96px;height:96px;background:#12121C"><svg viewBox="0 0 32 32" style="color:#F0F1F6;--e1:#8C89FF;--e2:#FFB13D;width:66%"><use href="#logoA"/></svg></div>
+          <div class="appicon" style="width:96px;height:96px;background:#3E3BF0"><svg viewBox="0 0 32 32" style="color:#fff;width:66%"><use href="#logoA"/></svg></div>
+          <div class="appicon" style="width:96px;height:96px;background:#FFA41B"><svg viewBox="0 0 32 32" style="color:#12121C;width:66%"><use href="#logoA"/></svg></div>
+          <span class="note" style="max-width:24ch">App icons: night, then one colour on each side colour.</span>
+        </div>
+        <div class="sizes" id="sizesB"></div>
+        <p class="construct"><b>Construction.</b> A 20-unit package with 3.4-unit corners and three pins a side on a 5-unit pitch, 2.2 wide and 3.6 proud, so the pins still separate at 24 px; eyes 3.2 x 6.6, set 1.3 units above centre. It is the trader, not the house: the most literal of the two about GPUs, but a chip with a face is a shorter walk for a competitor, and it competes with the agent kit it comes from.</p>
+      </article>
+    </div>
+    <div class="card" style="padding:20px;margin-top:20px">
+      <div class="label">Mark A in four materials · drawn from the same 32-unit geometry</div>
+      <div class="mats" id="mats"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 HERO -->
+<section class="sec" id="hero">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dots"><i></i><i></i></span>03 · The hero</p>
+    <h2 class="title">A statement over a living flock, then the floor.</h2>
+    <p class="lede">The first screen is atmosphere and a claim: a few hundred chip-agents, buyers as solid ultramarine squares and sellers as hollow amber ones, wheel freely and every eighteen seconds or so settle on one price line, then let go. Directly under it, Fig. 1 is a data-hall floor in a pill-shaped window where one round is worked as a shift: sealed bids in, open at once, rack by price, one slot lights, the rest carry their bids home. It loops with new prices, arrival orders and small accidents.</p>
+    <div class="screens" style="margin-top:32px">
+      <div>
+        <div class="frame">
+          <div class="chrome"><i></i><i></i><i></i><span>home · 1280 px · first screen and the fold below it</span></div>
+          <div class="weir-hero" data-hero></div>
+        </div>
+        <p class="screen-cap">Flock capped at 520 agents; both pieces pause off screen and in a hidden tab, and show a still frame under reduced motion.</p>
+      </div>
+    </div>
+    <div class="below">
+      <div>
+        <div class="frame narrow"><div class="screen"><div class="weir-hero" data-hero></div></div></div>
+        <p class="screen-cap">375 px. The same component, laid out by a container query; flock capped at 240, three agents a side on the floor.</p>
+      </div>
+      <div class="card" style="padding:22px">
+        <div class="label" style="margin-bottom:12px">Fig. 1, second by second</div>
+        <ol class="kit-rules" style="list-style:none;gap:10px;font-size:14px">
+          <li><b style="color:var(--ink)">0.0 to 2.8 s · Bring.</b> Agents walk in from both ends carrying sled-shaped bids under locked covers. Each bid locks dollars; side, size and price stay hidden.</li>
+          <li><b style="color:var(--ink)">2.8 s · Open.</b> Every cover pops at the same moment. A late agent gets turned away: the round is sealed.</li>
+          <li><b style="color:var(--ink)">3.4 s · Line up.</b> They re-sort by price, the keenest buyers and the cheapest sellers nearest the rack.</li>
+          <li><b style="color:var(--ink)">4.5 s · Rack.</b> Each bid is tossed into the slot for its price: buyers' on the left of the spine, sellers' on the right.</li>
+          <li><b style="color:var(--ink)">7.0 s · Scan.</b> A scanner climbs the rack counting buyers at or above and sellers at or below, overshoots once and settles where the most GPU-hours match.</li>
+          <li><b style="color:var(--ink)">8.4 s · One price.</b> That slot lights. Filled bids get a tick and stay racked; every filled agent pays that one price. The rest take their bids home.</li>
+          <li><b style="color:var(--ink)">All along · the house heatsink.</b> The brand character sits on top of the rack keeping the floor cool. It turns the late agent away, watches the scan, and says "Cool." when the price lands. That is the whole joke, every round.</li>
+        </ol>
+        <p class="note" style="margin-top:14px">Clearing is computed in the page with the rule in SPEC section 7 each loop; prices are examples and every bid is 64 GPU-h.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 SYSTEM -->
+<section class="sec" id="system">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dots"><i></i><i></i></span>04 · The system in use</p>
+    <h2 class="title">The same kit, at product density.</h2>
+    <p class="lede">Each market is one chip, presented as a specimen with its spec sheet. Below, an example book for one round of the H100 series, with floor $2.00 and band $1.60 per GPU-hour; every figure is computed in this page from that book by the clearing rule, and none is real market data.</p>
+    <div class="spec-grid" style="margin-top:28px" id="specs"></div>
+    <div class="figs" id="figs"></div>
+    <div class="sys">
+      <div class="card">
+        <div class="panelhead"><h4>Sealed book · H100 · series W47 · round 3</h4><span class="ex">Example</span></div>
+        <div class="tablewrap"><table class="book" id="book"></table></div>
+      </div>
+      <div class="card">
+        <div class="panelhead"><h4>Supply and demand at the reveal</h4><span class="ex">Example</span></div>
+        <div class="chartbox"><svg id="chart" viewBox="0 0 520 340" role="img" aria-label="Supply and demand step chart for the example book with the clearing price marked."></svg></div>
+        <div class="legend"><span><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2.4" fill="var(--long)"/></svg>Demand: LONG orders at or above the price</span><span><svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="3" width="10" height="10" rx="2.4" fill="none" stroke="var(--short)" stroke-width="2"/><rect x="2.6" y="0" width="1.8" height="2.2" fill="var(--short)"/><rect x="5.1" y="0" width="1.8" height="2.2" fill="var(--short)"/><rect x="7.6" y="0" width="1.8" height="2.2" fill="var(--short)"/></svg>Supply: SHORT orders at or below the price</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 TOKENS -->
+<section class="sec" id="tokens">
+  <div class="wrap">
+    <p class="eyebrow"><span class="dots"><i></i><i></i></span>05 · Tokens</p>
+    <h2 class="title">Two colours carry meaning. Everything else stays out of their way.</h2>
+    <p class="lede">Ultramarine against amber is the one pair that stays apart for every common colour-vision type: it differs in hue for deutan and protan readers and in lightness for everyone (relative luminance about 0.10 against 0.50), and every agent repeats the side in its silhouette. Bricolage Grotesque gives headlines a warm, slightly irregular voice; Instrument Sans keeps text plain; Martian Mono, narrowed to 87.5%, makes every figure line up like a spec sheet.</p>
+    <div class="tok-grid" style="margin-top:28px">
+      <div class="card" style="overflow-x:auto">
+        <table class="ct" id="ctab"></table>
+        <p class="note" style="padding:0 12px 14px;margin:0">Contrast is computed in the page against the ground of the same theme. Fills marked "shape only" are never used for text; their text twin is the "-ink" token.</p>
+      </div>
+      <div class="card spec">
+        <div class="row"><span class="label">Display · Bricolage Grotesque 800, opsz 96, -0.045 to -0.055 em</span><span class="typeA">Many agents.</span></div>
+        <div class="row"><span class="label">Text · Instrument Sans 400 / 600</span><span class="typeB">Every position is paid in full when it opens, so nothing is ever liquidated.</span></div>
+        <div class="row"><span class="label">Figures · Martian Mono 500 / 600, width 87.5, tabular, slashed zero</span><span class="typeC">$2.76 /GPU-h · 1,280 GPU-h · 80 GB HBM3</span></div>
+        <div class="row"><span class="label">Spacing · 4 px base</span>
+          <div class="spacing">
+            <div><i style="height:4px"></i>4</div><div><i style="height:8px"></i>8</div><div><i style="height:12px"></i>12</div><div><i style="height:16px"></i>16</div><div><i style="height:24px"></i>24</div><div><i style="height:32px"></i>32</div><div><i style="height:48px"></i>48</div><div><i style="height:64px"></i>64</div><div><i style="height:96px"></i>96</div>
+          </div>
+          <span class="note">Radius: 4 px on packages at 24 px, 14 px on cards, pills fully round. Gutter 16 px at 375, 4vw, 56 px max.</span>
+        </div>
+        <div class="row"><span class="label">Motion</span>
+          <div class="motion">
+            <div><code>hop 280 ms</code><span>One step of an agent. <code>cubic-bezier(.3,1.45,.55,1)</code>: a small overshoot on landing, 12% squash, pins lifting in turn.</span></div>
+            <div><code>toss 420 ms</code><span>A bid flying into its slot: a 14% squash before, an arc, a 1-unit settle.</span></div>
+            <div><code>open 240 ms</code><span>A cover popping off a sled.</span></div>
+            <div><code>stagger 85–160 ms</code><span>Agents never move in unison; order follows rank.</span></div>
+            <div><code>scan 1.4 s</code><span>Damped spring, ratio about 0.35, one visible overshoot.</span></div>
+            <div><code>floor loop 13.4 s</code><span>Price on screen by 8.4 s, held 4 s, then a new round.</span></div>
+            <div><code>flock cycle 18 s</code><span>11 s wheel, 3.5 s gather, 2.5 s hold, 1 s release.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="wrap footer">Weir · brand proposal SWARM · all figures on this board are examples or samples, marked where shown. Chip names are used descriptively; no maker's logo or trade dress is drawn.</div>
+</main>
+
+<template id="heroTpl">
+  <div class="first">
+    <canvas class="flock" aria-hidden="true"></canvas>
+    <div class="scrim"></div>
+    <div class="level-tag"><span>one price</span><b>$2.76 /GPU-h</b><span>sample</span></div>
+    <div class="hero-in">
+      <nav class="hnav">
+        <span class="lockup"><svg viewBox="0 0 32 32" style="--e1:var(--long);--e2:var(--short)"><use href="#logoH"/></svg>Weir</span>
+        <div class="links"><a href="#">Auction</a><a href="#">Index</a><a href="#">For agents</a><a href="#">Docs</a></div>
+        <a class="pill ghost btn-sm" href="#">Open app</a>
+        <span class="menu" aria-label="Menu"><i></i></span>
+      </nav>
+      <div class="hero-copy" data-copy>
+        <div>
+          <div class="idx"><span class="pulse"><i></i></span>H100 index <b>$2.76 per GPU-hour</b><em>sample</em></div>
+          <h1 class="hero-h1"><span class="l">Many agents.</span><span class="l">One price.</span></h1>
+          <p class="hero-p">Lock next week's GPU-hour before it spikes. Teams and their AI agents bid sealed, once a week, for next week's H100 hour; one price clears for everyone, and every position is paid in full when it opens, so nothing is ever liquidated.</p>
+          <div class="ctas">
+            <a class="pill primary" href="#"><span class="tok"><i></i><i></i></span>Bid in this week's round</a>
+            <a class="pill ghost" href="#">Watch a round clear</a>
+          </div>
+        </div>
+        <div class="hero-foot">
+          <span class="k"><span class="sq"></span>Buyers · LONG</span>
+          <span class="k"><span class="ho"></span>Sellers · SHORT</span>
+          <span>On NEAR · sealed bid · single price</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="floor-sec">
+    <div class="floor-head"><span class="figno">Fig. 1</span><h2>One round on the floor</h2></div>
+    <div class="bezel"><svg class="floor" role="img" aria-label="Animated scene: chip agents bring sealed bids, open them, rack them by price, and one slot lights as the clearing price."></svg></div>
+    <div class="floor-bar">
+      <p class="floor-status" aria-live="off"></p>
+      <button class="ctl floor-pause" type="button">Pause</button>
+      <button class="ctl floor-replay" type="button"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2.5 7a4.5 4.5 0 1 0 1.4-3.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2 1.8v2.6h2.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
+      <p class="floor-note">Example round, simulated in your browser with the clearing rule. Prices are examples; every bid is 64 GPU-h.</p>
+    </div>
+  </div>
+</template>
+
+<script>
+(() => {
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const RM = window.matchMedia("(prefers-reduced-motion: reduce)");
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function el(tag, attrs, parent) {
+  const n = document.createElementNS(NS, tag);
+  if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const seg = (t, a, d) => clamp01((t - a) / d);
+const lerp = (a, b, u) => a + (b - a) * u;
+const E = {
+  inOut: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  out: t => 1 - Math.pow(1 - t, 3),
+  back: t => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+};
+const money = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const cssVar = (name, node = document.documentElement) => getComputedStyle(node).getPropertyValue(name).trim();
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+/* ---------- theme switch ---------- */
+$$(".seg button").forEach(b => b.addEventListener("click", () => {
+  const th = b.dataset.th;
+  if (th === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", th);
+  $$(".seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  document.dispatchEvent(new Event("weir-theme"));
+}));
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => document.dispatchEvent(new Event("weir-theme")));
+
+/* ---------- clearing rule, SPEC 7 (prices in cents, tick 1 cent) ---------- */
+function clearBook(orders) {
+  const live = orders.filter(o => o.state === "revealed");
+  const cands = [...new Set(live.map(o => o.price))].sort((a, b) => a - b);
+  const D = p => live.filter(o => o.side === "L" && o.price >= p).reduce((s, o) => s + o.size, 0);
+  const S = p => live.filter(o => o.side === "S" && o.price <= p).reduce((s, o) => s + o.size, 0);
+  let rows = cands.map(p => ({ p, d: D(p), s: S(p), v: Math.min(D(p), S(p)) }));
+  const vmax = Math.max(0, ...rows.map(r => r.v));
+  if (vmax === 0) return { price: null, volume: 0, fills: new Map() };
+  rows = rows.filter(r => r.v === vmax);
+  const imb = Math.min(...rows.map(r => Math.abs(r.d - r.s)));
+  rows = rows.filter(r => Math.abs(r.d - r.s) === imb);
+  const lo = rows[0].p, hi = rows[rows.length - 1].p;
+  let price;
+  if (rows.every(r => r.d > r.s)) price = hi;
+  else if (rows.every(r => r.d < r.s)) price = lo;
+  else price = Math.floor((lo + hi) / 2);
+  const fills = new Map();
+  let left = vmax;
+  live.filter(o => o.side === "L" && o.price >= price).sort((a, b) => b.price - a.price || a.seq - b.seq)
+    .forEach(o => { const f = Math.min(o.size, left); left -= f; fills.set(o.seq, f); });
+  left = vmax;
+  live.filter(o => o.side === "S" && o.price <= price).sort((a, b) => a.price - b.price || a.seq - b.seq)
+    .forEach(o => { const f = Math.min(o.size, left); left -= f; fills.set(o.seq, f); });
+  return { price, volume: vmax, fills };
+}
+
+/* ---------- the kit: chip-people ---------- */
+function buildAgent(parent, side, role) {
+  const g = el("g", { class: "ag ag-" + side }, parent);
+  const w = el("g", {}, g);
+  const legs = [-7.3, -1.2, 4.9].map(x => el("rect", { x, y: -4.6, width: 2.4, height: 4.6, rx: .6, class: "pin" }, w));
+  [-19, -12.6].forEach(y => { el("rect", { x: -14.2, y, width: 3.6, height: 2.2, rx: .6, class: "pin" }, w); el("rect", { x: 10.6, y, width: 3.6, height: 2.2, rx: .6, class: "pin" }, w); });
+  let top = -26;
+  if (side === "S") { [-7.6, -1.6, 4.4].forEach(x => el("rect", { x, y: -31.4, width: 3.2, height: 4.6, rx: .8, class: "fin" }, w)); top = -31.4; }
+  if (role === "maker") {
+    el("path", { d: `M0 ${top} V${top - 5}`, class: "ant" }, w);
+    el("rect", { x: -2.7, y: top - 10.6, width: 5.4, height: 5.4, rx: .8, transform: `rotate(45 0 ${top - 7.9})`, class: "antk" }, w);
+  } else if (role === "noise") {
+    el("path", { d: `M0 ${top + .5} l-2.4 -2.6 l4.8 -2.6 l-2.4 -2.6`, class: "ant" }, w);
+    el("circle", { cx: 0, cy: top - 8.3, r: 1.7, class: "antk" }, w);
+  }
+  el("rect", { x: -11, y: -26, width: 22, height: 22, rx: 4, class: "body" }, w);
+  el("rect", { x: -8, y: -23, width: 16, height: 16, rx: 2.4, class: "ihs" }, w);
+  const e1 = el("rect", { x: -5.6, y: -19, width: 3.2, height: 6.6, rx: 1.6, class: "eye" }, w);
+  const e2 = el("rect", { x: 2.4, y: -19, width: 3.2, height: 6.6, rx: 1.6, class: "eye" }, w);
+  return { g, w, e1, e2, legs };
+}
+function setEyes(a, dx, dy, open) {
+  const h = 6.6 * open + 1.1 * (1 - open);
+  const y = -19 + (6.6 - h) / 2 + dy;
+  a.e1.setAttribute("x", -5.6 + dx); a.e2.setAttribute("x", 2.4 + dx);
+  a.e1.setAttribute("y", y); a.e2.setAttribute("y", y);
+  a.e1.setAttribute("height", h); a.e2.setAttribute("height", h);
+}
+function setLegs(a, phase) { // phase 0..1 within a hop, or -1 standing
+  a.legs.forEach((l, i) => l.setAttribute("y", phase < 0 ? -4.6 : -4.6 - (i % 2 === (phase < .5 ? 0 : 1) ? 1.6 : 0)));
+}
+function buildSled(parent, side, label, w = 44) {
+  const g = el("g", { class: "sled-" + side }, parent);
+  const inner = el("g", {}, g);
+  el("rect", { x: -w / 2, y: -5.5, width: w, height: 11, rx: 2, class: "sled-b" }, inner);
+  el("rect", { x: -w / 2 + 1.6, y: -3.5, width: 3, height: 7, rx: .8, class: "sled-h" }, inner);
+  el("rect", { x: w / 2 - 4.6, y: -3.5, width: 3, height: 7, rx: .8, class: "sled-h" }, inner);
+  const t = el("text", { x: 0, y: 3, "text-anchor": "middle", class: "sled-t" }, inner); t.textContent = label;
+  const cover = el("g", {}, g);
+  el("rect", { x: -w / 2 - 1.5, y: -7, width: w + 3, height: 14, rx: 2.5, class: "cover" }, cover);
+  el("path", { d: "M-2.4 -1.2 v-1.6 a2.4 2.4 0 0 1 4.8 0 v1.6", class: "lock" }, cover);
+  el("rect", { x: -3.4, y: -1.4, width: 6.8, height: 5, rx: 1, class: "lockb" }, cover);
+  const chk = el("g", { class: "chk" }, g);
+  el("circle", { cx: 0, cy: 0, r: 5.6 }, chk);
+  el("path", { d: "M-2.5 .2 L-.7 2 L2.7 -1.8" }, chk);
+  return { g, inner, cover, chk, w };
+}
+
+/* ---------- kit plate ---------- */
+(function kit() {
+  const s = $("#kitSvg");
+  el("line", { x1: 10, y1: 150, x2: 510, y2: 150, stroke: "var(--line)", "stroke-width": 1 }, s);
+  [["L", "buyer", 70], ["S", "seller", 190], ["L", "maker", 320], ["S", "noise", 445]].forEach(([side, role, x]) => {
+    const a = buildAgent(s, side, role);
+    a.g.setAttribute("transform", `translate(${x} 150) scale(2.6)`);
+    setEyes(a, side === "L" ? 1.5 : -1.5, 0, 1);
+  });
+  const c1 = buildSled(s, "L", "$2.88"); c1.g.setAttribute("transform", "translate(150 205) scale(1.6)"); c1.chk.style.display = "none";
+  const c2 = buildSled(s, "S", "$2.76"); c2.g.setAttribute("transform", "translate(300 205) scale(1.6)"); c2.cover.style.display = "none"; c2.chk.style.display = "none";
+  const c3 = buildSled(s, "L", "$2.88"); c3.g.setAttribute("transform", "translate(450 205) scale(1.6)"); c3.cover.style.display = "none"; c3.chk.setAttribute("transform", "translate(22 -6)");
+  [["sealed bid", 150], ["opened", 300], ["filled", 450]].forEach(([t, x]) => { const tx = el("text", { x, y: 245, "text-anchor": "middle", class: "sled-t", style: "fill:var(--ink-2);font-size:10px" }, s); tx.textContent = t; });
+})();
+
+/* ---------- logo size rows ---------- */
+function sizeRow(id, sym, colours, mono) {
+  const host = $(id);
+  [16, 24, 48, 160].forEach(px => {
+    const f = document.createElement("figure");
+    f.innerHTML = `<svg width="${px}" height="${px}" viewBox="0 0 32 32" style="${px < 30 ? mono : colours}"><use href="#${sym}"/></svg><figcaption>${px} px</figcaption>`;
+    host.appendChild(f);
+  });
+  const f = document.createElement("figure");
+  f.innerHTML = `<div class="appicon" style="width:16px;height:16px;border-radius:4px;background:var(--ink)"><svg viewBox="0 0 32 32" style="width:94%;color:var(--ground)"><use href="#${sym}"/></svg></div><figcaption>favicon</figcaption>`;
+  host.appendChild(f);
+}
+sizeRow("#sizesA", "logoH", "--e1:var(--long);--e2:var(--short)", "");
+sizeRow("#sizesB", "logoA", "--e1:var(--long);--e2:var(--short)", "");
+
+/* ---------- mark A in materials ---------- */
+(function materials() {
+  const host = $("#mats");
+  const ctx = document.createElement("canvas").getContext("2d");
+  const fins = [[5.8, 10.2, 1.8, 4.8, .9], [8.9, 8.6, 1.8, 6.4, .9], [12.0, 7.6, 1.8, 7.4, .9], [15.1, 7.2, 1.8, 7.8, .9], [18.2, 7.6, 1.8, 7.4, .9], [21.3, 8.6, 1.8, 6.4, .9], [24.4, 10.2, 1.8, 4.8, .9]];
+  const base = [[5, 14, 22, 13, 3.6]];
+  const feet = [[9.2, 26, 2.4, 3.6, .6], [20.4, 26, 2.4, 3.6, .6]];
+  const eyes = [[11.2, 17.2, 2.8, 5, 1.4], [18, 17.2, 2.8, 5, 1.4]];
+  const rr = ([x, y, w, h, r]) => `M${x + r} ${y}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${h - 2 * r}a${r} ${r} 0 0 1 -${r} ${r}h-${w - 2 * r}a${r} ${r} 0 0 1 -${r} -${r}v-${h - 2 * r}a${r} ${r} 0 0 1 ${r} -${r}z`;
+  const finsD = fins.map(rr).join(""), baseD = base.map(rr).join(""), feetD = feet.map(rr).join(""), eyesD = eyes.map(rr).join("");
+  const allD = finsD + baseD + feetD;
+  const pFin = new Path2D(finsD), pBase = new Path2D(baseD), pFeet = new Path2D(feetD), pEye = new Path2D(eyesD);
+  const part = (x, y) => ctx.isPointInPath(pEye, x, y) ? "eye" : ctx.isPointInPath(pBase, x, y) ? "base" : ctx.isPointInPath(pFin, x, y) ? "fin" : ctx.isPointInPath(pFeet, x, y) ? "foot" : null;
+  const tiles = [];
+  tiles.push(["Cloisonné enamel, gilt edges", `<svg viewBox="-2 -2 36 36"><defs>
+    <linearGradient id="en1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6E6BFF"/><stop offset="1" stop-color="#2420C4"/></linearGradient>
+    <linearGradient id="gilt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F3D88A"/><stop offset=".5" stop-color="#B98A2E"/><stop offset="1" stop-color="#F0D07A"/></linearGradient>
+    <radialGradient id="eyeg" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#E6E1D6"/></radialGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy=".7" stdDeviation=".7" flood-color="#1b1640" flood-opacity=".35"/></filter>
+    <filter id="bl"><feGaussianBlur stdDeviation=".5"/></filter>
+    <clipPath id="bc"><path d="${allD}"/></clipPath></defs>
+    <rect x="-2" y="-2" width="36" height="36" fill="#ECE6DA"/>
+    <g filter="url(#sh)"><path d="${allD}" fill="url(#gilt)" stroke="url(#gilt)" stroke-width="1.3" stroke-linejoin="round"/><path d="${feetD}" fill="url(#gilt)"/><path d="${finsD}${baseD}" fill="url(#en1)"/>
+    <path d="${eyesD}" fill="url(#eyeg)" stroke="url(#gilt)" stroke-width=".45"/></g>
+    <g clip-path="url(#bc)"><ellipse cx="12" cy="15.8" rx="7" ry="1.1" fill="#fff" opacity=".5" filter="url(#bl)"/></g></svg>`]);
+  let lit = "", off = "";
+  for (let y = .5; y < 32; y += 1) for (let x = .5; x < 32; x += 1) {
+    const p = part(x, y);
+    if (p && p !== "eye") lit += `<circle cx="${x}" cy="${y}" r=".38" fill="${p === "fin" ? "#FFB13D" : p === "foot" ? "#9B9EB3" : "#8C89FF"}"/>`;
+    else off += `<circle cx="${x}" cy="${y}" r=".3" fill="#1B1D29"/>`;
+  }
+  tiles.push(["LED dot matrix, 32 x 32", `<svg viewBox="-1 -1 34 34"><defs><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation=".55"/></filter></defs><rect x="-1" y="-1" width="34" height="34" fill="#0A0B11"/>${off}<g filter="url(#glow)" opacity=".9">${lit}</g>${lit}</svg>`]);
+  let bead = `<svg viewBox="0 0 32 32"><rect width="32" height="32" fill="#F1E3BE"/>`;
+  for (let y = 1; y < 32; y += 2) for (let x = 1; x < 32; x += 2) {
+    const p = part(x, y);
+    if (!p) { bead += `<circle cx="${x}" cy="${y}" r=".22" fill="#D8C79E"/>`; continue; }
+    const c = p === "eye" ? "#FBF8F0" : p === "fin" ? "#9AA0B4" : p === "foot" ? "#2B2A33" : "#3E3BF0";
+    bead += `<circle cx="${x}" cy="${y}" r=".66" fill="none" stroke="${c}" stroke-width=".58"/><path d="M${x - .6} ${y - .25}a.66 .66 0 0 1 .7 -.4" stroke="#fff" stroke-opacity=".45" stroke-width=".18" fill="none"/>`;
+  }
+  tiles.push(["Fuse beads, 16 x 16", bead + `</svg>`]);
+  let lines = "";
+  for (let y = -2; y < 34; y += .62) {
+    let d = `M-2 ${y.toFixed(2)}`;
+    for (let x = -1; x <= 34; x += 1) d += `L${x} ${(y + .14 * Math.sin(x * .55 + y * 1.3)).toFixed(2)}`;
+    lines += `<path d="${d}"/>`;
+  }
+  tiles.push(["Banknote engraving, 0.62-unit line", `<svg viewBox="-2 -2 36 36"><defs>
+    <mask id="mi" maskUnits="userSpaceOnUse" x="-2" y="-2" width="36" height="36"><rect x="-2" y="-2" width="36" height="36" fill="#000"/><path d="${allD}" fill="#fff"/><path d="${eyesD}" fill="#000"/></mask>
+    <mask id="mo" maskUnits="userSpaceOnUse" x="-2" y="-2" width="36" height="36"><rect x="-2" y="-2" width="36" height="36" fill="#fff"/><path d="${allD}" fill="#000" stroke="#000" stroke-width=".9"/></mask></defs>
+    <rect x="-2" y="-2" width="36" height="36" fill="#EAE2CF"/>
+    <g mask="url(#mo)" stroke="#2A3A52" stroke-width=".08" fill="none" opacity=".75">${lines}</g>
+    <g mask="url(#mi)" stroke="#1C2638" stroke-width=".36" fill="none">${lines}</g>
+    <path d="${allD}" fill="none" stroke="#1C2638" stroke-width=".22"/></svg>`]);
+  host.innerHTML = tiles.map(([c, s]) => `<figure>${s}<figcaption>${c}</figcaption></figure>`).join("");
+})();
+
+/* ============ HERO: template ============ */
+const tpl = $("#heroTpl");
+$$("[data-hero]").forEach(host => {
+  host.appendChild(tpl.content.cloneNode(true));
+  new Flock($(".first", host));
+  new Floor($(".floor-sec", host));
+});
+
+/* ============ FLOCK of chip-agents (canvas, hand written) ============ */
+function Flock(host) {
+  const cv = $("canvas", host), ctx = cv.getContext("2d", { alpha: false });
+  const tag = $(".level-tag", host);
+  let W = 0, H = 0, dpr = 1, N = 0, agents = [], grid = new Map();
+  let col = {}, running = false, visible = false, raf = 0, last = 0, clock = 0, cycleStart = 0, levelY = 200;
+  const CYCLE = 18, WANDER = 11, GATHER = 3.5, HOLD = 2.5;
+  function measureLevel() { const c = $("[data-copy]", host); const top = c ? c.offsetTop : H * .4; levelY = Math.max(96, Math.min(H * (W < 600 ? .26 : .31), top - 44)); }
+  function readColours() { col = { ground: cssVar("--ground", host), long: cssVar("--long", host), short: cssVar("--short", host), ink: cssVar("--ink", host) }; }
+  function resize() {
+    const r = host.getBoundingClientRect();
+    if (!r.width) return;
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const want = Math.max(160, Math.min(W < 600 ? 240 : 520, Math.round(W * H / 1900)));
+    if (want !== N) seed(want);
+    measureLevel(); assignTargets();
+    tag.style.top = levelY + "px";
+    paintGround(1);
+    if (RM.matches) still();
+  }
+  function seed(n) {
+    N = n; agents = [];
+    for (let i = 0; i < n; i++) {
+      const side = i % 2;
+      const cx = W * (side ? .64 : .36), cy = H * (side ? .42 : .26);
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * Math.min(W, H) * .3;
+      agents.push({ side, x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r * .7, vx: (Math.random() - .5) * 40, vy: (Math.random() - .5) * 40, tx: 0, ty: 0, ph: Math.random() * 6.28, sz: .85 + Math.random() * .4 });
+    }
+  }
+  function assignTargets() {
+    const L = levelY, m0 = W * .05, m1 = W * .95;
+    for (const side of [0, 1]) {
+      const set = agents.filter(a => a.side === side).sort((a, b) => a.x - b.x);
+      const per = Math.max(1, Math.floor((m1 - m0) / 6.4));
+      const rows = Math.ceil(set.length / per), perRow = Math.ceil(set.length / rows);
+      set.forEach((a, i) => {
+        const row = i % rows, k = Math.floor(i / rows);
+        a.tx = m0 + (k + .5 + (row % 2) * .5) * (m1 - m0) / perRow;
+        a.ty = side === 0 ? L - 5.5 - row * 6.2 : L + 5.5 + row * 6.2;
+      });
+    }
+  }
+  const flow = (x, y, t) => Math.sin(x * .0042 + t * .17) * 1.7 + Math.cos(y * .0061 - t * .11) * 1.9 + Math.sin((x + y) * .0023 + t * .07) * 1.3;
+  function g01(tc) {
+    if (tc < WANDER) return 0;
+    if (tc < WANDER + GATHER) return E.inOut((tc - WANDER) / GATHER);
+    if (tc < WANDER + GATHER + HOLD) return 1;
+    return 1 - E.out((tc - WANDER - GATHER - HOLD) / (CYCLE - WANDER - GATHER - HOLD));
+  }
+  let lastPhase = -1;
+  function step(dt, t) {
+    const tc = (t - cycleStart) % CYCLE;
+    const phase = tc < WANDER ? 0 : tc < WANDER + GATHER ? 1 : tc < WANDER + GATHER + HOLD ? 2 : 3;
+    if (phase === 1 && lastPhase !== 1) assignTargets();
+    if (phase === 3 && lastPhase === 2) for (const a of agents) { a.vx += (Math.random() - .5) * 90; a.vy += (a.side ? 1 : -1) * (40 + Math.random() * 80); }
+    lastPhase = phase;
+    tag.classList.toggle("on", phase === 2 || (phase === 1 && tc > WANDER + GATHER * .7));
+    const g = g01(tc), R = 30, cell = R; grid.clear();
+    for (let i = 0; i < N; i++) { const a = agents[i]; const k = ((a.x / cell) | 0) + "," + ((a.y / cell) | 0); let b = grid.get(k); if (!b) grid.set(k, b = []); b.push(i); }
+    for (let i = 0; i < N; i++) {
+      const a = agents[i];
+      let ax = 0, ay = 0;
+      if (g < 1) {
+        let n = 0, avx = 0, avy = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+        const gx = (a.x / cell) | 0, gy = (a.y / cell) | 0;
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          const b = grid.get((gx + ox) + "," + (gy + oy)); if (!b) continue;
+          for (const j of b) {
+            if (j === i) continue; const o = agents[j];
+            const dx = o.x - a.x, dy = o.y - a.y, d2 = dx * dx + dy * dy;
+            if (d2 > R * R) continue;
+            if (d2 < 196 && d2 > .01) { const d = Math.sqrt(d2); sx -= dx / d * (14 - d); sy -= dy / d * (14 - d); }
+            if (o.side === a.side) { n++; avx += o.vx; avy += o.vy; cx += o.x; cy += o.y; }
+          }
+        }
+        let fx = sx * 2.4, fy = sy * 2.4;
+        if (n) { fx += (avx / n - a.vx) * .6; fy += (avy / n - a.vy) * .6; fx += (cx / n - a.x) * .28; fy += (cy / n - a.y) * .28; }
+        const ang = flow(a.x, a.y, t) + (a.side ? Math.PI * .5 : 0);
+        fx += Math.cos(ang) * 34; fy += Math.sin(ang) * 34;
+        const mx = W * .04, top = H * .06, bot = H * (W < 600 ? .5 : .66);
+        if (a.x < mx) fx += (mx - a.x) * 2.2; if (a.x > W - mx) fx -= (a.x - W + mx) * 2.2;
+        if (a.y < top) fy += (top - a.y) * 2.2; if (a.y > bot) fy -= (a.y - bot) * 1.6;
+        ax += fx * (1 - g); ay += fy * (1 - g);
+      }
+      if (g > 0) {
+        const br = Math.sin(t * 2.2 + a.ph) * 1.2 * (1 - g * .6);
+        ax += ((a.tx - a.x) * 7 - a.vx * 4.2) * g;
+        ay += ((a.ty + br - a.y) * 7 - a.vy * 4.2) * g;
+      }
+      a.vx += ax * dt; a.vy += ay * dt;
+      const sp = Math.hypot(a.vx, a.vy), vmax = 74 + g * 260, vmin = 22 * (1 - g);
+      if (sp > vmax) { a.vx *= vmax / sp; a.vy *= vmax / sp; } else if (sp < vmin && sp > 0) { a.vx *= vmin / sp; a.vy *= vmin / sp; }
+      a.x += a.vx * dt; a.y += a.vy * dt;
+    }
+    return g;
+  }
+  function paintGround(alpha) { ctx.globalAlpha = alpha; ctx.fillStyle = col.ground; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+  function quad(a, s, th) {
+    const h = s / 2, c = Math.cos(th), si = Math.sin(th);
+    ctx.moveTo(a.x + (-h * c + h * si), a.y + (-h * si - h * c));
+    ctx.lineTo(a.x + (h * c + h * si), a.y + (h * si - h * c));
+    ctx.lineTo(a.x + (h * c - h * si), a.y + (h * si + h * c));
+    ctx.lineTo(a.x + (-h * c - h * si), a.y + (-h * si + h * c));
+    ctx.closePath();
+  }
+  function draw(g, trails) {
+    paintGround(trails ? .3 : 1);
+    const L = levelY;
+    if (g > .6) {
+      const k = (g - .6) / .4;
+      ctx.globalAlpha = k * .9; ctx.strokeStyle = col.ink; ctx.lineWidth = 1.25;
+      ctx.beginPath(); ctx.moveTo(W * .03, L + .5); ctx.lineTo(W * .97 * k + W * .03 * (1 - k), L + .5); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.fillStyle = col.long; ctx.beginPath();
+    for (const a of agents) if (!a.side) quad(a, 3.8 * a.sz, Math.atan2(a.vy, a.vx) * (1 - g));
+    ctx.fill();
+    ctx.strokeStyle = col.short; ctx.lineWidth = 1.3; ctx.beginPath();
+    for (const a of agents) if (a.side) quad(a, 3.9 * a.sz, Math.atan2(a.vy, a.vx) * (1 - g));
+    ctx.stroke();
+  }
+  function frame(now) {
+    if (!running) return;
+    const dt = Math.min(.033, (now - last) / 1000 || .016); last = now;
+    clock += dt;
+    draw(step(dt, clock), true);
+    raf = requestAnimationFrame(frame);
+  }
+  function still() { for (const a of agents) { a.x = a.tx; a.y = a.ty; a.vx = a.vy = 0; } paintGround(1); draw(1, false); tag.classList.add("on"); }
+  function play() { if (running || RM.matches || !visible || document.hidden) return; running = true; last = performance.now(); raf = requestAnimationFrame(frame); }
+  function pause() { running = false; cancelAnimationFrame(raf); }
+  readColours();
+  new ResizeObserver(resize).observe(host);
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; visible ? play() : pause(); }, { threshold: .02 }).observe(host);
+  document.addEventListener("visibilitychange", () => document.hidden ? pause() : play());
+  document.addEventListener("weir-theme", () => { readColours(); paintGround(1); if (RM.matches) still(); });
+  resize();
+  for (let i = 0; i < 90; i++) step(1 / 30, clock += 1 / 30);
+  cycleStart = clock - 4.5;
+  if (RM.matches) still();
+}
+
+/* ============ FIG. 1: the floor ============ */
+function Floor(host) {
+  const svg = $("svg.floor", host), stat = $(".floor-status", host);
+  const bRe = $(".floor-replay", host), bPa = $(".floor-pause", host);
+  const uid = "f" + Math.random().toString(36).slice(2, 8);
+  let L, mode = "", R = null, roundNo = 47, first = true, t = 0, last = 0, raf = 0, running = false, visible = false, paused = false;
+  let P = {}, clock = 0;
+  const TM = { reveal: 2.8, rank: 3.4, rack: 4.45, scan: 7.0, lit: 8.4, check: 8.55, back: 8.9, exit: 12.4, end: 13.4 };
+  function layout(wide) {
+    return wide
+      ? { wide, W: 1000, H: 340, G: 296, cx: 500, bay: 72, spine: 52, rowH: 15, s: 1.15, gap: 48, first: 40, n: 7, rx: 170, hold: .72,
+          B: [30, 20, 12, 6, 0, -10, -24], S: [-34, -22, -14, -8, 0, 11, 25],
+          rolesB: ["buyer", "buyer", "buyer", "maker", "buyer", "buyer", "noise"], rolesS: ["seller", "seller", "seller", "maker", "seller", "seller", "noise"] }
+      : { wide, W: 360, H: 330, G: 280, cx: 180, bay: 48, spine: 42, rowH: 16, s: .8, gap: 36, first: 26, n: 3, rx: 46, hold: .62,
+          B: [16, 0, -14], S: [-18, 0, 12], rolesB: ["buyer", "buyer", "noise"], rolesS: ["seller", "maker", "noise"] };
+  }
+  function build() {
+    const wide = host.getBoundingClientRect().width >= 600;
+    const m = wide ? "w" : "n"; if (m === mode && R) return; mode = m;
+    L = layout(wide);
+    svg.setAttribute("viewBox", `0 0 ${L.W} ${L.H}`);
+    svg.innerHTML = "";
+    const defs = el("defs", {}, svg);
+    const cp = el("clipPath", { id: uid + "c" }, defs); el("rect", { width: L.W, height: L.H, rx: L.wide ? L.H / 2 : L.rx }, cp);
+    const root = el("g", { "clip-path": `url(#${uid}c)` }, svg);
+    el("rect", { width: L.W, height: L.H, class: "hall-bg" }, root);
+    // back wall: a row of distant racks with blinking LEDs
+    const back = el("g", {}, root); P.leds = [];
+    for (let x = L.wide ? 60 : 8; x < L.W - 20; x += L.wide ? 74 : 58) {
+      const h = 120 + ((x * 37) % 40), w = L.wide ? 58 : 46;
+      el("rect", { x, y: L.G - h, width: w, height: h, rx: 2, class: "hall-rack" }, back);
+      for (let r = 0; r < 7; r++) for (let c = 0; c < 2; c++) P.leds.push(el("rect", { x: x + 6 + c * 6, y: L.G - h + 10 + r * 15, width: 2.2, height: 2.2, rx: .6, class: "hall-led" }, back));
+    }
+    el("path", { d: `M0 ${L.wide ? 34 : 42} H${L.W}`, class: "hall-tray" }, root);
+    el("rect", { x: 0, y: L.G, width: L.W, height: L.H - L.G, class: "hall-floor" }, root);
+    for (let x = 6; x < L.W; x += 10) el("rect", { x, y: L.G + 8, width: 1.6, height: 1.6, rx: .8, class: "hall-tile" }, root);
+    el("line", { x1: 0, x2: L.W, y1: L.G, y2: L.G, stroke: "var(--line)", "stroke-width": 1 }, root);
+    P.root = root;
+    P.rackG = el("g", {}, root);
+    P.agentsG = el("g", {}, root);
+    P.fx = el("g", {}, root);
+    P.fxTop = el("g", {}, root);
+    newRound(true);
+  }
+  function newRound(keepNo) {
+    if (!keepNo) roundNo++;
+    const n = L.n;
+    const Tp = first ? 276 : 270 + Math.floor(Math.random() * 13);
+    const jit = o => o === 0 ? 0 : o + Math.round(rnd(-2, 2));
+    const list = [];
+    L.B.forEach((o, i) => list.push({ side: "L", price: Tp + jit(o), role: L.rolesB[i], rank: i }));
+    L.S.forEach((o, i) => list.push({ side: "S", price: Tp + jit(o), role: L.rolesS[i], rank: i }));
+    list.forEach((a, i) => { a.seq = i; a.size = 64; a.state = "revealed"; });
+    const res = clearBook(list);
+    const rows = [...new Set(list.map(a => a.price))].sort((a, b) => b - a);
+    const { cx, spine, bay, rowH, G, s } = L;
+    const rackH = rows.length * rowH + 16, yT = G - (L.wide ? 22 : 30) - rackH;
+    const xl = cx - spine / 2 - bay, xr = cx + spine / 2 + bay;
+    const rowY = r => yT + 8 + r * rowH + rowH / 2;
+    const slotX = (side, i) => side === "L" ? xl - L.first - i * L.gap : xr + L.first + i * L.gap;
+    const perm = () => { const a = [...Array(n).keys()]; for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const pL = perm(), pS = perm();
+    // rack
+    P.rackG.innerHTML = ""; P.fxTop.innerHTML = "";
+    const rk = P.rackG;
+    el("rect", { x: xl - 4, y: yT + rackH, width: 6, height: G - yT - rackH, class: "rack-leg" }, rk);
+    el("rect", { x: xr - 2, y: yT + rackH, width: 6, height: G - yT - rackH, class: "rack-leg" }, rk);
+    el("rect", { x: xl - 4, y: yT, width: xr - xl + 8, height: rackH, rx: 4, class: "rack-f" }, rk);
+    el("rect", { x: cx - spine / 2, y: yT + 4, width: spine, height: rackH - 8, class: "rack-spine" }, rk);
+    rows.forEach((p, r) => {
+      if (r) el("line", { x1: xl, x2: xr, y1: yT + 8 + r * rowH, y2: yT + 8 + r * rowH, class: "rack-row" }, rk);
+      const tx = el("text", { x: cx, y: rowY(r) + 3, "text-anchor": "middle", class: "rack-lbl" }, rk); tx.textContent = money(p);
+    });
+    const hit = el("rect", { x: xl - 2, width: xr - xl + 4, height: rowH, class: "hit", opacity: 0 }, rk);
+    const scanG = el("g", { opacity: 0 }, rk);
+    el("rect", { x: xl - 30, y: -rowH / 2, width: xr - xl + 60, height: rowH, rx: 3, class: "scan-glow" }, scanG);
+    el("line", { x1: xl - 30, x2: xl - 8, y1: 0, y2: 0, class: "scan" }, scanG);
+    el("line", { x1: xr + 8, x2: xr + 30, y1: 0, y2: 0, class: "scan" }, scanG);
+    const pline = el("line", { x1: 0, x2: L.W, class: "pline", opacity: 0 }, rk);
+    const plate = el("g", { class: "plate" }, rk);
+    const plw = L.wide ? 140 : 84, plx = xl - 4;
+    el("rect", { x: plx, y: yT - 26, width: plw, height: 16, rx: 3 }, plate);
+    const plt = el("text", { x: plx + plw / 2, y: yT - 15, "text-anchor": "middle" }, plate); plt.textContent = L.wide ? `ROUND ${roundNo} · H100 · W47` : `ROUND ${roundNo}`;
+    el("line", { x1: plx + 10, x2: plx + 10, y1: yT - 10, y2: yT, stroke: "var(--ink)" }, plate);
+    el("line", { x1: plx + plw - 10, x2: plx + plw - 10, y1: yT - 10, y2: yT, stroke: "var(--ink)" }, plate);
+    // the house character: a heatsink who sits on the rack and keeps the floor cool
+    const ms = L.wide ? 1.3 : 1, mx = xr + 4 - 13 * ms;
+    const mg = el("g", { transform: `translate(${mx} ${yT})` }, rk), mw = el("g", {}, mg);
+    const mi = el("g", { transform: `scale(${ms}) translate(-16 -29.6)`, fill: "var(--ink)" }, mw);
+    [[5.8, 10.2, 1.8, 4.8, .9], [8.9, 8.6, 1.8, 6.4, .9], [12.0, 7.6, 1.8, 7.4, .9], [15.1, 7.2, 1.8, 7.8, .9], [18.2, 7.6, 1.8, 7.4, .9], [21.3, 8.6, 1.8, 6.4, .9], [24.4, 10.2, 1.8, 4.8, .9], [5, 14, 22, 13, 3.6], [9.2, 26, 2.4, 3.6, .6], [20.4, 26, 2.4, 3.6, .6]]
+      .forEach(([x, y, w, h, r]) => el("rect", { x, y, width: w, height: h, rx: r }, mi));
+    const me1 = el("rect", { x: 11.2, y: 17.2, width: 2.8, height: 5, rx: 1.4, fill: "var(--long)" }, mi);
+    const me2 = el("rect", { x: 18, y: 17.2, width: 2.8, height: 5, rx: 1.4, fill: "var(--short)" }, mi);
+    const bubble = (txt, w) => { const b = el("g", { class: "bub", opacity: 0 }, P.fxTop); el("rect", { x: -w / 2, y: -11, width: w, height: 16, rx: 4 }, b); const tx = el("text", { x: 0, y: 1, "text-anchor": "middle" }, b); tx.textContent = txt; return b; };
+    const cntL = el("text", { x: xl - 14, y: yT + 4, "text-anchor": "end", class: "cnt L", opacity: 0 }, rk);
+    const cntS = el("text", { x: xr + 14, y: yT + 4, "text-anchor": "start", class: "cnt S", opacity: 0 }, rk);
+    const pill = el("g", { opacity: 0 }, rk);
+    const pbg = el("rect", { y: -9, height: 18, rx: 9, class: "pillbg" }, pill);
+    const ptx = el("text", { x: 0, y: 3.5, "text-anchor": "middle", class: "pilltx" }, pill);
+    // agents
+    P.agentsG.innerHTML = ""; P.fx.innerHTML = "";
+    const order = [];
+    for (let i = 0; i < n; i++) order.push(["L", i, i + Math.random() * 1.6], ["S", i, i + Math.random() * 1.6]);
+    order.sort((a, b) => a[2] - b[2]);
+    const agents = [];
+    const sledW = bay - 10;
+    list.forEach(d => {
+      const a = Object.assign({}, d);
+      a.filled = (res.fills.get(d.seq) || 0) > 0;
+      a.row = rows.indexOf(d.price);
+      a.rankX = slotX(d.side, d.rank);
+      a.arrX = slotX(d.side, (d.side === "L" ? pL : pS)[d.rank]);
+      a.startX = d.side === "L" ? -26 : L.W + 26;
+      a.fig = buildAgent(P.agentsG, d.side, d.role);
+      a.sled = buildSled(P.agentsG, d.side, money(d.price), sledW);
+      a.slot = [d.side === "L" ? xl + bay / 2 : xr - bay / 2, rowY(a.row)];
+      const k = order.findIndex(o => o[0] === d.side && o[1] === d.rank);
+      a.arrS = .1 + k * (n > 4 ? .085 : .2);
+      a.arrE = a.arrS + Math.max(.6, Math.min(1.25, Math.abs(a.arrX - a.startX) / 420));
+      a.revS = TM.reveal + Math.random() * .08;
+      a.rkS = TM.rank + d.rank * .03 + (d.side === "S" ? .015 : 0); a.rkE = a.rkS + .75;
+      const kk = d.rank * 2 + (d.side === "S" ? 1 : 0);
+      a.tossS = TM.rack + kk * (n > 4 ? .16 : .32); a.tossE = a.tossS + .42;
+      a.chkS = TM.check + d.rank * .05;
+      a.backS = TM.back + d.rank * .05 + (d.side === "S" ? .02 : 0); a.backE = a.backS + .45;
+      a.exS = TM.exit + Math.random() * .3; a.exE = a.exS + .85;
+      a.blink = Math.floor(Math.random() * 2400);
+      agents.push(a);
+    });
+    const gags = L.wide ? ["late", "yawn", "late"] : ["yawn"];
+    const gag = first ? "late" : gags[Math.floor(Math.random() * gags.length)];
+    R = { list, res, rows, rowY, yT, xl, xr, rackH, agents, gag, pS: res.price, pRow: rows.indexOf(res.price), hit, scanG, pline, cntL, cntS, pill, pbg, ptx, no: roundNo,
+      masc: { g: mg, w: mw, e1: me1, e2: me2, x: mx, y: yT, s: ms, cool: bubble("Cool.", 44) } };
+    if (gag === "late") {
+      const a = { side: "S", role: "noise", fig: buildAgent(P.fx, "S", "noise"), sled: buildSled(P.fx, "S", "", sledW) };
+      a.sled.chk.style.display = "none";
+      const bub = bubble("SEALED", 56);
+      R.late = { a, bub, x0: L.W + 26, x1: xr + L.first * .4 };
+    }
+    if (gag === "yawn") {
+      R.yawn = agents.find(a => a.side === "S" && a.rank === n - 1);
+      R.zz = el("text", { class: "zz", opacity: 0 }, P.fx); R.zz.textContent = "z";
+    }
+    first = false;
+  }
+  function hopAt(u, dist, s, h = 9) {
+    if (u <= 0 || u >= 1) return { y: 0, sx: 1, sy: 1, ph: -1 };
+    const n = Math.max(1, Math.round(dist / (40 * s)));
+    const f = (u * n) % 1;
+    return { y: -Math.sin(Math.PI * f) * h * s, sx: f < .14 || f > .9 ? 1.09 : .96, sy: f < .14 || f > .9 ? .88 : 1.05, ph: f };
+  }
+  function moveX(t, a0, d, x0, x1, s, h) {
+    const u = seg(t, a0, d), e = E.inOut(u), h0 = hopAt(u, Math.abs(x1 - x0), s, h);
+    return { x: lerp(x0, x1, e), hy: h0.y, sx: h0.sx, sy: h0.sy, ph: h0.ph, moving: u > 0 && u < 1, dir: Math.sign(x1 - x0) };
+  }
+  function arc(u, x0, y0, x1, y1, lift) { return [lerp(x0, x1, u), lerp(y0, y1, u) - Math.sin(Math.PI * u) * lift]; }
+  function render(t) {
+    const { G, s, cx } = L, Rr = R;
+    const headY = G - 44 * s;
+    // scanner position (row index, fractional)
+    const top = Rr.rows.length - 1;
+    const u = t - TM.scan;
+    const startR = top + .9;
+    const rIdx = u <= 0 ? startR : Rr.pRow + (startR - Rr.pRow) * Math.exp(-3.4 * u) * Math.cos(5.4 * u);
+    const curRow = Math.max(0, Math.min(top, Math.round(rIdx)));
+    const curP = Rr.rows[curRow];
+    const D = Rr.list.filter(a => a.side === "L" && a.price >= curP).length;
+    const S = Rr.list.filter(a => a.side === "S" && a.price <= curP).length;
+    const scanO = seg(t, TM.scan - .15, .15) * (1 - seg(t, TM.lit + .2, .3));
+    Rr.scanG.setAttribute("opacity", scanO);
+    Rr.scanG.setAttribute("transform", `translate(0 ${Rr.rowY(Math.max(-.5, rIdx)).toFixed(2)})`);
+    const cO = seg(t, TM.scan - .1, .2) * (1 - seg(t, TM.exit, .3));
+    Rr.cntL.setAttribute("opacity", cO); Rr.cntS.setAttribute("opacity", cO);
+    const settled = t >= TM.lit;
+    const fN = Rr.agents.filter(a => a.filled && a.side === "L").length;
+    Rr.cntL.textContent = L.wide ? `BUYERS AT OR ABOVE ${settled ? fN : D}` : `BUY ${settled ? fN : D}`;
+    Rr.cntS.textContent = L.wide ? `SELLERS AT OR BELOW ${settled ? fN : S}` : `SELL ${settled ? fN : S}`;
+    const pY = Rr.rowY(Rr.pRow);
+    const litO = seg(t, TM.lit, .25) * (1 - seg(t, TM.exit + .4, .4));
+    Rr.hit.setAttribute("y", pY - L.rowH / 2); Rr.hit.setAttribute("opacity", litO);
+    Rr.pline.setAttribute("y1", pY); Rr.pline.setAttribute("y2", pY); Rr.pline.setAttribute("opacity", litO * .9);
+    const pw = L.wide ? 108 : 86;
+    Rr.pbg.setAttribute("x", -pw / 2); Rr.pbg.setAttribute("width", pw);
+    Rr.ptx.textContent = `${money(Rr.pS)} /GPU-h`;
+    const pp = E.back(seg(t, TM.lit, .4));
+    Rr.pill.setAttribute("opacity", litO);
+    const pillX = L.wide ? Rr.xr + 30 + pw / 2 + 120 : cx;
+    const pillY = L.wide ? pY : Rr.yT - 40;
+    Rr.pill.setAttribute("transform", `translate(${pillX} ${pillY}) scale(${.85 + .15 * pp})`);
+    // background LEDs
+    P.leds.forEach((l, i) => l.setAttribute("opacity", ((Math.sin(clock * (1 + (i % 5) * .37) + i * 1.7) + 1) / 2) > .55 ? .9 : .25));
+    const fadeAll = 1 - seg(t, TM.exit + .5, .4);
+    // agents
+    for (const a of Rr.agents) {
+      let x, hy = 0, sx = 1, sy = 1, ph = -1, look = [0, 0], open = 1, op = 1;
+      const dir = a.side === "L" ? 1 : -1; // toward the rack
+      if (t < a.arrE) { const m = moveX(t, a.arrS, a.arrE - a.arrS, a.startX, a.arrX, s); x = m.x; hy = m.hy; sx = m.sx; sy = m.sy; ph = m.ph; look = [m.dir * 2, 0]; }
+      else if (t < a.rkS) { x = a.arrX; look = t < TM.reveal ? [dir * 2, -.5] : [0, -2]; }
+      else if (t < a.exS) {
+        const m = moveX(t, a.rkS, a.rkE - a.rkS, a.arrX, a.rankX, s, Math.sign(a.rankX - a.arrX) === -dir ? 14 : 8);
+        x = m.x; hy = m.hy; sx = m.sx; sy = m.sy; ph = m.ph; look = m.moving ? [m.dir * 2, 0] : [dir * 2, -1];
+        // toss
+        const tu = seg(t, a.tossS - .14, .14); if (tu > 0 && tu < 1) { sy = 1 - .14 * Math.sin(Math.PI * tu); sx = 2 - sy; }
+        const th = seg(t, a.tossS, .22); if (th > 0 && th < 1) { hy = -Math.sin(Math.PI * th) * 7 * s; }
+        if (t >= TM.scan && t < TM.lit) { const dy = (Rr.rowY(Math.max(0, rIdx)) - (G - 15 * s)) / 40; look = [dir * 1.6, Math.max(-2, Math.min(1.5, dy))]; }
+        if (t >= a.chkS) {
+          if (a.filled) { x += dir * 6 * s * E.out(seg(t, a.chkS, .3)); look = [dir * 2, -1.2]; }
+          else { x -= dir * 14 * s * E.inOut(seg(t, a.backE, .4)); look = [0, 1.6]; open = 1 - .6 * seg(t, a.backE, .3); op = 1 - .5 * seg(t, a.backE, .4); }
+        }
+        if (Rr.yawn === a && t > TM.scan + .1 && t < TM.lit - .1) { open = .08; }
+      } else {
+        const base = a.rankX + (a.filled ? dir * 6 * s : -dir * 14 * s);
+        const m = moveX(t, a.exS, a.exE - a.exS, base, a.side === "L" ? -30 : L.W + 30, s); x = m.x; hy = m.hy; sx = m.sx; sy = m.sy; ph = m.ph; look = [m.dir * 2, 0];
+        op = a.filled ? 1 : .5;
+      }
+      if (((t * 1000 + a.blink) % 2700) < 110 && t > a.arrE) open = Math.min(open, .1);
+      a.fig.g.setAttribute("transform", `translate(${x.toFixed(2)} ${G})`);
+      a.fig.g.setAttribute("opacity", op);
+      a.fig.w.setAttribute("transform", `translate(0 ${hy.toFixed(2)}) scale(${(s * sx).toFixed(3)} ${(s * sy).toFixed(3)})`);
+      setEyes(a.fig, look[0], look[1], open); setLegs(a.fig, ph);
+      // sled
+      const sl = a.sled; let px, py, coverO = 1, coverY = 0, so = 1;
+      const held = [x, G + hy - 44 * s];
+      if (t < a.tossS) { [px, py] = held; }
+      else if (t < a.tossE) { const uu = E.inOut(seg(t, a.tossS, a.tossE - a.tossS)); const hx = a.rankX, hyy = headY; [px, py] = arc(uu, hx, hyy, a.slot[0], a.slot[1], 46); }
+      else if (!a.filled && t >= a.backS && t < a.backE) { const uu = E.inOut(seg(t, a.backS, a.backE - a.backS)); [px, py] = arc(uu, a.slot[0], a.slot[1], a.rankX, headY, 30); }
+      else if (!a.filled && t >= a.backE) { [px, py] = held; so = op; }
+      else { [px, py] = a.slot; if (t >= TM.exit) so = fadeAll; }
+      if (t >= a.revS) { const cu = seg(t, a.revS, .3); coverO = 1 - cu; coverY = -16 * E.out(cu); }
+      sl.cover.setAttribute("opacity", coverO); sl.cover.setAttribute("transform", `translate(0 ${coverY})`);
+      const sc = t >= a.tossS && t < a.tossE ? lerp(L.hold, 1, seg(t, a.tossS, a.tossE - a.tossS)) : (t < a.tossS || (!a.filled && t >= a.backE) ? L.hold : 1);
+      sl.g.setAttribute("transform", `translate(${px.toFixed(2)} ${py.toFixed(2)}) scale(${sc})`);
+      sl.g.setAttribute("opacity", so);
+      const ck = a.filled ? E.back(seg(t, a.chkS + .1, .3)) : 0;
+      sl.chk.style.display = ck > 0 && t < TM.exit + .9 ? "" : "none";
+      sl.chk.setAttribute("transform", `translate(${(a.side === "L" ? -1 : 1) * (a.sled.w / 2 + 2)} -5) scale(${Math.max(0, ck)})`);
+    }
+    // gags
+    if (Rr.late) {
+      const g = Rr.late, a = g.a;
+      let x = g.x0, hy = 0, ph = -1, show = t > 2.2 && t < 4.4;
+      if (t < 2.85) { const m = moveX(t, 2.2, .65, g.x0, g.x1, s); x = m.x; hy = m.hy; ph = m.ph; setEyes(a.fig, -2, 0, 1); }
+      else if (t < 3.4) { x = g.x1 + Math.sin((t - 2.85) * 40) * 1.2 * (1 - seg(t, 2.85, .3)); setEyes(a.fig, -1.5, -1.5, 1); }
+      else { const m = moveX(t, 3.4, .9, g.x1, g.x0, s); x = m.x; hy = m.hy; ph = m.ph; setEyes(a.fig, 2, .8, .6); }
+      a.fig.g.setAttribute("opacity", show ? 1 : 0); a.sled.g.setAttribute("opacity", show ? 1 : 0);
+      a.fig.g.setAttribute("transform", `translate(${x} ${G})`);
+      a.fig.w.setAttribute("transform", `translate(0 ${hy}) scale(${s})`); setLegs(a.fig, ph);
+      a.sled.g.setAttribute("transform", `translate(${x} ${G + hy - 44 * s}) scale(${L.hold})`);
+      const bo = seg(t, 2.85, .12) * (1 - seg(t, 3.5, .2));
+      g.bub.setAttribute("opacity", bo); g.bub.setAttribute("transform", `translate(${Rr.masc.x + 18 * Rr.masc.s + 30} ${Rr.masc.y - 20 * Rr.masc.s}) scale(${.8 + .2 * E.back(seg(t, 2.85, .3))})`);
+    }
+    if (Rr.yawn) {
+      const a = Rr.yawn, zo = t > TM.scan + .2 && t < TM.lit - .1 ? 1 : 0, zu = ((t - TM.scan) % .9) / .9;
+      R.zz.setAttribute("opacity", zo * (1 - zu));
+      R.zz.setAttribute("x", a.rankX + 10 + zu * 6); R.zz.setAttribute("y", G - 36 * s - zu * 16);
+    }
+    // the house heatsink
+    { const m = Rr.masc; const hu = seg(t, TM.lit + .1, .4); const hop = -Math.sin(Math.PI * hu) * 6;
+      const sq = hu > 0 && hu < .15 ? .9 : 1;
+      m.w.setAttribute("transform", `translate(0 ${hop.toFixed(2)}) scale(${2 - sq} ${sq})`);
+      let dx = Math.sin(clock * .6) * .9, dy = 0, open = 1;
+      if (t >= TM.scan && t < TM.lit) { dx = -1.2; dy = 1.4; }
+      if (t >= 2.85 && t < 3.6 && Rr.late) { dx = 1.4; dy = 1; }
+      if ((clock % 3.3) < .12) open = .15;
+      const h = 5 * open + .8 * (1 - open);
+      [[m.e1, 11.2], [m.e2, 18]].forEach(([e, x]) => { e.setAttribute("x", x + dx); e.setAttribute("y", 17.2 + (5 - h) / 2 + dy); e.setAttribute("height", h); });
+      const co = seg(t, TM.lit + .55, .15) * (1 - seg(t, TM.lit + 2.6, .3));
+      m.cool.setAttribute("opacity", co); m.cool.setAttribute("transform", `translate(${m.x + 18 * m.s + 24} ${m.y - 20 * m.s + hop}) scale(${.8 + .2 * E.back(seg(t, TM.lit + .55, .3))})`);
+    }
+    // status
+    let msg;
+    const nArr = Rr.agents.filter(a => t >= a.arrE).length;
+    if (t < TM.reveal) msg = `Round ${Rr.no}. Bringing sealed bids: ${nArr} of ${Rr.agents.length} in.`;
+    else if (t < TM.rank) msg = Rr.late && t < 3.6 ? "Every cover pops at once. Round sealed: late bids wait for next week." : "Every cover pops at once. Nobody saw a price before bidding.";
+    else if (t < TM.rack) msg = "Lining up: keenest buyers and cheapest sellers nearest the rack.";
+    else if (t < TM.scan) msg = "Racking: each bid goes into the slot for its price.";
+    else if (t < TM.lit) msg = `Scanning ${money(curP)} /GPU-h: ${D} buyers at or above, ${S} sellers at or below.`;
+    else if (t < TM.exit) msg = `<b>One price: ${money(Rr.pS)} /GPU-h.</b> ${fN} buyers and ${fN} sellers filled at it; the rest take their bids home.`;
+    else msg = "Shift over. Next round.";
+    if (stat.dataset.m !== msg) { stat.innerHTML = msg; stat.dataset.m = msg; }
+  }
+  function frame(now) {
+    if (!running) return;
+    const dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
+    t += dt; clock += dt;
+    if (t >= TM.end) { t = 0; newRound(false); }
+    render(t);
+    raf = requestAnimationFrame(frame);
+  }
+  function play() { if (running || RM.matches || paused || !visible || document.hidden) return; running = true; last = performance.now(); raf = requestAnimationFrame(frame); }
+  function stop() { running = false; cancelAnimationFrame(raf); }
+  function stillFrame() { t = 11; render(t); }
+  build();
+  if (RM.matches) { stillFrame(); bPa.hidden = true; } else render(0);
+  new ResizeObserver(() => { const m = host.getBoundingClientRect().width >= 600 ? "w" : "n"; if (m !== mode) { const keep = t; build(); t = RM.matches ? 11 : keep; render(t); } }).observe(host);
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; visible ? play() : stop(); }, { threshold: .15 }).observe(svg);
+  document.addEventListener("visibilitychange", () => document.hidden ? stop() : play());
+  bRe.addEventListener("click", () => { if (RM.matches) { stillFrame(); return; } t = 0; render(0); paused = false; bPa.textContent = "Pause"; play(); });
+  bPa.addEventListener("click", () => { paused = !paused; bPa.textContent = paused ? "Play" : "Pause"; paused ? stop() : play(); });
+}
+
+/* ============ SYSTEM IN USE ============ */
+(function specimens() {
+  const box = (x, y, w, h, c = "dlf", rx = 1.5) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" class="${c}"/>`;
+  const board = (w, h) => `<rect x="${(240 - w) / 2}" y="${(170 - h) / 2}" width="${w}" height="${h}" rx="6" class="dl"/>` +
+    [[(240 - w) / 2 + 9, (170 - h) / 2 + 9], [(240 + w) / 2 - 9, (170 - h) / 2 + 9], [(240 - w) / 2 + 9, (170 + h) / 2 - 9], [(240 + w) / 2 - 9, (170 + h) / 2 - 9]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.2" class="dl2"/><circle cx="${x}" cy="${y}" r="1.4" class="dl2"/>`).join("");
+  const vrm = (x0, y0, n, horiz) => Array.from({ length: n }, (_, i) => horiz ? box(x0 + i * 9, y0, 6, 6, "dl2", 1) : box(x0, y0 + i * 9, 6, 6, "dl2", 1)).join("");
+  function hopper(stacks) {
+    let s = board(200, 132);
+    s += box(78, 39, 84, 92, "dl", 3);                          // package substrate
+    s += box(102, 57, 36, 56, "dlf", 1.5);                      // GPU die
+    for (let i = 0; i < 3; i++) { const active = stacks === 6 || i !== 2; s += box(84, 50 + i * 24, 14, 20, active ? "dlf" : "dl2", 1.2); s += box(142, 50 + i * 24, 14, 20, "dlf", 1.2); }
+    s += vrm(32, 46, 9, false) + vrm(202, 46, 9, false);
+    s += `<path d="M58 140 h124" class="dl2" stroke-dasharray="2 2"/><text x="120" y="152" text-anchor="middle" class="dlt">mezzanine connectors on the underside</text>`;
+    return s;
+  }
+  function mi300() {
+    let s = board(212, 140);
+    s += box(66, 32, 108, 106, "dl", 3);
+    s += box(92, 46, 56, 78, "dl2", 1.5);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) s += box(96 + c * 25, 50 + r * 18.5, 23, 16, "dlf", 1);
+    for (let i = 0; i < 4; i++) { s += box(72, 42 + i * 22, 16, 18, "dlf", 1.2); s += box(152, 42 + i * 22, 16, 18, "dlf", 1.2); }
+    s += vrm(28, 42, 10, false) + vrm(206, 42, 10, false);
+    return s;
+  }
+  const specs = [
+    { name: "H100 SXM", maker: "NVIDIA", status: "First market", live: true, svg: hopper(5), fig: "Fig. 2",
+      rows: [["Architecture", "Hopper"], ["Memory", "80 GB HBM3, 5 of 6 stack sites active"], ["Bandwidth", "3.35 TB/s"], ["Power", "up to 700 W"], ["Form", "SXM5 module"], ["Index", "$2.76 /GPU-h (sample)"]] },
+    { name: "H200 SXM", maker: "NVIDIA", status: "Candidate", live: false, svg: hopper(6), fig: "Fig. 3",
+      rows: [["Architecture", "Hopper"], ["Memory", "141 GB HBM3e, 6 stacks"], ["Bandwidth", "4.8 TB/s"], ["Power", "up to 700 W"], ["Form", "SXM module"], ["Index", "not listed yet"]] },
+    { name: "Instinct MI300X", maker: "AMD", status: "Candidate", live: false, svg: mi300(), fig: "Fig. 4",
+      rows: [["Architecture", "CDNA 3, 8 compute dies on 4 I/O dies"], ["Memory", "192 GB HBM3, 8 stacks"], ["Bandwidth", "5.3 TB/s"], ["Power", "750 W"], ["Form", "OAM module"], ["Index", "not listed yet"]] }
+  ];
+  $("#specs").innerHTML = specs.map(c => `<article class="card specimen">
+    <div class="top"><span class="label">${c.fig} · ${c.maker}</span><span class="mk ${c.live ? "live" : ""}">${c.status}</span></div>
+    <h4>${c.name}</h4>
+    <svg viewBox="0 0 240 170" role="img" aria-label="Line drawing of the ${c.maker} ${c.name} module seen from above">${c.svg}</svg>
+    <dl class="sheet">${c.rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></article>`).join("");
+})();
+(function system() {
+  const FLOOR = 200, BAND = 160;
+  const book = [
+    { seq: 0, owner: "trainer-07.near", role: "buyer", side: "L", size: 640, price: 305, lock: 70000, state: "revealed" },
+    { seq: 1, owner: "idlefarm.near", role: "seller", side: "S", size: 512, price: 258, lock: 54000, state: "revealed" },
+    { seq: 2, owner: "mm-delta.near", role: "maker", side: "L", size: 256, price: 280, lock: 21000, state: "revealed" },
+    { seq: 3, owner: "mm-delta.near", role: "maker", side: "S", size: 256, price: 284, lock: 20000, state: "revealed" },
+    { seq: 4, owner: "agent-k.trainer-07.near", role: "buyer", side: "L", size: 384, price: 276, lock: 30000, state: "revealed", agentKey: true },
+    { seq: 5, owner: "dc-west.near", role: "seller", side: "S", size: 768, price: 270, lock: 70000, state: "revealed" },
+    { seq: 6, owner: "drift.near", role: "noise", side: "L", size: 128, price: 252, lock: 7000, state: "revealed", agentKey: true },
+    { seq: 7, owner: "rack9.near", role: "seller", side: "S", size: 320, price: 295, lock: 21000, state: "revealed" },
+    { seq: 8, owner: "infer-co.near", role: "buyer", side: "L", size: 512, price: 290, lock: 48000, state: "revealed" },
+    { seq: 9, owner: "orbit.near", role: "buyer", side: null, size: null, price: null, lock: 40000, state: "unrevealed" },
+    { seq: 10, owner: "quant-b.near", role: "buyer", side: "L", size: 200, price: 320, lock: 25000, state: "void" }
+  ];
+  const res = clearBook(book), P = res.price;
+  $("#figs").innerHTML = [
+    ["Clearing price", money(P), "/GPU-h", `Forward price for the delivery week. LONG pays ${money(P - FLOOR)}, SHORT pays ${money(BAND - (P - FLOOR))} per GPU-h.`],
+    ["Matched", res.volume.toLocaleString("en-US"), "GPU-h", "Filled on each side. The last LONG in line is filled in part."],
+    ["New sets, fully backed", money(res.volume * BAND), "", `${res.volume.toLocaleString("en-US")} GPU-h × ${money(BAND)} band. Nothing can be liquidated.`]
+  ].map(([k, v, u, s]) => `<div class="card fig"><span class="ex">Example</span><span class="label">${k}</span><span class="v">${v}<small>${u}</small></span><span class="s">${s}</span></div>`).join("");
+  const mini = (side, role, dim) => {
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "-16 -36 32 38");
+    const a = buildAgent(s, side, role === "maker" || role === "noise" ? "x" : role); setEyes(a, side === "S" ? -1.4 : 1.4, 0, 1);
+    if (dim) a.g.setAttribute("opacity", .35);
+    return s.outerHTML;
+  };
+  const rows = book.map(o => {
+    const f = res.fills.get(o.seq) || 0;
+    let st;
+    if (o.state === "unrevealed") st = `<span class="st bad">not revealed · forfeit</span>`;
+    else if (o.state === "void") st = `<span class="st bad">void by guard · lock back</span>`;
+    else if (f === o.size) st = `<span class="st fill">filled</span>`;
+    else if (f > 0) st = `<span class="st part">filled ${f} of ${o.size}</span>`;
+    else st = `<span class="st">not filled · lock back</span>`;
+    const side = o.side === "L" ? `<span class="side L"><i class="sq"></i>LONG</span>` : o.side === "S" ? `<span class="side S"><i class="ho"></i>SHORT</span>` : `<span class="side H"><i class="lk"></i>sealed</span>`;
+    return `<tr><td class="num">${o.seq}</td><td><span class="own">${mini(o.side || "L", o.role, !o.side)}<span class="mono" style="font-size:11.5px">${o.owner}</span>${o.agentKey ? '<span class="key" title="Function-call key: can bid, can never withdraw">agent key</span>' : ""}</span></td>
+      <td class="r num">${money(o.lock)}</td><td>${side}</td>
+      <td class="r num">${o.size == null ? "hidden" : o.size.toLocaleString("en-US") + " GPU-h"}</td>
+      <td class="r num">${o.price == null ? "hidden" : money(o.price) + " /GPU-h"}</td><td>${st}</td></tr>`;
+  }).join("");
+  $("#book").innerHTML = `<thead><tr><th>Seq</th><th>Owner</th><th class="r">Lock</th><th>Side</th><th class="r">Size</th><th class="r">Limit</th><th>State</th></tr></thead><tbody>${rows}</tbody>`;
+  const svg = $("#chart");
+  const W = 520, H = 340, m = { l: 56, r: 18, t: 30, b: 42 };
+  const live = book.filter(o => o.state === "revealed");
+  const xMax = 2200, pMin = 240, pMax = 320;
+  const X = q => m.l + q / xMax * (W - m.l - m.r), Y = p => m.t + (pMax - p) / (pMax - pMin) * (H - m.t - m.b);
+  for (let p = pMin; p <= pMax; p += 20) { el("line", { x1: m.l, x2: W - m.r, y1: Y(p), y2: Y(p), class: "ch-grid" }, svg); const t = el("text", { x: m.l - 8, y: Y(p) + 3.5, "text-anchor": "end", class: "ch-ax" }, svg); t.textContent = money(p); }
+  for (let q = 0; q <= 2000; q += 500) { const t = el("text", { x: X(q), y: H - m.b + 16, "text-anchor": "middle", class: "ch-ax" }, svg); t.textContent = q === 0 ? "0" : q.toLocaleString("en-US"); }
+  const xl = el("text", { x: W - m.r, y: H - 6, "text-anchor": "end", class: "ch-ax" }, svg); xl.textContent = "cumulative size, GPU-h";
+  const yl = el("text", { x: 8, y: 12, class: "ch-ax" }, svg); yl.textContent = "$ /GPU-h";
+  const Ls = live.filter(o => o.side === "L").sort((a, b) => b.price - a.price || a.seq - b.seq);
+  const Ss = live.filter(o => o.side === "S").sort((a, b) => a.price - b.price || a.seq - b.seq);
+  el("rect", { x: X(0), y: Y(P), width: X(res.volume) - X(0), height: H - m.b - Y(P), fill: "var(--ink)", opacity: .05 }, svg);
+  el("line", { x1: X(res.volume), x2: X(res.volume), y1: Y(P), y2: H - m.b, stroke: "var(--ink)", "stroke-dasharray": "3 3" }, svg);
+  function steps(arr, cls, side) {
+    let q = 0, d = "";
+    arr.forEach((o, i) => { const y = Y(o.price); d += (i ? `V${y}` : `M${X(0)} ${y}`) + `H${X(q + o.size)}`; q += o.size; });
+    el("path", { d, class: cls }, svg);
+    q = 0;
+    arr.forEach(o => {
+      const x = X(q + o.size / 2), y = Y(o.price), filled = (res.fills.get(o.seq) || 0) > 0;
+      if (side === "L") el("rect", { x: x - 4.5, y: y - 4.5, width: 9, height: 9, rx: 2.2, fill: filled ? "var(--long)" : "var(--surface)", stroke: "var(--long)", "stroke-width": 1.75 }, svg);
+      else { el("rect", { x: x - 4.5, y: y - 4.5, width: 9, height: 9, rx: 2.2, fill: filled ? "var(--short)" : "var(--surface)", stroke: "var(--short)", "stroke-width": 1.75 }, svg); [-3, 0, 3].forEach(dx => el("rect", { x: x + dx - .8, y: y - 8, width: 1.6, height: 2.4, fill: "var(--short)" }, svg)); }
+      q += o.size;
+    });
+  }
+  steps(Ls, "ch-D", "L"); steps(Ss, "ch-S", "S");
+  el("line", { x1: m.l, x2: W - m.r, y1: Y(P), y2: Y(P), class: "ch-p" }, svg);
+  const g = el("g", { transform: `translate(${W - m.r - 64} ${Y(P)})` }, svg);
+  el("rect", { x: -60, y: -10, width: 122, height: 20, rx: 10, class: "pillbg" }, g);
+  const pt = el("text", { x: 1, y: 3.5, "text-anchor": "middle", class: "pilltx" }, g); pt.textContent = `${money(P)} /GPU-h`;
+  const vt = el("text", { x: X(res.volume) + 6, y: H - m.b - 8, class: "ch-ax" }, svg); vt.textContent = `${res.volume.toLocaleString("en-US")} GPU-h matched`;
+})();
+
+/* ============ TOKENS ============ */
+(function tokens() {
+  const rows = [
+    ["--ground", "Ground", "#F3F4F7", "#0C0D13", "surface"],
+    ["--surface", "Surface", "#FFFFFF", "#14151D", "surface"],
+    ["--panel", "Panel", "#E9EBF1", "#1B1D27", "surface"],
+    ["--line", "Line", "#D5D8E2", "#2B2E3B", "shape"],
+    ["--ink", "Ink", "#12121C", "#F0F1F6", "text"],
+    ["--ink-2", "Ink 2", "#4A4C5E", "#A8ABBD", "text"],
+    ["--ink-3", "Ink 3", "#83869A", "#6E7185", "shape"],
+    ["--long", "Long · buyers (fill and text)", "#3E3BF0", "#8C89FF", "text"],
+    ["--short", "Short · sellers (fill)", "#FFA41B", "#FFB13D", "shape"],
+    ["--short-ink", "Short · sellers (text)", "#9A4E00", "#FFB13D", "text"],
+    ["--flag", "Flag · forfeit, void", "#B5175A", "#FF7AAE", "text"]
+  ];
+  const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(v => v <= .04045 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4)); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
+  const cr = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+  const cell = (hex, g, kind) => {
+    const sw = `<span class="sw"><i style="background:${hex}"></i><span class="mono" style="font-size:12px">${hex}</span></span>`;
+    if (kind === "surface") return sw;
+    return sw + `<span class="cr ${kind === "text" ? "ok" : "no"}">${cr(hex, g).toFixed(1)}:1${kind === "shape" ? " · shape only" : ""}</span>`;
+  };
+  $("#ctab").innerHTML = `<thead><tr><th>Token</th><th>Light</th><th>Dark</th></tr></thead><tbody>` +
+    rows.map(([v, n, l, d, k]) => `<tr><td><b style="font-weight:600">${n}</b><br><span class="mono" style="font-size:11px;color:var(--ink-2)">${v}</span></td><td>${cell(l, "#F3F4F7", k)}</td><td>${cell(d, "#0C0D13", k)}</td></tr>`).join("") + `</tbody>`;
+})();
+})();
+</script>
+</body>
+</html>

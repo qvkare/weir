@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heatsink · Silicon</title>
+<meta name="description" content="Art-direction proposal for Heatsink: the Silicon direction. The commodity is one hour of a GPU; the chip is the specimen, every order is a die on the wafer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Doto:wght@600;800;900&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#ECECE8; --sheet:#F7F7F4; --panel:#E2E2DD; --rule:#C8C8C1; --rule-2:#DADAD4;
+  --ink:#111214; --ink-2:#4A4B50; --ink-3:#8A8B8F;
+  --buy:#2D43C4; --buy-soft:#D9DDF5; --sell:#8A6000; --sell-soft:#F1E3BE; --sell-lit:#C99200;
+  --flag:#A1301F; --die:#D3D3CC;
+  --sans:"Geist",system-ui,sans-serif; --mono:"Geist Mono",ui-monospace,monospace; --dot:"Doto","Geist Mono",monospace;
+  --ease:cubic-bezier(.2,.7,.2,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0B0B0C; --sheet:#131416; --panel:#191A1D; --rule:#2E2F33; --rule-2:#222327;
+    --ink:#EDEDEA; --ink-2:#A3A4A9; --ink-3:#6C6D72;
+    --buy:#8D9BFF; --buy-soft:#1C2150; --sell:#E3B23C; --sell-soft:#3A2D0E; --sell-lit:#F2C454;
+    --flag:#F08C78; --die:#26272B;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0B0B0C; --sheet:#131416; --panel:#191A1D; --rule:#2E2F33; --rule-2:#222327;
+  --ink:#EDEDEA; --ink-2:#A3A4A9; --ink-3:#6C6D72;
+  --buy:#8D9BFF; --buy-soft:#1C2150; --sell:#E3B23C; --sell-soft:#3A2D0E; --sell-lit:#F2C454;
+  --flag:#F08C78; --die:#26272B;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:400 16px/1.55 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1240px;margin:0 auto;padding:0 max(16px,4vw)}
+.mono{font-family:var(--mono)}
+.lbl{font:500 11px/1.2 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.sample{display:inline-block;font:500 10.5px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 6px 3px;border:1px solid currentColor;border-radius:999px;color:var(--flag);vertical-align:.2em;white-space:nowrap}
+.buy{color:var(--buy)} .sell{color:var(--sell)}
+
+.board-top{border-bottom:1px solid var(--rule);background:var(--sheet)}
+.board-top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:54px}
+.board-top .who{display:flex;gap:16px;align-items:center}
+.theme{display:flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden}
+.theme button{font:500 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.04em;background:none;border:0;padding:8px 11px;color:var(--ink-2);cursor:pointer}
+.theme button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
+section.sheet{padding:80px 0 16px}
+.sheet-head{display:grid;grid-template-columns:64px 1fr auto;align-items:baseline;gap:16px;border-bottom:1px solid var(--ink);padding-bottom:12px;margin-bottom:32px}
+.sheet-no{font:800 34px/1 var(--dot)}
+.sheet-head h2{margin:0;font:500 26px/1.15 var(--sans);letter-spacing:-.02em}
+.sheet-head .tb{font:400 11.5px/1.4 var(--mono);color:var(--ink-3);text-transform:uppercase}
+@media (max-width:640px){.sheet-head{grid-template-columns:44px 1fr}.sheet-head .tb{display:none}}
+
+/* 1 direction */
+.direction{display:grid;grid-template-columns:1.15fr 1fr;gap:56px}
+.direction h3{font:900 clamp(64px,10vw,150px)/.82 var(--dot);letter-spacing:-.02em;margin:0 0 28px}
+.direction p{margin:0 0 14px;max-width:60ch;color:var(--ink-2)}
+.direction p b{color:var(--ink);font-weight:500}
+.feeling{border:1px solid var(--rule);background:var(--sheet);border-radius:14px;padding:22px}
+.feeling .q{font:500 34px/1.1 var(--sans);letter-spacing:-.03em;margin:14px 0 10px}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+.side-card{border:1px solid var(--rule);border-radius:10px;padding:12px 14px;background:var(--ground)}
+.side-card .sw{display:flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);text-transform:uppercase;margin-bottom:8px}
+.side-card .sw i{width:12px;height:12px;border-radius:2px;display:inline-block}
+.side-card p{margin:0;font-size:14px;line-height:1.45;color:var(--ink-2)}
+@media (max-width:900px){.direction{grid-template-columns:1fr;gap:28px}}
+
+/* 2 logos */
+.logo-block{border-top:1px solid var(--rule);padding:32px 0 40px}
+.logo-block:first-of-type{border-top:0;padding-top:0}
+.logo-title{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.logo-title h3{margin:0;font:500 22px/1.1 var(--sans);letter-spacing:-.02em}
+.pick{font:500 10.5px/1 var(--mono);text-transform:uppercase;color:var(--sheet);background:var(--ink);padding:5px 9px 4px;border-radius:999px}
+.construct{color:var(--ink-2);max-width:80ch;margin:0 0 22px}
+.logo-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
+.tile{border:1px solid var(--rule);background:var(--sheet);border-radius:12px;position:relative;display:flex;align-items:center;justify-content:center;min-height:190px;padding:28px 20px 20px;overflow:hidden}
+.tile>.tl{position:absolute;left:12px;top:10px;font:400 10.5px/1 var(--mono);text-transform:uppercase;color:var(--ink-3)}
+.t-mark{grid-column:span 4;min-height:300px}
+.t-lock{grid-column:span 8;min-height:300px}
+.t-one{grid-column:span 3;background:#fff;color:#000;border-color:#ddd}
+.t-light{grid-column:span 3;background:#ECECE8;color:#111214}
+.t-dark{grid-column:span 3;background:#0B0B0C;color:#EDEDEA;border-color:#0B0B0C}
+.t-one>.tl,.t-light>.tl{color:#8A8B8F}.t-dark>.tl{color:#6C6D72}
+.t-app{grid-column:span 3;gap:16px}
+.t-mat{grid-column:span 12;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:0;padding:40px 22px 18px}
+.mat{display:flex;flex-direction:column;align-items:center;gap:8px;flex:1;min-width:110px}
+.mat .sw{width:100%;aspect-ratio:1;border-radius:10px;display:flex;align-items:center;justify-content:center;max-width:150px}
+.mat span{font:400 10.5px/1.2 var(--mono);color:var(--ink-3);text-transform:uppercase;text-align:center}
+.t-sizes{grid-column:span 12;min-height:0;justify-content:flex-start;gap:36px;align-items:flex-end;padding:44px 24px 20px;flex-wrap:wrap}
+.t-sizes figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:10px}
+.t-sizes figcaption{font:400 10.5px/1 var(--mono);color:var(--ink-3)}
+.t-sizes .on-dark{background:#0B0B0C;color:#EDEDEA;padding:8px;border-radius:6px;display:flex}
+.t-sizes .group{display:flex;gap:36px;align-items:flex-end}
+.t-sizes .group+.group{border-left:1px solid var(--rule);padding-left:36px}
+.lockup{display:inline-flex;align-items:center}
+.wm-a{font:600 1em/1 var(--sans);letter-spacing:-.045em}
+.wm-b{font:900 1em/1 var(--dot);letter-spacing:.02em}
+.app-icon{width:96px;height:96px;border-radius:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(0,0,0,.06),0 10px 26px -14px rgba(0,0,0,.55)}
+@media (max-width:900px){.t-mark,.t-lock{grid-column:span 12}.t-one,.t-light,.t-dark,.t-app{grid-column:span 6}}
+@media (max-width:520px){.t-one,.t-light,.t-dark,.t-app{grid-column:span 12}.t-sizes .group+.group{border-left:0;padding-left:0}}
+
+/* 3 hero */
+.frame-cap{display:flex;justify-content:space-between;gap:16px;font:400 11.5px/1.4 var(--mono);color:var(--ink-3);margin:0 0 8px;text-transform:uppercase}
+.hero-frame{border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.hero{position:relative;height:clamp(700px,62vw,820px);overflow:hidden;background:var(--ground);isolation:isolate}
+.hero canvas{position:absolute;inset:0;width:100%;height:100%;z-index:0}
+.hero nav{position:relative;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:22px clamp(16px,4vw,44px)}
+.hero nav ul{display:flex;gap:26px;list-style:none;margin:0;padding:0;font:400 14px/1 var(--sans);color:var(--ink-2)}
+.hero nav ul a{text-decoration:none}.hero nav ul a:hover{color:var(--ink)}
+.nav-cta{font:500 13px/1 var(--sans);padding:10px 14px;border-radius:999px;background:var(--ink);color:var(--ground);text-decoration:none}
+.hero .copy{position:relative;z-index:3;padding:clamp(40px,9vh,96px) clamp(16px,4vw,44px) 0;max-width:640px}
+.eyebrow{display:inline-flex;gap:10px;align-items:center;font:500 11.5px/1 var(--mono);text-transform:uppercase;color:var(--ink-2);margin-bottom:26px}
+.eyebrow i{width:7px;height:7px;border-radius:1px;background:var(--buy);display:inline-block;box-shadow:11px 0 0 var(--sell)}
+.eyebrow span{margin-left:12px}
+.hero h1{font:600 clamp(50px,6.6vw,92px)/.95 var(--sans);letter-spacing:-.055em;margin:0 0 24px;text-wrap:balance}
+.hero h1 .d{font:900 1.04em/1 var(--dot);letter-spacing:-.01em}
+.hero .sub{font:400 18px/1.5 var(--sans);color:var(--ink-2);max-width:36ch;margin:0 0 30px}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;font:500 15px/1 var(--sans);padding:15px 20px;border-radius:999px;text-decoration:none;border:1px solid var(--ink);transition:background .16s var(--ease),color .16s var(--ease);cursor:pointer;background:none;color:var(--ink)}
+.btn.primary{background:var(--ink);color:var(--ground)}
+.btn.primary:hover{background:var(--buy);border-color:var(--buy)}
+.btn.ghost{background:color-mix(in srgb,var(--ground) 75%,transparent)}
+.btn.ghost:hover{background:var(--ink);color:var(--ground)}
+.plate{position:absolute;z-index:3;left:clamp(16px,4vw,44px);bottom:28px;display:flex;gap:28px;align-items:flex-end;flex-wrap:wrap}
+.plate .fig{font:900 54px/.9 var(--dot);letter-spacing:-.01em}
+.plate .fig small{font:500 14px/1 var(--mono);letter-spacing:0;color:var(--ink-2);margin-left:6px}
+.plate .meta{font:400 12.5px/1.45 var(--mono);color:var(--ink-2);max-width:34ch}
+.roundcap{position:absolute;z-index:3;right:clamp(16px,4vw,44px);bottom:28px;max-width:400px;text-align:right;font:400 11.5px/1.6 var(--mono);color:var(--ink-2);text-transform:uppercase;background:color-mix(in srgb,var(--ground) 70%,transparent);padding:6px 10px;border-radius:8px}
+.roundcap b{font-weight:500;color:var(--ink)}
+.roundcap .k{display:inline-flex;gap:6px;align-items:center;margin-left:12px}
+.roundcap .k i{width:8px;height:8px;border-radius:1px;display:inline-block}
+.menu-btn{display:none;background:none;border:1px solid var(--ink);border-radius:999px;padding:9px 12px;font:500 12px/1 var(--mono);text-transform:uppercase;color:var(--ink)}
+@media (max-width:760px){
+  .hero{height:780px}
+  .hero nav ul,.nav-cta{display:none}.menu-btn{display:inline-block}
+  .hero .copy{padding-top:20px}
+  .eyebrow{margin-bottom:18px}
+  .hero h1{font-size:48px;margin-bottom:16px}
+  .hero .sub{font-size:16px;margin-bottom:20px}
+  .btn{padding:13px 16px;font-size:14px}
+  .plate{bottom:auto;top:478px;gap:10px}
+  .plate .fig{font-size:40px}
+  .plate .meta{display:none}
+  .roundcap{left:16px;right:16px;text-align:left;bottom:12px;font-size:10px;max-width:none}
+  .roundcap .x{display:none}
+}
+.hero-pair{display:grid;grid-template-columns:1fr 377px;gap:36px;align-items:start;margin-top:32px}
+.narrow-frame{border:1px solid var(--ink);border-radius:30px;padding:10px;background:var(--sheet)}
+.narrow-frame iframe{display:block;width:355px;height:780px;border:0;border-radius:22px;background:var(--ground)}
+.notes{color:var(--ink-2)}
+.notes h4{font:500 20px/1.2 var(--sans);letter-spacing:-.02em;color:var(--ink);margin:0 0 12px}
+.notes ol{padding-left:20px;margin:0 0 20px}.notes li{margin-bottom:9px}.notes b{color:var(--ink);font-weight:500}
+@media (max-width:1000px){.hero-pair{grid-template-columns:1fr}.narrow-frame{justify-self:center}}
+@media (max-width:420px){.narrow-frame{padding:0;border:0}.narrow-frame iframe{width:100%}}
+
+/* 3b specimen, Fig. 1 */
+.spec-fig{border:1px solid var(--rule);background:var(--sheet);border-radius:14px;margin-top:56px;outline:none;overflow:hidden}
+.spec-fig:focus-visible{box-shadow:0 0 0 2px var(--buy)}
+.spec-head{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;padding:16px 22px 0;font:400 11.5px/1.3 var(--mono);text-transform:uppercase;color:var(--ink-2)}
+.spec-head .n{font:800 20px/1 var(--dot);color:var(--ink);text-transform:none}
+.spec-head .sp{flex:1}
+.spec-body{display:grid;grid-template-columns:1fr 290px}
+.spec-stage{position:relative;aspect-ratio:900/560}
+.spec-stage svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.sheetcol{border-left:1px solid var(--rule);padding:22px 22px 18px;display:flex;flex-direction:column;gap:14px}
+.sheetcol .model{font:900 40px/.9 var(--dot)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;margin:0;font:400 12.5px/1.35 var(--mono)}
+.kv dt{color:var(--ink-3);text-transform:uppercase}
+.kv dd{margin:0;text-align:right}
+@media (max-width:860px){.spec-body{grid-template-columns:1fr}.sheetcol{border-left:0;border-top:1px solid var(--rule)}.spec-stage{aspect-ratio:400/330}}
+.step-ui{display:grid;grid-template-columns:1fr auto;gap:22px;align-items:center;padding:18px 22px 20px;border-top:1px solid var(--rule)}
+.step-title{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.step-n{font:800 30px/1 var(--dot)}
+.step-of{font:400 13px/1 var(--mono);color:var(--ink-3)}
+.step-title h3{margin:0 0 0 6px;font:500 21px/1.15 var(--sans);letter-spacing:-.02em}
+.step-text p{margin:0;color:var(--ink-2);max-width:62ch;min-height:3.1em}
+.step-ctrl{display:flex;align-items:center;gap:8px}
+.round-btn{width:44px;height:44px;border-radius:50%;border:1px solid var(--rule);background:var(--sheet);color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.round-btn:hover{border-color:var(--ink)}
+.round-btn.primary{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+.pips{display:flex;gap:6px}
+.pip{width:40px;height:40px;border-radius:50%;border:1px solid var(--rule);background:none;color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:all .3s var(--ease)}
+.pip[aria-selected="true"]{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
+@media (max-width:900px){.step-ui{grid-template-columns:minmax(0,1fr)}.step-ctrl{flex-wrap:wrap}}
+
+/* 4 system */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
+.chip-card{background:var(--sheet);border:1px solid var(--rule);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.chip-card .top{display:flex;justify-content:space-between;align-items:center;padding:12px 14px 0;font:400 11px/1 var(--mono);text-transform:uppercase;color:var(--ink-3)}
+.chip-card .status{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+.chip-card .status i{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+.chip-card .status.live i{background:var(--buy);box-shadow:0 0 0 3px var(--buy-soft)}
+.chip-card svg{display:block;width:100%;height:auto}
+.chip-card .name{font:900 34px/1 var(--dot);padding:0 16px}
+.chip-card .kv{padding:12px 16px 16px;border-top:1px solid var(--rule-2);margin-top:12px}
+.figs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px}
+.fig-card{background:var(--sheet);border:1px solid var(--rule);border-radius:14px;padding:16px 18px}
+.fig-card .lbl{display:flex;justify-content:space-between}
+.fig-card .big{font:900 58px/1 var(--dot);margin:16px 0 8px;letter-spacing:-.01em}
+.fig-card .big small{font:500 14px/1 var(--mono);color:var(--ink-2);margin-left:6px;letter-spacing:0}
+.fig-card p{margin:0;font-size:13.5px;color:var(--ink-2)}
+@media (max-width:860px){.cards,.figs{grid-template-columns:1fr}}
+.panel{background:var(--sheet);border:1px solid var(--rule);border-radius:14px;margin-bottom:28px;overflow:hidden}
+.panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:14px 18px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.panel-head h3{margin:0;font:500 18px/1.2 var(--sans);letter-spacing:-.02em}
+.panel-head .note{font:400 11.5px/1.4 var(--mono);color:var(--ink-3);text-transform:uppercase}
+.tbl-wrap{overflow-x:auto}
+table.book{border-collapse:collapse;width:100%;min-width:860px;font-size:14px}
+.book th{font:500 10.5px/1.2 var(--mono);text-transform:uppercase;color:var(--ink-3);text-align:left;padding:10px 14px;border-bottom:1px solid var(--rule);white-space:nowrap;font-weight:500}
+.book th.r,.book td.r{text-align:right}
+.book td{padding:9px 14px;border-bottom:1px solid var(--rule-2);white-space:nowrap;font-family:var(--mono);font-size:13px}
+.book tbody tr:hover{background:var(--panel)}
+.book td.own{font-family:var(--mono)}
+.sidec{display:inline-flex;align-items:center;gap:7px;font:500 12px/1 var(--mono);text-transform:uppercase}
+.sidec i{width:9px;height:9px;border-radius:1px;display:inline-block}
+.sidec.L{color:var(--buy)} .sidec.L i{background:var(--buy)}
+.sidec.S{color:var(--sell)} .sidec.S i{background:repeating-linear-gradient(135deg,var(--sell) 0 1.5px,transparent 1.5px 3px);outline:1px solid var(--sell)}
+.sealed-cell{color:var(--ink-3);background:repeating-linear-gradient(135deg,var(--rule-2) 0 1px,transparent 1px 4px);padding:3px 8px;border-radius:3px}
+.state{display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:13px}
+.state i{width:7px;height:7px;border-radius:50%;display:inline-block;border:1.3px solid currentColor}
+.state.filled i{background:currentColor}
+.state.part i{background:linear-gradient(90deg,currentColor 55%,transparent 55%)}
+.state.unf{color:var(--ink-3)}.state.void,.state.forf{color:var(--flag)}
+.agent{font:500 9.5px/1 var(--mono);text-transform:uppercase;border:1px solid var(--ink-3);color:var(--ink-2);padding:3px 5px 2px;margin-left:8px;border-radius:999px}
+.chart-wrap{padding:8px 12px 4px}.chart-wrap svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:22px;flex-wrap:wrap;padding:0 18px 16px;font:400 12px/1.4 var(--mono);color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+
+/* 5 tokens */
+.tok{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
+.tok th{font:500 10.5px/1.2 var(--mono);text-transform:uppercase;color:var(--ink-3);text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule)}
+.tok td{padding:8px 12px;border-bottom:1px solid var(--rule-2);vertical-align:middle}
+.tok .sw{display:inline-block;width:20px;height:20px;border-radius:4px;border:1px solid rgba(127,127,127,.3);vertical-align:middle;margin-right:8px}
+.tok .ratio{font-family:var(--mono)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}
+.spec{background:var(--sheet);border:1px solid var(--rule);border-radius:14px;padding:18px 20px}
+.spec h4{margin:0 0 12px;font:500 18px/1.2 var(--sans)}
+.spec dl{display:grid;grid-template-columns:auto 1fr;gap:7px 18px;margin:0;font-size:13.5px}
+.spec dt{font-family:var(--mono);color:var(--ink-3);font-size:12px;text-transform:uppercase;padding-top:2px}
+.spec dd{margin:0}
+.typespec>div{padding:10px 0;border-bottom:1px solid var(--rule-2);display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.typespec em{font:400 11.5px/1.35 var(--mono);color:var(--ink-3);font-style:normal;text-align:right}
+@media (max-width:820px){.cols{grid-template-columns:1fr}}
+footer.board-foot{border-top:1px solid var(--rule);margin-top:64px;padding:24px 0 48px;color:var(--ink-3);font:400 12px/1.5 var(--mono)}
+
+html.only-hero body > *:not(.hero-host):not(.defs):not(script){display:none!important}
+html.only-hero .hero-host .wrap{max-width:none;padding:0}
+html.only-hero .hero-frame{border:0;border-radius:0}
+html.only-hero .frame-cap,html.only-hero .hero-pair,html.only-hero .spec-fig,html.only-hero .sheet-head{display:none}
+html.only-hero section.sheet{padding:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script>
+  if (new URLSearchParams(location.search).get('only') === 'hero') document.documentElement.classList.add('only-hero');
+  try{const t=localStorage.getItem('weir-si-theme'); if(t==='light'||t==='dark') document.documentElement.dataset.theme=t;}catch(e){}
+  const qt=new URLSearchParams(location.search).get('theme'); if(qt==='light'||qt==='dark') document.documentElement.dataset.theme=qt;
+</script>
+</head>
+<body>
+
+<svg class="defs" width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- A. CREW CUT: a heatsink seen end-on. Five fins on a solid base; the base has two eyes. 48 grid -->
+    <symbol id="crew" viewBox="0 0 48 48">
+      <g fill="currentColor"><rect x="6.00" y="5" width="4.4" height="21" rx="1.2"/><rect x="13.90" y="5" width="4.4" height="21" rx="1.2"/><rect x="21.80" y="5" width="4.4" height="21" rx="1.2"/><rect x="29.70" y="5" width="4.4" height="21" rx="1.2"/><rect x="37.60" y="5" width="4.4" height="21" rx="1.2"/></g>
+      <path fill="currentColor" fill-rule="evenodd" d="M6 23 H42 V36 Q42 43 35 43 H13 Q6 43 6 36 Z M14.6 30.3 Q14.6 27.6 17.3 27.6 Q20 27.6 20 30.3 V36 H14.6 Z M28 30.3 Q28 27.6 30.7 27.6 Q33.4 27.6 33.4 30.3 V36 H28 Z"/>
+    </symbol>
+    <symbol id="crew-s" viewBox="0 0 48 48">
+      <g fill="currentColor"><rect x="6.00" y="4" width="8" height="22" rx="1.6"/><rect x="20.00" y="4" width="8" height="22" rx="1.6"/><rect x="34.00" y="4" width="8" height="22" rx="1.6"/></g>
+      <path fill="currentColor" fill-rule="evenodd" d="M6 22 H42 V36 Q42 44 34 44 H14 Q6 44 6 36 Z M13.5 29.4 Q13.5 26.6 16.4 26.6 Q19.3 26.6 19.3 29.4 V36 H13.5 Z M28.7 29.4 Q28.7 26.6 31.6 26.6 Q34.5 26.6 34.5 29.4 V36 H28.7 Z"/>
+    </symbol>
+    <!-- B. FIN H: five fins of one heatsink; the three inner fins are cut short, so the stack is also an H. 48 grid -->
+    <symbol id="finh" viewBox="0 0 48 48">
+      <g fill="currentColor">
+        <rect x="4.5" y="5" width="5.4" height="38" rx=".8"/><rect x="38.1" y="5" width="5.4" height="38" rx=".8"/>
+        <rect x="13.9" y="13" width="5.4" height="22" rx=".8"/><rect x="28.7" y="13" width="5.4" height="22" rx=".8"/>
+        <rect x="4.5" y="21.6" width="39" height="4.8"/>
+      </g>
+      <rect x="21.3" y="13" width="5.4" height="22" rx=".8" fill="var(--lit, currentColor)"/>
+    </symbol>
+    <symbol id="finh-s" viewBox="0 0 48 48">
+      <g fill="currentColor"><rect x="4" y="4" width="10" height="40" rx="1"/><rect x="34" y="4" width="10" height="40" rx="1"/><rect x="4" y="20" width="40" height="8"/></g>
+      <rect x="19.5" y="12" width="9" height="24" rx="1" fill="var(--lit, currentColor)"/>
+    </symbol>
+    <pattern id="hatch-sell" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="4" height="4" fill="var(--sell-soft)"/><line x1="0" y1="0" x2="0" y2="4" stroke="var(--sell)" stroke-width="1.6"/>
+    </pattern>
+    <pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="2.5" cy="2.5" r=".9" fill="var(--ink-3)" opacity=".45"/></pattern>
+    <pattern id="lines" width="3" height="3" patternUnits="userSpaceOnUse"><line x1="0" y1="1.5" x2="3" y2="1.5" stroke="currentColor" stroke-width="1.1"/></pattern>
+  </defs>
+</svg>
+
+<header class="board-top">
+  <div class="wrap">
+    <div class="who">
+      <span class="lockup" style="font-size:21px;gap:.32em"><svg width="19" height="20" viewBox="5 3 38 42" aria-hidden="true"><use href="#crew-s" width="48" height="48"/></svg><span class="wm-a">Heatsink</span></span>
+      <span class="lbl">Art direction · Silicon</span>
+    </div>
+    <div class="theme" role="group" aria-label="Colour scheme"><button type="button" data-t="auto">Auto</button><button type="button" data-t="light">Light</button><button type="button" data-t="dark">Dark</button></div>
+  </div>
+</header>
+
+<!-- 1 DIRECTION -->
+<section class="sheet" aria-labelledby="s1">
+  <div class="wrap">
+    <div class="sheet-head"><span class="sheet-no">01</span><h2 id="s1">Direction</h2><span class="tb">Silicon · the hour is the product</span></div>
+    <div class="direction">
+      <div>
+        <h3>SILICON</h3>
+        <p><b>The thing traded is one hour of a real chip, so the chip is the hero:</b> drawn like a museum specimen, from the heatsink that gives the company its name down to the die, and named in plain text, never in anyone's trade dress.</p>
+        <p><b>Every order is a die on a wafer.</b> A round is a wafer under test: sealed grey, probed and revealed in the two colours of the two sides, then the filled ones lit at one price, which turns the auction into an image instead of a chart.</p>
+        <p><b>Everything else is quiet and exact:</b> a neutral cleanroom ground, one dot-matrix face for numbers you should remember, a monospace spec sheet for every fact, and colour spent only on the two groups of people the market serves.</p>
+      </div>
+      <div class="feeling">
+        <span class="lbl">The one feeling</span>
+        <p class="q">"I know what my compute costs next week."</p>
+        <p style="margin:0;color:var(--ink-2)">Certainty, handed to people, by a thing you can see.</p>
+        <div class="sides">
+          <div class="side-card"><div class="sw buy"><i style="background:var(--buy)"></i>Buyers · LONG</div><p>AI teams and their agents who need GPU hours. Paid when next week's price rises.</p></div>
+          <div class="side-card"><div class="sw sell"><i style="background:repeating-linear-gradient(135deg,var(--sell) 0 1.5px,transparent 1.5px 3px);outline:1px solid var(--sell)"></i>Sellers · SHORT</div><p>People who own GPUs: clouds, labs, operators. Paid when it falls.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 LOGOS -->
+<section class="sheet" aria-labelledby="s2">
+  <div class="wrap">
+    <div class="sheet-head"><span class="sheet-no">02</span><h2 id="s2">Two marks</h2><span class="tb">Neither uses a W · the name is provisional</span></div>
+    <div id="logos"></div>
+  </div>
+</section>
+
+<!-- 3 HERO -->
+<section class="sheet hero-host" aria-labelledby="s3">
+  <div class="wrap">
+    <div class="sheet-head"><span class="sheet-no">03</span><h2 id="s3">The first screen</h2><span class="tb">1280 px and 375 px · live</span></div>
+    <p class="frame-cap"><span>Heatsink · home</span><span>Generative wafer · each die is a simulated order</span></p>
+    <div class="hero-frame">
+      <div class="hero" id="hero">
+        <canvas aria-hidden="true"></canvas>
+        <nav aria-label="Main">
+          <a href="#hero" class="lockup" style="font-size:25px;gap:.3em;text-decoration:none" aria-label="Heatsink home"><svg width="22" height="23" viewBox="5 4 38 40" aria-hidden="true"><use href="#crew" width="48" height="48"/></svg><span class="wm-a">Heatsink</span></a>
+          <ul><li><a href="#spec">Markets</a></li><li><a href="#system">Auction</a></li><li><a href="#spec">How it clears</a></li><li><a href="#tokens">Docs</a></li></ul>
+          <a class="nav-cta" href="#system">Open the app</a>
+          <button class="menu-btn" type="button">Menu</button>
+        </nav>
+        <div class="copy">
+          <div class="eyebrow"><i></i><span>Week-ahead H100 auctions · on NEAR</span></div>
+          <h1>Take the heat out of your <span class="d">GPU bill.</span></h1>
+          <p class="sub">Next week's GPU hours, priced today. Teams that need compute and people who own it bid once, sealed; one price clears for everyone, and every position is paid in full the day it opens.</p>
+          <div class="btns">
+            <a class="btn primary" href="#system">Bid in the next round <svg width="15" height="11" viewBox="0 0 15 11" aria-hidden="true"><path d="M0 5.5 H13 M8.5 1 L13 5.5 L8.5 10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></a>
+            <a class="btn ghost" href="#spec">See the chip</a>
+          </div>
+        </div>
+        <div class="plate" aria-label="H100 index, sample">
+          <div><div class="lbl" style="margin-bottom:8px">H100 index <span class="sample">Sample</span></div><div class="fig">$2.76<small>/GPU-h</small></div></div>
+          <div class="meta">Median of reporter prints for one NVIDIA H100 hour. Example figure, not live.</div>
+        </div>
+        <div class="roundcap" id="roundcap" aria-live="off">Simulated round</div>
+      </div>
+    </div>
+    <div class="hero-pair">
+      <div class="notes">
+        <h4>Why the first screen is a wafer</h4>
+        <ol>
+          <li><b>Atmosphere first.</b> A great wafer fills the right of the screen, about 1,100 dies at desktop. Nothing to read; it is simply alive.</li>
+          <li><b>And it is true.</b> Every die is an order in a simulated sealed round. Sealed, they are grey. A probe sweeps the wafer and reveals each one in its side's colour. Then the clearing rule of SPEC section 7 is run on that book, and only the filled dies light up, all at one price. A new book is drawn each round, so it never repeats.</li>
+          <li><b>The people are the colour.</b> Blue is everyone who needs compute; hatched gold is everyone who owns it. Nothing else on the site uses colour.</li>
+          <li><b>The claim, not the mechanism.</b> "Take the heat out of your GPU bill." Dry, about the person paying, and the name explains itself. The explanation is one scroll down, as an object you can take apart.</li>
+          <li><b>Honest and light.</b> The index plate says Sample; the round caption says Simulated. One canvas, no library, pixel ratio capped at 2, paused off screen and in hidden tabs. Reduced motion paints one cleared wafer and stops.</li>
+        </ol>
+      </div>
+      <div class="narrow-frame"><iframe src="board.html?only=hero" title="Heatsink home at 375 px" loading="lazy"></iframe></div>
+    </div>
+
+    <!-- 3b specimen -->
+    <div class="spec-fig" id="spec" tabindex="0" aria-label="Figure 1, an exploded view of one H100 SXM module. Arrow keys step, space plays.">
+      <div class="spec-head"><span class="n">Fig. 1</span><span class="sp">Specimen · one accelerator, taken apart</span><span class="sample">Illustration · not to scale</span></div>
+      <div class="spec-body">
+        <div class="spec-stage"><svg id="specSvg" role="img" aria-label="Isometric line drawing of an H100 SXM module that comes apart in steps: the heatsink, the lid, the package, the die and its memory stacks, and the hour that is traded."></svg></div>
+        <div class="sheetcol">
+          <div><div class="lbl">Item</div><div class="model">H100</div></div>
+          <dl class="kv">
+            <dt>Model</dt><dd>NVIDIA H100 SXM</dd>
+            <dt>Memory</dt><dd>80 GB HBM3</dd>
+            <dt>Die</dt><dd>GH100 · 814 mm²</dd>
+            <dt>Unit</dt><dd>1 GPU-hour</dd>
+            <dt>Delivery</dt><dd>Week 47 · UTC</dd>
+            <dt>Last clearing</dt><dd><span id="lastClr">$2.79</span> /GPU-h <span class="sample">Sample</span></dd>
+          </dl>
+          <p style="margin:auto 0 0;font:400 11.5px/1.45 var(--mono);color:var(--ink-3)">Drawn from public descriptions of the part. No maker's logo or trade dress; the model is named in plain text.</p>
+        </div>
+      </div>
+      <div class="step-ui">
+        <div class="step-text">
+          <div class="step-title"><span class="step-n" id="stepN">01</span><span class="step-of">/ 05</span><h3 id="stepH"></h3></div>
+          <p id="stepP"></p>
+        </div>
+        <div class="step-ctrl">
+          <button class="round-btn" id="prevBtn" type="button" aria-label="Previous step"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 L5 8 L10 13" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+          <div class="pips" id="pips" role="tablist" aria-label="Steps"></div>
+          <button class="round-btn primary" id="nextBtn" type="button" aria-label="Next step"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3 L11 8 L6 13" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+          <button class="btn" id="playBtn" type="button" style="padding:12px 16px;min-width:92px;justify-content:center"><span id="playLbl">Play</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 SYSTEM -->
+<section class="sheet" id="system" aria-labelledby="s4">
+  <div class="wrap">
+    <div class="sheet-head"><span class="sheet-no">04</span><h2 id="s4">The system in use</h2><span class="tb">Round W47-R2 · sample</span></div>
+    <div class="cards" id="cards"></div>
+    <div class="figs" id="figs"></div>
+    <div class="panel">
+      <div class="panel-head"><h3>Sealed book · H100 · round 2</h3><span class="note">Sample book · floor $2.21 · band $1.10 /GPU-h</span></div>
+      <div class="tbl-wrap"><table class="book" id="book"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>Supply and demand</h3><span class="note">Sample round · revealed, non-void orders</span></div>
+      <div class="chart-wrap"><svg id="chart" viewBox="0 0 900 380" role="img" aria-label="Demand and supply staircases for the sample round, crossing at a clearing price of 2.79 dollars per GPU-hour with 1,140 GPU-hours matched."></svg></div>
+      <div class="legend">
+        <span><svg width="26" height="10"><path d="M0 5 H26" stroke="var(--buy)" stroke-width="2"/></svg>Demand · buyers · LONG</span>
+        <span><svg width="26" height="10"><path d="M0 5 H26" stroke="var(--sell)" stroke-width="2" stroke-dasharray="6 3"/></svg>Supply · sellers · SHORT</span>
+        <span><svg width="26" height="10"><path d="M0 5 H26" stroke="var(--ink)" stroke-width="1"/></svg>Clearing price</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 TOKENS -->
+<section class="sheet" id="tokens" aria-labelledby="s5">
+  <div class="wrap">
+    <div class="sheet-head"><span class="sheet-no">05</span><h2 id="s5">Tokens</h2><span class="tb">Ratios computed in the page</span></div>
+    <div class="panel"><div class="panel-head"><h3>Colour</h3><span class="note">Text ratios against each theme's ground</span></div><div class="tbl-wrap"><table class="tok" id="tok"></table></div></div>
+    <p style="color:var(--ink-2);max-width:82ch"><b style="color:var(--ink);font-weight:500">Why blue and gold.</b> They sit at opposite ends of the blue–yellow axis that protan and deutan readers keep, and they differ in lightness, so the two sides survive every common colour-vision deficiency and greyscale print. They also come from the object: the deep blue of a lithography exposure and the gold of a package's contacts. Gold is never shown without a second cue (hatching, a dashed line, the word SHORT), blue is always solid. No red–green pair, no purple gradient, no glow.</p>
+    <div class="cols">
+      <div class="spec typespec"><h4>Type</h4>
+        <div><span style="font:900 46px/1 var(--dot)">$2.79</span><em>Doto 600 · 800 · 900<br>figures to remember, specimen names</em></div>
+        <div><span style="font:600 30px/1 var(--sans);letter-spacing:-.05em">Next week's GPUs</span><em>Geist 600, −0.055 em<br>headlines</em></div>
+        <div><span style="font:400 16px/1.5 var(--sans)">Geist 400 · 500 for text and UI</span><em>16 / 1.55</em></div>
+        <div><span style="font:400 13px/1 var(--mono)">MEMORY 80 GB HBM3 · 1,140 GPU-h</span><em>Geist Mono 400 · 500<br>spec sheets, tables, hashes</em></div>
+        <p style="font-size:13.5px;color:var(--ink-2);margin:12px 0 0">The dot matrix is the texture of the brand, the way a die is a grid; it is used only for a few large figures and names, never for running text. All three are OFL on Google Fonts.</p>
+      </div>
+      <div class="spec"><h4>Space, shape and motion</h4>
+        <dl>
+          <dt>space</dt><dd>4 · 8 · 12 · 16 · 24 · 32 · 48 · 80 px</dd>
+          <dt>gutter</dt><dd>16 px at 375, 4vw, 44 px max</dd>
+          <dt>radius</dt><dd>14 px panels · 999 px buttons and tags · 1–2 px dies and swatches</dd>
+          <dt>line</dt><dd>1 px rules; drawings 0.8–1.2 px, never heavier</dd>
+          <dt>ease</dt><dd>cubic-bezier(.2,.7,.2,1)</dd>
+          <dt>ui</dt><dd>160 ms colour, 300 ms state</dd>
+          <dt>wafer</dt><dd>12 s round: reseal 1 s ripple · probe sweep 3.4 s · clear ring 1.4 s · hold 5 s · 1 s fade</dd>
+          <dt>specimen</dt><dd>900 ms per step, in-out cubic; autoplay 3.2 s per step</dd>
+          <dt>reduced</dt><dd>one cleared wafer, no loop; specimen shows the last step</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="board-foot"><div class="wrap">Heatsink · Silicon proposal. Every figure on this board is a sample or a simulation, computed in the page by the clearing rule of SPEC §7.</div></footer>
+
+<script>
+(() => {
+'use strict';
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const $ = s => document.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease3 = t => t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+const fmt$ = v => '$' + v.toFixed(2);
+const fmtN = v => v.toLocaleString('en-US');
+
+/* theme */
+const themeBtns = document.querySelectorAll('.theme button'); const themeListeners = [];
+function syncTheme(){ const t = document.documentElement.dataset.theme || 'auto'; themeBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === t))); }
+themeBtns.forEach(b => b.addEventListener('click', () => { const t = b.dataset.t; if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; try{ localStorage.setItem('weir-si-theme', t); }catch(e){} syncTheme(); themeListeners.forEach(f => f()); }));
+syncTheme(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => themeListeners.forEach(f => f()));
+
+/* clearing rule, SPEC §7, on any book of {side, size, lim} with lim in cents */
+function clearBook(orders){
+  const Dp = p => { let s = 0; for (const o of orders) if (o.side === 'L' && o.c >= p) s += o.size; return s; };
+  const Sp = p => { let s = 0; for (const o of orders) if (o.side === 'S' && o.c <= p) s += o.size; return s; };
+  const cands = [...new Set(orders.map(o => o.c))].sort((a,b)=>a-b);
+  let vmax = 0; const V = new Map(); cands.forEach(p => { const d = Dp(p), s = Sp(p); V.set(p, [d, s]); vmax = Math.max(vmax, Math.min(d, s)); });
+  orders.forEach(o => o.fill = 0);
+  if (!vmax) return { p:null, V:0 };
+  let keep = cands.filter(p => Math.min(...V.get(p)) === vmax);
+  const imb = p => Math.abs(V.get(p)[0] - V.get(p)[1]); const mi = Math.min(...keep.map(imb)); keep = keep.filter(p => imb(p) === mi);
+  const lo = keep[0], hi = keep[keep.length-1];
+  const pc = keep.every(p => V.get(p)[0] > V.get(p)[1]) ? hi : keep.every(p => V.get(p)[0] < V.get(p)[1]) ? lo : Math.floor((lo + hi)/2);
+  let rem = vmax; orders.filter(o => o.side === 'L' && o.c >= pc).sort((a,b) => b.c - a.c || a.seq - b.seq).forEach(o => { o.fill = Math.min(o.size, rem); rem -= o.fill; });
+  rem = vmax; orders.filter(o => o.side === 'S' && o.c <= pc).sort((a,b) => a.c - b.c || a.seq - b.seq).forEach(o => { o.fill = Math.min(o.size, rem); rem -= o.fill; });
+  return { p: pc/100, V: vmax };
+}
+
+/* the sample book */
+const FLOOR = 2.21, BAND = 1.10, INDEX = 2.76, GUARD = 0.24;
+const BOOK = [
+  {seq:0, owner:'kiln-ai.near', side:'L', size:400, lim:2.84},
+  {seq:1, owner:'fjord-gpu.near', side:'S', size:300, lim:2.58},
+  {seq:2, owner:'agent-04.kiln-ai.near', agent:true, side:'L', size:240, lim:2.91},
+  {seq:3, owner:'northbay-compute.near', side:'S', size:360, lim:2.74},
+  {seq:4, owner:'tessel.near', side:'L', size:160, lim:2.63},
+  {seq:5, owner:'drumlin-cloud.near', side:'S', size:260, lim:2.52},
+  {seq:6, owner:'agent-11.orrery.near', agent:true, side:'L', size:320, lim:2.98},
+  {seq:7, owner:'fjord-gpu.near', side:'S', size:220, lim:2.66},
+  {seq:8, owner:'sluice-ml.near', side:'L', size:200, lim:2.79},
+  {seq:9, owner:'basalt-dc.near', side:'S', size:180, lim:2.81},
+  {seq:10, owner:'orrery.near', side:'L', size:280, lim:2.72},
+  {seq:11, owner:'northbay-compute.near', side:'S', size:240, lim:2.88},
+  {seq:12, owner:'tessel.near', side:'L', size:220, lim:2.55},
+  {seq:13, owner:'basalt-dc.near', side:'S', size:200, lim:2.97},
+  {seq:14, owner:'agent-02.sluice-ml.near', agent:true, side:'L', size:150, lim:3.02},
+  {seq:15, owner:'quarry.near', side:'S', size:null, lim:null, unrevealed:true, lock:300},
+];
+const ref = clamp(INDEX - FLOOR, 0, BAND);
+BOOK.forEach(o => {
+  if (o.unrevealed){ o.state = 'unrevealed'; return; }
+  o.c = Math.round(o.lim*100); const p = o.lim - FLOOR, unit = o.side === 'L' ? p : BAND - p;
+  o.lock = Math.ceil(o.size * unit * 1.1 / 10) * 10;
+  if ((o.side === 'L' && p > ref + GUARD + 1e-9) || (o.side === 'S' && p + GUARD < ref - 1e-9)) o.state = 'void';
+});
+const LIVE = BOOK.filter(o => !o.state);
+const CLR = clearBook(LIVE);
+LIVE.forEach(o => o.state = o.fill === 0 ? 'unfilled' : o.fill < o.size ? 'part' : 'filled');
+
+/* ---------- 2 LOGOS ---------- */
+const LOGOS = [
+  { id:'crew', sm:'crew-s', name:'A · Crew cut', pick:true, wm:'wm-a', crop:'5 4 38 40', cropS:'5 3 38 42', mk:.86, gap:.28,
+    construct:'A heatsink seen end-on, drawn with a face. Five 4.4-unit fins on a 7.9-unit pitch stand on a solid base with 7-unit corners; two arched eyes are punched through the base and look up at the fins. It is the most recognisable silhouette in the machine room, and it has a personality: calm, a little smug about keeping cool. Below 32 px a three-fin cut with larger eyes takes over, so the face still reads at 16 px.' },
+  { id:'finh', sm:'finh-s', name:'B · Fin H', wm:'wm-b', crop:'3 3 42 42', cropS:'2 2 44 44', mk:.8, gap:.32,
+    construct:'Five fins of one heatsink on a 7.4-unit pitch, threaded on one 4.8-unit heat pipe. The two outer fins run the full 38 units and the three inner fins are cut to 22, so the stack is also an H: a monogram that is a real part. The centre fin can carry a second colour (--lit) for the one clearing price. The wordmark is set in Doto so the whole lockup is made of the same grid. Below 32 px it reduces to two fins, the pipe and one block.' },
+];
+function svgUse(sym, w, h, vb, style=''){ return `<svg width="${w}" height="${h}" viewBox="${vb}" aria-hidden="true" style="display:block;${style}"><use href="#${sym}" width="48" height="48"/></svg>`; }
+function lockup(L, fs){ const small = fs < 30, s = Math.round(fs*L.mk); return `<span class="lockup" style="font-size:${fs}px;gap:${L.gap}em">${svgUse(small ? L.sm : L.id, s, s, small ? L.cropS : L.crop)}<span class="${L.wm}">Heatsink</span></span>`; }
+function materials(L){
+  const one = (bg, fg, extra, label) => `<div class="mat"><div class="sw" style="background:${bg};color:${fg}">${extra}</div><span>${label}</span></div>`;
+  const big = (style='') => svgUse(L.id, 96, 96, L.crop, style);
+  const id = 'mm' + L.id;
+  const masked = (key, pat) => `<svg width="96" height="96" viewBox="${L.crop}" aria-hidden="true"><defs>${pat(id+key)}<mask id="${id}${key}m" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="48"><rect width="48" height="48" fill="#000"/><use href="#${L.id}" width="48" height="48" color="#fff" style="--lit:#fff"/></mask></defs><rect width="48" height="48" fill="url(#${id}${key})" mask="url(#${id}${key}m)"/></svg>`;
+  const pLines = pid => `<pattern id="${pid}" width="1.6" height="1.6" patternUnits="userSpaceOnUse"><line x1="0" y1=".8" x2="1.6" y2=".8" stroke="#2B2A26" stroke-width=".7"/></pattern>`;
+  const pLed = pid => `<pattern id="${pid}" width="2.4" height="2.4" patternUnits="userSpaceOnUse"><circle cx="1.2" cy="1.2" r=".85" fill="#E3B23C"/></pattern>`;
+  const pBead = pid => `<pattern id="${pid}" width="3" height="3" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.05" fill="none" stroke="#2D43C4" stroke-width=".8"/></pattern>`;
+  return [
+    one('#111214', '#EDEDEA', big('--lit:#8D9BFF'), 'enamel on black'),
+    one('#E9E4D6', '#2B2A26', masked('l', pLines), 'engraved line'),
+    one('#0B0B0C', '#E3B23C', masked('d', pLed), 'dot-matrix LED'),
+    one('linear-gradient(145deg,#d8d8d3,#b9b9b2)', '#7a7a74', big('filter:drop-shadow(1px 1px 0 rgba(255,255,255,.7)) drop-shadow(-1px -1px 0 rgba(0,0,0,.25));--lit:#7a7a74'), 'stamped steel'),
+    one('#2D43C4', '#F7F7F4', big('--lit:#E3B23C'), 'two-side colour'),
+    one('#F4F1E8', '#2D43C4', masked('b', pBead), 'fuse beads'),
+  ].join('');
+}
+$('#logos').innerHTML = LOGOS.map(L => `
+  <div class="logo-block">
+    <div class="logo-title"><h3>${L.name}</h3>${L.pick ? '<span class="pick">Recommended</span>' : ''}</div>
+    <p class="construct">${L.construct}</p>
+    <div class="logo-grid">
+      <div class="tile t-mark"><span class="tl">Mark</span><span style="--lit:var(--buy)">${svgUse(L.id, 150, 150, L.crop)}</span></div>
+      <div class="tile t-lock"><span class="tl">Lockup</span>${lockup(L, 96)}</div>
+      <div class="tile t-one"><span class="tl">One colour</span>${lockup(L, 44)}</div>
+      <div class="tile t-light"><span class="tl">Light ground</span><span style="--lit:#2D43C4">${lockup(L, 44)}</span></div>
+      <div class="tile t-dark"><span class="tl">Dark ground</span><span style="--lit:#E3B23C">${lockup(L, 44)}</span></div>
+      <div class="tile t-app"><span class="tl">App icon</span>
+        <span class="app-icon" style="background:#111214;color:#EDEDEA;--lit:#8D9BFF">${svgUse(L.id, 54, 54, L.crop)}</span>
+        <span class="app-icon" style="background:#F7F7F4;color:#111214;--lit:#2D43C4;width:64px;height:64px;border-radius:15px">${svgUse(L.sm, 34, 34, L.cropS)}</span></div>
+      <div class="tile t-mat"><span class="tl">One mark, any material</span>${materials(L)}</div>
+      <div class="tile t-sizes"><span class="tl">16 · 24 · 48 · 160 px, actual size</span>
+        <div class="group">${[16,24,48,160].map(s => `<figure>${svgUse(s < 32 ? L.sm : L.id, s, s, s < 32 ? L.cropS : L.crop)}<figcaption>${s}</figcaption></figure>`).join('')}</div>
+        <div class="group">${[16,24,48].map(s => `<figure><span class="on-dark">${svgUse(s < 32 ? L.sm : L.id, s, s, s < 32 ? L.cropS : L.crop)}</span><figcaption>${s} dark</figcaption></figure>`).join('')}<figure>${lockup(L, 18)}<figcaption>lockup 18</figcaption></figure></div>
+      </div>
+    </div>
+  </div>`).join('');
+
+/* ---------- 3 HERO: the wafer under test ---------- */
+function Hero(root){
+  const cv = root.querySelector('canvas'), ctx = cv.getContext('2d', { alpha:false });
+  const cap = $('#roundcap');
+  let W = 0, H = 0, dpr = 1, G, dies = [], col = {}, raf = 0, visible = true, running = false, t0 = 0, round = 2480, book = null, res = null, last = -1;
+  const RT = 12; // seconds per round
+  function readCol(){ col = { ground:css('--ground'), sheet:css('--sheet'), ink:css('--ink'), ink3:css('--ink-3'), rule:css('--rule'), die:css('--die'), buy:css('--buy'), sell:css('--sell'), lit:css('--sell-lit') }; }
+  function geom(){
+    const n = W < 760;
+    return n ? { n, cx:W*.64, cy:H*.86, R:Math.min(W*.6, H*.3), pitch:10, gap:1.8, fadeX0:-1e9, fadeX1:-1e9 }
+             : { n, cx:W*.79, cy:H*.60, R:Math.min(H*.53, W*.36), pitch:17, gap:2.6, fadeX0:W*.40, fadeX1:W*.62 };
+  }
+  function build(){
+    const r = root.getBoundingClientRect(); W = Math.round(r.width); H = Math.round(r.height); if (!W || !H) return;
+    dpr = Math.min(2, devicePixelRatio || 1); cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+    G = geom(); readCol(); dies = [];
+    const p = G.pitch, n = Math.ceil(G.R/p) + 1;
+    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
+      const x = G.cx + i*p - p/2, y = G.cy + j*p - p/2;
+      const far = Math.max(Math.hypot(x - G.cx, y - G.cy), Math.hypot(x + p - G.cx, y - G.cy), Math.hypot(x - G.cx, y + p - G.cy), Math.hypot(x + p - G.cx, y + p - G.cy));
+      if (far > G.R - p*.35) continue;
+      if (x + p < -10 || x > W + 10 || y + p < -10 || y > H + 10) continue;
+      const d = Math.hypot(x + p/2 - G.cx, y + p/2 - G.cy);
+      const fade = G.n ? 1 : clamp((x - G.fadeX0)/(G.fadeX1 - G.fadeX0), .18, 1);
+      dies.push({ x, y, d, fade, rnd: Math.random() });
+    }
+    newBook(); t0 = performance.now(); draw(0);
+  }
+  function gauss(){ return (Math.random() + Math.random() + Math.random() - 1.5) / 1.5; }
+  function newBook(){
+    round++;
+    const orders = dies.map((d, i) => { const L = Math.random() < .5; const lim = L ? 2.75 + gauss()*.2 : 2.81 + gauss()*.2; return { seq:i, side: L ? 'L' : 'S', size: 40 + Math.round(Math.random()*36)*10, c: Math.round(clamp(lim, 2.30, 3.25)*100) }; });
+    res = clearBook(orders);
+    // lay the book out on the wafer: the keenest orders of each side nearest the centre, so the clearing ring stops where supply meets demand
+    const Ls = orders.filter(o => o.side === 'L').sort((a,b) => b.c - a.c || a.seq - b.seq), Ss = orders.filter(o => o.side === 'S').sort((a,b) => a.c - b.c || a.seq - b.seq);
+    const key = dies.map(d => d.d + Math.random()*G.pitch*3.2);
+    const idx = dies.map((d, i) => i).sort((a, b) => key[a] - key[b]);
+    book = new Array(dies.length); let li = 0, si = 0;
+    idx.forEach(di => { const takeL = si >= Ss.length || (li < Ls.length && li/Ls.length <= si/Ss.length); book[di] = takeL ? Ls[li++] : Ss[si++]; });
+    const filled = book.filter(o => o.fill > 0).length;
+    cap.innerHTML = `Simulated round <span class="x">${fmtN(round)} </span>· <b>${fmtN(book.length)}</b> sealed orders · cleared <b>${res.p ? fmt$(res.p) + ' /GPU-h' : 'no trade'}</b><span class="x"> · ${fmtN(res.V)} GPU-h matched · ${Math.round(filled/book.length*100)}% of orders filled</span><span class="k"><i style="background:${col.buy}"></i>buyers</span><span class="k"><i style="background:${col.sell}"></i>sellers</span>`;
+  }
+  function draw(t){
+    // t: seconds into the round
+    const g = G, p = g.pitch, s = p - g.gap;
+    ctx.fillStyle = col.ground; ctx.fillRect(0, 0, W, H);
+    // the wafer
+    ctx.save(); ctx.globalAlpha = g.n ? 1 : .9;
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, g.R, 0, Math.PI*2); ctx.fillStyle = col.sheet; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = col.rule; ctx.stroke();
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, g.R - 6, 0, Math.PI*2); ctx.setLineDash([2, 4]); ctx.stroke(); ctx.setLineDash([]);
+    // notch at 225°
+    const na = Math.PI*.75, nx = g.cx + Math.cos(na)*g.R, ny = g.cy + Math.sin(na)*g.R;
+    ctx.beginPath(); ctx.arc(nx, ny, 7, 0, Math.PI*2); ctx.fillStyle = col.ground; ctx.fill();
+    ctx.restore();
+    const reseal = clamp(t / 1.0, 0, 1) * (g.R + 50);           // ripple outwards: back to grey
+    const probeY = lerp(g.cy - g.R - 20, g.cy + g.R + 20, clamp((t - 1.0) / 3.4, 0, 1)); // probe sweep, top to bottom
+    const ring = clamp((t - 4.6) / 1.4, 0, 1) * (g.R + 50);    // clearing ring
+    const out = clamp((t - (RT - 1)) / 1, 0, 1);
+    const pulse = t > 6 ? .5 + .5*Math.sin(t*1.3) : 0;
+    for (let i = 0; i < dies.length; i++){
+      const d = dies[i], o = book[i];
+      let a, c;
+      const revealed = d.y + p/2 < probeY && t > 1.0;
+      const cleared = t > 4.6 && d.d < ring;
+      if (!revealed || d.d > reseal && t < 1.0){ c = col.die; a = 1; }
+      else if (!cleared){ c = o.side === 'L' ? col.buy : col.sell; a = .3; }
+      else if (o.fill > 0){ c = o.side === 'L' ? col.buy : col.lit; a = 1 - .12*((d.rnd*7 + pulse) % 1) * (t > 6 ? 1 : 0); }
+      else { c = col.die; a = .75; }
+      a *= d.fade * (1 - out*.75);
+      ctx.globalAlpha = a; ctx.fillStyle = c; ctx.fillRect(d.x + g.gap/2, d.y + g.gap/2, s, s);
+      if (revealed && o.side === 'S' && (!cleared || o.fill > 0)){ // the seller's hatch, so the sides never depend on colour alone
+        ctx.globalAlpha = a * .55; ctx.fillStyle = col.ground; ctx.fillRect(d.x + g.gap/2, d.y + g.gap/2 + s*.5 - .6, s, 1.2);
+      }
+      if (cleared && o.fill > 0 && o.fill < o.size){ ctx.globalAlpha = a; ctx.fillStyle = col.ground; ctx.fillRect(d.x + g.gap/2 + s*(o.fill/o.size), d.y + g.gap/2, s*(1 - o.fill/o.size), s); ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.strokeRect(d.x + g.gap/2 + .5, d.y + g.gap/2 + .5, s - 1, s - 1); }
+    }
+    ctx.globalAlpha = 1;
+    // the probe
+    if (t > 1.0 && t < 4.4){ ctx.strokeStyle = col.ink; ctx.globalAlpha = .7; ctx.lineWidth = 1; ctx.beginPath(); const hw = Math.sqrt(Math.max(0, g.R*g.R - (probeY - g.cy)**2)); ctx.moveTo(g.cx - hw, probeY); ctx.lineTo(g.cx + hw, probeY); ctx.stroke(); ctx.globalAlpha = 1; }
+    if (t > 4.6 && t < 6.2){ ctx.strokeStyle = col.ink; ctx.globalAlpha = .35 * (1 - (t - 4.6)/1.6); ctx.beginPath(); ctx.arc(g.cx, g.cy, ring, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 1; }
+  }
+  function loop(now){
+    raf = 0; if (!running) return;
+    let t = (now - t0)/1000;
+    if (t >= RT){ t0 = now; t = 0; newBook(); }
+    draw(t);
+    raf = requestAnimationFrame(loop);
+  }
+  function play(){ if (reduced || running || !visible || document.hidden || !W) return; running = true; raf = requestAnimationFrame(loop); }
+  function pause(){ running = false; if (raf) cancelAnimationFrame(raf); raf = 0; }
+  function still(){ if (W) draw(8); }
+  build(); t0 = performance.now(); if (reduced) still();
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; visible ? play() : pause(); }, { threshold:.02 }).observe(root);
+  document.addEventListener('visibilitychange', () => document.hidden ? pause() : play());
+  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { const r = root.getBoundingClientRect(); if (Math.round(r.width) !== W || Math.round(r.height) !== H){ build(); if (reduced) still(); else if (!running) play(); } }, 120); }).observe(root);
+  themeListeners.push(() => { readCol(); newBook(); round--; if (reduced) still(); });
+  window.weirWaferAt = s => { pause(); draw(s); }; // inspection hook
+  play();
+}
+Hero($('#hero'));
+
+/* ---------- 3b SPECIMEN: the H100 module, exploded ---------- */
+function Specimen(){
+  const svg = $('#specSvg'), stage = svg.parentNode, fig = $('#spec');
+  const STEPS = [
+    { h:'Under the heatsink', p:'One H100 in its SXM module, wearing the part this company is named after: an aluminium fin stack that carries the heat away so the chip can run flat out, hour after hour.', ex:[0,0,0,0], hr:0 },
+    { h:'Lift the heatsink', p:'Below the fins, a nickel lid over one package. A heatsink does not change what the chip does; it keeps it steady under load. Hold that thought.', ex:[1,0,0,0], hr:0 },
+    { h:'Lift the lid', p:'Under the lid, the package: one GPU die in the middle of six memory stacks, all on a silicon interposer that wires them together.', ex:[2,1,0,0], hr:0 },
+    { h:'The die and its memory', p:'The die is GH100, about 814 mm² of silicon laid out in processing clusters; each memory stack is a tower of DRAM layers. 80 GB of HBM3 in all.', ex:[2,1,1,1], hr:0 },
+    { h:'One hour of it', p:'Heatsink does not sell the chip. It prices one hour of it, delivered next week, in one sealed round, at one price for every buyer and seller filled. Steady under load, like the part.', ex:[0,0,0,0], hr:1 },
+  ];
+  let L, E = {}, cur = 0, from = STEPS[0], tStart = 0, raf = 0, playing = false, playT = 0, visible = false, begun = false;
+  function layout(){ const n = stage.clientWidth < 520; return n ? { n, W:400, H:330, cx:200, cy:180, s:.8 } : { n, W:900, H:560, cx:440, cy:318, s:1 }; }
+  const C30 = Math.cos(Math.PI/6), S30 = .5;
+  const P = (x, y, z) => [L.cx + (x - y)*C30*L.s, L.cy + (x + y)*S30*L.s - z*L.s];
+  const poly = a => 'M' + a.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L') + ' Z';
+  function box(g, x, y, z, dx, dy, dz, cls = 'b'){
+    const top = poly([P(x,y,z+dz), P(x+dx,y,z+dz), P(x+dx,y+dy,z+dz), P(x,y+dy,z+dz)]);
+    const fx = poly([P(x+dx,y,z), P(x+dx,y+dy,z), P(x+dx,y+dy,z+dz), P(x+dx,y,z+dz)]);
+    const fy = poly([P(x,y+dy,z), P(x+dx,y+dy,z), P(x+dx,y+dy,z+dz), P(x,y+dy,z+dz)]);
+    el('path', { d:fx, class:cls + ' sx' }, g); el('path', { d:fy, class:cls + ' sy' }, g); el('path', { d:top, class:cls + ' tp' }, g);
+  }
+  const lineD = a => 'M' + a.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' L');
+  function build(){
+    L = layout(); svg.setAttribute('viewBox', `0 0 ${L.W} ${L.H}`); svg.innerHTML = ''; E = {};
+    const st = el('style', {}, svg);
+    st.textContent = `.b{stroke:var(--ink);stroke-width:${L.n?.6:.9};stroke-linejoin:round}.tp{fill:var(--sheet)}.sx{fill:var(--panel)}.sy{fill:var(--rule-2)}
+      .pcb.tp{fill:var(--panel)}.pcb.sx,.pcb.sy{fill:var(--rule)}.die.tp{fill:var(--ink)}.die.sx,.die.sy{fill:var(--ink-2)}
+      .hbm.tp{fill:var(--sheet)}.lid.tp{fill:var(--sheet)}.fine{stroke:var(--ink-3);stroke-width:.6;fill:none}.fineL{stroke:var(--sheet);stroke-width:.5;fill:none;opacity:.55}
+      .lbl{font:400 ${L.n?9:11}px 'Geist Mono',monospace;fill:var(--ink-2);text-transform:uppercase}.lead{stroke:var(--ink-3);stroke-width:.7;fill:none}`;
+    // groups, back to front
+    E.board = el('g', {}, svg); E.sub = el('g', {}, svg); E.hbm = el('g', {}, svg); E.die = el('g', {}, svg); E.lid = el('g', {}, svg); E.sink = el('g', {}, svg); E.hour = el('g', {}, svg); E.lab = el('g', {}, svg);
+    // board 300 x 220, with power stages and connectors
+    box(E.board, -150, -110, -12, 300, 220, 8, 'b pcb');
+    for (let i = 0; i < 12; i++) box(E.board, -138 + i*12, 72, -4, 8, 14, 5);
+    for (let i = 0; i < 12; i++) box(E.board, -138 + i*12, -100, -4, 8, 14, 5);
+    for (let j = 0; j < 6; j++) for (let i = 0; i < 3; i++) box(E.board, 104 + i*12, -60 + j*20, -4, 9, 12, 7);
+    box(E.board, -146, -40, -4, 12, 80, 3);
+    // the package and the ball grid shown on the board
+    E.subg = el('g', {}, E.sub);
+    box(E.subg, -66, -66, -4, 132, 132, 5, 'b pcb');
+    // interposer
+    box(E.subg, -54, -46, 1, 108, 92, 2);
+    // HBM stacks: three each side, each a tower of layers
+    E.stacks = [];
+    [[-50,-42],[-50,-12],[-50,18],[32,-42],[32,-12],[32,18]].forEach(([x, y]) => { const g = el('g', {}, E.hbm); E.stacks.push({ g, x, y }); });
+    // die
+    E.dieg = el('g', {}, E.die);
+    // lid
+    E.lidg = el('g', {}, E.lid);
+    // hour ring
+    E.ring = el('g', { opacity:0 }, E.hour);
+    const rr = 172, pts = []; for (let i = 0; i <= 120; i++){ const a = i/120*Math.PI*2; pts.push(P(Math.cos(a)*rr, Math.sin(a)*rr, -8)); }
+    el('path', { d:lineD(pts), stroke:'var(--ink)', 'stroke-width':1, fill:'none' }, E.ring);
+    for (let i = 0; i < 60; i++){ const a = i/60*Math.PI*2 - Math.PI/2, r0 = i % 5 ? rr - 6 : rr - 14; el('path', { d:lineD([P(Math.cos(a)*r0, Math.sin(a)*r0, -8), P(Math.cos(a)*rr, Math.sin(a)*rr, -8)]), stroke:'var(--ink)', 'stroke-width': i % 5 ? .6 : 1.2 }, E.ring); }
+    E.arc = el('path', { d:'', stroke:'var(--buy)', 'stroke-width':3.5, fill:'none', 'stroke-linecap':'round' }, E.ring);
+    E.arc2 = el('path', { d:'', stroke:'var(--sell)', 'stroke-width':3.5, fill:'none', 'stroke-linecap':'round', 'stroke-dasharray':'2 3' }, E.ring);
+    const [hx, hy] = P(rr*.72, -rr*.72, -8);
+    const ht = el('text', { x:hx + 14, y:hy - 24, 'font-family':'Doto', 'font-weight':900, 'font-size': L.n ? 22 : 34, fill:'var(--ink)' }, E.ring); ht.textContent = '1 GPU-h';
+    const ht2 = el('text', { x:hx + 16, y:hy - 4, class:'lbl' }, E.ring); ht2.textContent = `last clearing ${fmt$(CLR.p)} · sample`;
+    // labels with leaders
+    E.labels = [];
+    const label = (txt, steps, ax, ay, az, dx, dy) => { const g = el('g', { opacity:0 }, E.lab); E.labels.push({ g, steps, a:[ax, ay, az], dx, dy, txt }); el('path', { class:'lead', d:'' }, g); const t = el('text', { class:'lbl' }, g); t.textContent = txt; };
+    if (!L.n){
+      label('aluminium fin stack', [0], 96, 40, 40, 80, -30);
+      label('SXM board · power stages', [1], 120, 100, -4, 70, 40);
+      label('nickel lid', [1], -60, 60, 10, -150, 40);
+      label('package substrate', [2, 3], -66, 40, 1, -170, 50);
+      label('silicon interposer', [2], 54, 40, 3, 90, 60);
+      label('GH100 die · 814 mm²', [2, 3], 20, -40, 6, 120, -90);
+      label('HBM3 stack · DRAM layers', [2, 3], -40, -42, 10, -170, -80);
+    }
+    render(1);
+  }
+  function drawLayer(state){
+    // state: ex = [lid, die, hbm, sub] explode amounts 0..1
+    const [eSink, eLid, eDie, eHbm] = state.ex;
+    const zLid = 8 + eLid*120, zDie = 3 + eDie*70, zHbm = 3 + eHbm*40;
+    // the heatsink: a base plate and a stack of fins, lifted, then lifted away
+    E.sink.innerHTML = '';
+    const zS = zLid + 2 + Math.min(eSink, 1)*96 + Math.max(eSink - 1, 0)*60, sinkA = 1 - clamp(eSink - 1, 0, 1);
+    E.sink.setAttribute('opacity', sinkA);
+    if (sinkA > .01){
+      box(E.sink, -96, -86, zS, 192, 172, 9);
+      for (let i = 0; i < 24; i++) box(E.sink, -94 + i*8, -84, zS + 9, 2.4, 168, 48);
+      box(E.sink, -96, -86, zS + 57, 192, 4, 3); box(E.sink, -96, 82, zS + 57, 192, 4, 3);
+    }
+    E.zS = zS;
+    E.lidg.innerHTML = ''; E.dieg.innerHTML = ''; E.stacks.forEach(s => s.g.innerHTML = '');
+    // HBM stacks: eight layers each
+    E.stacks.forEach(s => { for (let k = 0; k < 8; k++) box(s.g, s.x, s.y, zHbm + k*2.2, 18, 24, 2.2, 'b hbm'); });
+    // die with a floorplan
+    box(E.dieg, -26, -40, zDie, 52, 80, 4, 'b die');
+    const z = zDie + 4;
+    for (let i = 1; i < 4; i++) el('path', { class:'fineL', d:lineD([P(-26 + i*13, -40, z), P(-26 + i*13, 40, z)]) }, E.dieg);
+    for (let j = 1; j < 8; j++) el('path', { class:'fineL', d:lineD([P(-26, -40 + j*10, z), P(26, -40 + j*10, z)]) }, E.dieg);
+    el('path', { class:'fineL', d:poly([P(-24, -6, z), P(24, -6, z), P(24, 6, z), P(-24, 6, z)]), style:'opacity:.9' }, E.dieg);
+    // lid: a stepped nickel spreader
+    box(E.lidg, -62, -62, zLid - 5, 124, 124, 3, 'b lid');
+    box(E.lidg, -56, -56, zLid - 2, 112, 112, 4, 'b lid');
+    const zt = zLid + 2;
+    el('path', { class:'fine', d:poly([P(-46,-46,zt), P(46,-46,zt), P(46,46,zt), P(-46,46,zt)]) }, E.lidg);
+    const [qx, qy] = P(-34, 30, zt); const k = L.s;
+    const t = el('text', { x:0, y:0, 'font-family':'Doto', 'font-weight':900, 'font-size':20, fill:'var(--ink-3)', transform:`matrix(${C30*k} ${S30*k} ${-C30*k} ${S30*k} ${qx} ${qy})` }, E.lidg); t.textContent = 'H100';
+    // hour ring
+    E.ring.setAttribute('opacity', state.hr);
+    const rr = 172, arc = (a0, a1) => { const pts = []; for (let i = 0; i <= 40; i++){ const a = lerp(a0, a1, i/40) - Math.PI/2; pts.push(P(Math.cos(a)*rr, Math.sin(a)*rr, -8)); } return lineD(pts); };
+    const sweep = state.hr * Math.PI * 2;
+    E.arc.setAttribute('d', state.hr > 0 ? arc(0, sweep*.5) : ''); E.arc2.setAttribute('d', state.hr > 0 ? arc(Math.PI, Math.PI + sweep*.5) : '');
+    // labels
+    E.labels.forEach(lb => {
+      let az = lb.a[2]; if (lb.txt.startsWith('nickel')) az = zLid + 2; if (lb.txt.startsWith('aluminium')) az = E.zS + 57; if (lb.txt.startsWith('GH100')) az = zDie + 4; if (lb.txt.startsWith('HBM')) az = zHbm + 17;
+      const [ax, ay] = P(lb.a[0], lb.a[1], az), tx = ax + lb.dx, ty = ay + lb.dy;
+      lb.g.querySelector('path').setAttribute('d', `M${ax} ${ay} L${tx} ${ty} H${tx + (lb.dx > 0 ? 8 : -8)}`);
+      const te = lb.g.querySelector('text'); te.setAttribute('x', tx + (lb.dx > 0 ? 12 : -12)); te.setAttribute('y', ty + 4); te.setAttribute('text-anchor', lb.dx > 0 ? 'start' : 'end');
+      lb.g.setAttribute('opacity', lb.steps.includes(cur) ? state.lab : 0);
+    });
+  }
+  function mix(a, b, k){ return { ex: a.ex.map((v, i) => lerp(v, b.ex[i], k)), hr: lerp(a.hr, b.hr, k), lab: k }; }
+  function render(k){ drawLayer(mix(from, STEPS[cur], k)); }
+  function ui(){
+    $('#stepN').textContent = String(cur + 1).padStart(2, '0'); $('#stepH').textContent = STEPS[cur].h; $('#stepP').textContent = STEPS[cur].p;
+    pips.querySelectorAll('.pip').forEach((b, i) => b.setAttribute('aria-selected', String(i === cur)));
+    $('#playLbl').textContent = playing ? 'Pause' : 'Play';
+  }
+  function anim(now){
+    raf = 0; const k = clamp((now - tStart)/900, 0, 1); render(ease3(k));
+    if (playing && now - tStart > 3200){ go((cur + 1) % STEPS.length, true); return; }
+    if (k < 1 || playing) raf = requestAnimationFrame(anim);
+  }
+  function go(k, keepPlaying){
+    k = (k + STEPS.length) % STEPS.length; begun = true;
+    const curState = mix(from, STEPS[cur], 1); from = { ex: curState.ex, hr: curState.hr };
+    cur = k; if (!keepPlaying) playing = false;
+    ui();
+    if (reduced){ from = STEPS[cur]; render(1); return; }
+    tStart = performance.now(); if (!raf) raf = requestAnimationFrame(anim);
+  }
+  const ICON = ['<path d="M2 13 H14 M3 13 V5 M5.5 13 V3 M8 13 V5 M10.5 13 V3 M13 13 V5"/>', '<path d="M2 13 H14 M8 10 V2 M5 5 L8 2 L11 5"/>', '<path d="M2 10 L8 13 L14 10 L8 7 Z M2 6 L8 9 L14 6 L8 3 Z"/>', '<rect x="4" y="4" width="8" height="8"/><path d="M6.5 4 V12 M9.5 4 V12 M4 8 H12"/>', '<circle cx="8" cy="8" r="6"/><path d="M8 4 V8 L10.5 9.5"/>'];
+  const pips = $('#pips');
+  pips.innerHTML = STEPS.map((s, i) => `<button class="pip" role="tab" type="button" data-i="${i}" aria-label="Step ${i+1}: ${s.h}"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">${ICON[i]}</svg></button>`).join('');
+  pips.addEventListener('click', e => { const b = e.target.closest('.pip'); if (b) go(+b.dataset.i); });
+  $('#prevBtn').addEventListener('click', () => go(cur - 1)); $('#nextBtn').addEventListener('click', () => go(cur + 1));
+  $('#playBtn').addEventListener('click', () => { playing = !playing; ui(); if (playing){ tStart = performance.now() - 900; if (!raf) raf = requestAnimationFrame(anim); } });
+  fig.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight'){ e.preventDefault(); go(cur + 1); } else if (e.key === 'ArrowLeft'){ e.preventDefault(); go(cur - 1); }
+    else if (e.key === ' ' && !e.target.closest('button')){ e.preventDefault(); $('#playBtn').click(); }
+  });
+  if (reduced){ cur = 4; from = STEPS[4]; }
+  build(); ui();
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible && !begun && !reduced){ begun = true; playing = true; ui(); go(1, true); } if (!visible && playing){ playing = false; ui(); } }, { threshold:.45 }).observe(stage);
+  let mode = L.n; new ResizeObserver(() => { const n = stage.clientWidth < 520; if (n !== mode){ mode = n; build(); render(1); } }).observe(stage);
+}
+Specimen();
+
+/* ---------- 4 SYSTEM ---------- */
+(function system(){
+  // specimen cards: three accelerators, drawn as packages from above
+  const pkg = (layout) => {
+    const g = []; const W = 300, H = 170, cx = 150, cy = 86;
+    g.push(`<rect x="${cx-64}" y="${cy-64}" width="128" height="128" rx="3" fill="var(--panel)" stroke="var(--ink)" stroke-width=".9"/>`);
+    g.push(`<rect x="${cx-64}" y="${cy-64}" width="128" height="128" rx="3" fill="url(#dots)" style="color:var(--rule)" opacity=".7"/>`);
+    g.push(`<path d="M${cx-64} ${cy-50} L${cx-50} ${cy-64}" stroke="var(--ink)" stroke-width=".9"/>`);
+    layout.forEach(([x, y, w, h, kind]) => {
+      if (kind === 'die') g.push(`<rect x="${cx+x}" y="${cy+y}" width="${w}" height="${h}" fill="var(--ink)"/><path d="M${cx+x+w/3} ${cy+y} V${cy+y+h} M${cx+x+2*w/3} ${cy+y} V${cy+y+h} M${cx+x} ${cy+y+h/2} H${cx+x+w}" stroke="var(--sheet)" stroke-width=".5" opacity=".5"/>`);
+      else { g.push(`<rect x="${cx+x}" y="${cy+y}" width="${w}" height="${h}" fill="var(--sheet)" stroke="var(--ink)" stroke-width=".8"/>`); for (let k = 1; k < 4; k++) g.push(`<path d="M${cx+x+2} ${cy+y+k*h/4} H${cx+x+w-2}" stroke="var(--ink-3)" stroke-width=".5"/>`); }
+    });
+    return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${g.join('')}</svg>`;
+  };
+  const six = [[-52,-44,20,26,'h'],[-52,-13,20,26,'h'],[-52,18,20,26,'h'],[32,-44,20,26,'h'],[32,-13,20,26,'h'],[32,18,20,26,'h'],[-26,-40,52,80,'die']];
+  const mi = []; [-46,-23,0,23].forEach(x => { mi.push([x, -56, 20, 16, 'h']); mi.push([x, 40, 20, 16, 'h']); });
+  [[-34,-34],[0,-34],[-34,0],[0,0]].forEach(([x, y]) => mi.push([x, y, 32, 32, 'die']));
+  const CARDS = [
+    { name:'H100', model:'NVIDIA H100 SXM', mem:'80 GB HBM3', status:'Trading', live:true, week:'Week 47', last:`${fmt$(CLR.p)} /GPU-h <span class="sample">Sample</span>`, draw:pkg(six) },
+    { name:'H200', model:'NVIDIA H200 SXM', mem:'141 GB HBM3e', status:'Next market', week:'Not yet listed', last:'No market yet', draw:pkg(six) },
+    { name:'MI300X', model:'AMD Instinct MI300X', mem:'192 GB HBM3', status:'Next market', week:'Not yet listed', last:'No market yet', draw:pkg(mi) },
+  ];
+  $('#cards').innerHTML = CARDS.map(c => `<article class="chip-card"><div class="top"><span>Specimen</span><span class="status ${c.live ? 'live' : ''}"><i></i>${c.status}</span></div>${c.draw}<div class="name">${c.name}</div>
+    <dl class="kv"><dt>Item</dt><dd>${c.model}</dd><dt>Memory</dt><dd>${c.mem}</dd><dt>Delivery</dt><dd>${c.week}</dd><dt>Last price</dt><dd>${c.last}</dd></dl></article>`).join('');
+  const locked = BOOK.reduce((a,o)=>a+o.lock,0);
+  $('#figs').innerHTML = `
+    <div class="fig-card"><div class="lbl"><span>Clearing price</span><span class="sample">Sample</span></div><div class="big">${fmt$(CLR.p)}<small>/GPU-h</small></div><p>Week 47 H100. Buyers pay ${fmt$(CLR.p - FLOOR)}, sellers ${fmt$(BAND - (CLR.p - FLOOR))} per unit: together exactly the $1.10 band.</p></div>
+    <div class="fig-card"><div class="lbl"><span>Matched</span><span class="sample">Sample</span></div><div class="big">${fmtN(CLR.V)}<small>GPU-h</small></div><p>Every filled buyer and seller at one price; one buyer part-filled at the margin.</p></div>
+    <div class="fig-card"><div class="lbl"><span>Locked in round</span><span class="sample">Sample</span></div><div class="big">$${fmtN(locked)}<small>USD</small></div><p>Across ${BOOK.length} sealed commits. Fully paid on opening, so nothing is ever liquidated.</p></div>`;
+  const stateCell = o => {
+    if (o.state === 'unrevealed') return `<span class="state forf"><i></i>Not revealed · part of lock forfeits</span>`;
+    if (o.state === 'void') return `<span class="state void"><i></i>Void · guard · lock returned</span>`;
+    const c = o.side === 'L' ? 'var(--buy)' : 'var(--sell)';
+    if (o.state === 'filled') return `<span class="state filled" style="color:${c}"><i></i>Filled ${fmtN(o.fill)} GPU-h</span>`;
+    if (o.state === 'part') return `<span class="state part" style="color:${c}"><i></i>Part-filled ${o.fill} of ${o.size} GPU-h</span>`;
+    return `<span class="state unf"><i></i>Unfilled · lock returned</span>`;
+  };
+  const sealed = '<span class="sealed-cell">sealed</span>';
+  $('#book').innerHTML = `<thead><tr><th class="r">Seq</th><th>Owner</th><th class="r">Lock (USD)</th><th>Side</th><th class="r">Size (GPU-h)</th><th class="r">Limit ($/GPU-h)</th><th>State</th></tr></thead><tbody>` +
+    BOOK.map(o => `<tr><td class="r">${o.seq}</td><td class="own">${o.owner}${o.agent ? '<span class="agent" title="Function-call key: can bid, can never withdraw">agent key</span>' : ''}</td><td class="r">$${o.lock.toFixed(2)}</td>
+      <td>${o.unrevealed ? sealed : `<span class="sidec ${o.side}"><i></i>${o.side === 'L' ? 'Long · buy' : 'Short · sell'}</span>`}</td>
+      <td class="r">${o.unrevealed ? sealed : fmtN(o.size)}</td><td class="r">${o.unrevealed ? sealed : fmt$(o.lim)}</td><td>${stateCell(o)}</td></tr>`).join('') + `</tbody>`;
+  // chart
+  const svg = $('#chart'), W = 900, H = 380, m = { l:62, r:150, t:22, b:44 }, Q = 2000, P0 = 2.40, P1 = 3.05;
+  const X = q => m.l + q/Q*(W - m.l - m.r), Y = p => H - m.b - (p - P0)/(P1 - P0)*(H - m.t - m.b);
+  const T = (x, y, s, a = {}) => { const t = el('text', Object.assign({ x, y, 'font-family':'Geist Mono', 'font-size':11, fill:'var(--ink-3)' }, a), svg); t.textContent = s; return t; };
+  for (let p = 2.40; p <= 3.051; p += .10){ el('path', { d:`M${m.l} ${Y(p)} H${W-m.r}`, stroke:'var(--rule-2)' }, svg); T(m.l - 10, Y(p) + 4, fmt$(p), { 'text-anchor':'end' }); }
+  for (let q = 0; q <= Q; q += 500){ el('path', { d:`M${X(q)} ${H-m.b} v5`, stroke:'var(--ink-3)' }, svg); T(X(q), H - m.b + 20, q ? fmtN(q) : '0', { 'text-anchor':'middle' }); }
+  T(W - m.r, H - 6, 'CUMULATIVE GPU-HOURS', { 'text-anchor':'end', 'font-size':10 }); T(m.l - 10, m.t - 8, '$ / GPU-H', { 'text-anchor':'end', 'font-size':10 });
+  el('path', { d:`M${m.l} ${m.t} V${H-m.b} H${W-m.r}`, stroke:'var(--ink)', fill:'none' }, svg);
+  const buyers = LIVE.filter(o=>o.side==='L').sort((a,b)=>b.lim-a.lim), sellers = LIVE.filter(o=>o.side==='S').sort((a,b)=>a.lim-b.lim);
+  const stair = (os, up) => { let q = 0, d = ''; os.forEach((o, i) => { d += (i ? ` V${Y(o.lim)}` : `M${X(0)} ${Y(o.lim)}`) + ` H${X(q += o.size)}`; }); return d + (up ? ` V${Y(P1)}` : ` V${H-m.b}`); };
+  const yp = Y(CLR.p), xv = X(CLR.V);
+  el('rect', { x:m.l, y:yp, width:xv - m.l, height:H - m.b - yp, fill:'url(#dots)', style:'color:var(--rule)' }, svg);
+  el('path', { d:stair(buyers, false), stroke:'var(--buy)', 'stroke-width':2, fill:'none' }, svg);
+  el('path', { d:stair(sellers, true), stroke:'var(--sell)', 'stroke-width':2, fill:'none', 'stroke-dasharray':'6 3' }, svg);
+  el('path', { d:`M${m.l} ${yp} H${W - m.r + 8}`, stroke:'var(--ink)', 'stroke-width':1 }, svg);
+  el('rect', { x:xv - 4, y:yp - 4, width:8, height:8, fill:'var(--ink)' }, svg);
+  T(W - m.r + 14, yp + 4, fmt$(CLR.p) + ' /GPU-h', { fill:'var(--ink)', 'font-size':13, 'font-weight':500 });
+  T(W - m.r + 14, yp + 20, 'clearing · sample', { 'font-size':10.5 });
+  T(xv + 10, H - m.b - 10, fmtN(CLR.V) + ' GPU-h matched', { fill:'var(--ink)' });
+  T(X(buyers.reduce((a,o)=>a+o.size,0)) + 6, H - m.b - 40, 'DEMAND', { fill:'var(--buy)', 'font-size':10.5 });
+  T(X(sellers.reduce((a,o)=>a+o.size,0)) + 6, Y(P1) + 14, 'SUPPLY', { fill:'var(--sell)', 'font-size':10.5 });
+})();
+
+/* ---------- 5 TOKENS ---------- */
+(function tokens(){
+  const LIGHT = { ground:'#ECECE8', sheet:'#F7F7F4', panel:'#E2E2DD', rule:'#C8C8C1', die:'#D3D3CC', ink:'#111214', 'ink-2':'#4A4B50', 'ink-3':'#8A8B8F', buy:'#2D43C4', 'buy-soft':'#D9DDF5', sell:'#8A6000', 'sell-lit':'#C99200', 'sell-soft':'#F1E3BE', flag:'#A1301F' };
+  const DARK  = { ground:'#0B0B0C', sheet:'#131416', panel:'#191A1D', rule:'#2E2F33', die:'#26272B', ink:'#EDEDEA', 'ink-2':'#A3A4A9', 'ink-3':'#6C6D72', buy:'#8D9BFF', 'buy-soft':'#1C2150', sell:'#E3B23C', 'sell-lit':'#F2C454', 'sell-soft':'#3A2D0E', flag:'#F08C78' };
+  const USE = { ground:'Page ground, the cleanroom', sheet:'Cards, panels, the wafer', panel:'Bands, hover rows, PCB', rule:'Lines only', die:'A sealed or unfilled die', ink:'Text, drawings, the clearing price', 'ink-2':'Secondary text', 'ink-3':'Labels on drawings; never text under 18 px', buy:'Buyers · LONG · demand. Always solid', 'buy-soft':'Buyer tint behind text', sell:'Sellers · SHORT · supply text. Always hatched or dashed', 'sell-lit':'A filled seller die on the wafer (fill only)', 'sell-soft':'Seller tint, hatch ground', flag:'Sample, void, forfeit, stale' };
+  const TEXT = new Set(['ink','ink-2','ink-3','buy','sell','flag','sell-lit']);
+  const lum = h => { const c = [1,3,5].map(i => parseInt(h.slice(i,i+2),16)/255).map(v => v <= .03928 ? v/12.92 : Math.pow((v+.055)/1.055, 2.4)); return .2126*c[0] + .7152*c[1] + .0722*c[2]; };
+  const ratio = (a,b) => { const x = lum(a), y = lum(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+  const r = (fg, bg) => { const v = ratio(fg, bg); return `<span class="ratio">${v.toFixed(1)}:1</span> <span style="color:var(--ink-3)">${v >= 7 ? 'AAA' : v >= 4.5 ? 'AA' : v >= 3 ? 'large / graphic' : 'non-text'}</span>`; };
+  $('#tok').innerHTML = `<thead><tr><th>Token</th><th>Light</th><th>on ground</th><th>Dark</th><th>on ground</th><th>Use</th></tr></thead><tbody>` +
+    Object.keys(LIGHT).map(k => `<tr><td class="mono">--${k}</td><td><span class="sw" style="background:${LIGHT[k]}"></span><span class="mono">${LIGHT[k]}</span></td><td>${TEXT.has(k) ? r(LIGHT[k], LIGHT.ground) : '<span style="color:var(--ink-3)">surface</span>'}</td>
+      <td><span class="sw" style="background:${DARK[k]}"></span><span class="mono">${DARK[k]}</span></td><td>${TEXT.has(k) ? r(DARK[k], DARK.ground) : '<span style="color:var(--ink-3)">surface</span>'}</td><td style="color:var(--ink-2)">${USE[k]}</td></tr>`).join('') + `</tbody>`;
+})();
+})();
+</script>
+</body>
+</html>
