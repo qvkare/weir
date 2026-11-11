@@ -1,6 +1,6 @@
 # Weir specification
 
-Version 0.1. This file is the source of truth. The NEAR contract (`contracts/weir`) and
+Version 0.2. This file is the source of truth. The NEAR contract (`contracts/weir`) and
 the TypeScript engine (`engine/`) are written from it independently and must agree
 on every number. Where code and this file differ, the code is wrong.
 
@@ -50,7 +50,7 @@ method.
 | `t0` | u64 | Delivery start of series 0 |
 | `period_secs` | u64 | Length of a delivery window |
 | `lead_secs` | u64 | How long before delivery starts the auctions for a series open |
-| `cutoff_secs` | u64 | No round may end later than `delivery_end - cutoff_secs` |
+| `cutoff_secs` | u64 | How long before delivery starts the auctions for a series close. May be zero |
 | `commit_secs` | u64 | Length of a round's commit phase |
 | `reveal_secs` | u64 | Length of a round's reveal phase |
 | `band_bps` | u32 | Half-width of the band as basis points of the anchor |
@@ -68,9 +68,9 @@ method.
 | `reporters` | account ids | Accounts allowed to report the index. 1 to 9, no duplicates |
 | `quorum` | u32 | Reports needed to finalize a print, `1 <= quorum <= reporters.len()` |
 
-`new` panics unless: every duration is above zero; `tick > 0`; `0 < band_bps < 10000`;
+`new` panics unless: every duration except `cutoff_secs` is above zero; `tick > 0`; `0 < band_bps < 10000`;
 `forfeit_bps <= 10000`; `max_commits` is 1 to 128; `max_order_size >= 1`;
-`cutoff_secs < period_secs`; `min_prints >= 1`; reporters and quorum are as above.
+`cutoff_secs < lead_secs`; `min_prints >= 1`; reporters and quorum are as above.
 
 ## 4. Time
 
@@ -80,7 +80,7 @@ For series `s` (a `u32`):
 delivery_start(s) = t0 + s * period_secs
 delivery_end(s)   = delivery_start(s) + period_secs
 auction_open(s)   = delivery_start(s) - lead_secs      (saturating at 0)
-auction_close(s)  = delivery_end(s) - cutoff_secs
+auction_close(s)  = delivery_start(s) - cutoff_secs    (saturating at 0)
 round_secs        = commit_secs + reveal_secs
 round_start(s, r) = auction_open(s) + r * round_secs
 ```
@@ -93,6 +93,11 @@ Its phases are:
 - over: `now >= round_start + round_secs`. The round can be cleared.
 
 Phases come from the clock alone. Nobody starts or ends a round.
+
+Auctions for a series end before its delivery window starts: this is a week-ahead
+market. With `lead_secs = period_secs + cutoff_secs` the auction windows of
+consecutive series follow each other with no gap and no overlap, so exactly one
+series is in auction at any time.
 
 ## 5. Accounts and dollars
 
@@ -356,7 +361,7 @@ All views are free and take JSON.
 | `get_series(series)` | `{ series, anchor, floor, band, opened_at, open_sets, bonus_pool, pending_rounds, settlement }` or null. `settlement` is null or `{ fixing, long_payout, short_payout, bonus_long, bonus_short, prints, void, settled_at }` |
 | `get_account(account_id)` | `{ balance, guard }` or null |
 | `get_position(series, account_id)` | `{ long, short }` |
-| `get_round(series, round)` | `{ next_seq, commits: [{ seq, owner, lock, state, order }] }` or null once cleared. `state` is `Committed`, `Revealed` or `Void`; `order` is `{ side, size, price }` once revealed |
+| `get_round(series, round)` | `{ next_seq, commits: [{ seq, owner, hash, lock, state, order }] }` or null once cleared. `state` is `Committed`, `Revealed` or `Void`; `order` is `{ side, size, price }` once revealed |
 | `get_result(series, round)` | `{ price, volume, long_size, short_size, orders, commits, forfeited, cleared_at, fills: [{ seq, owner, side, size, price, filled }] }` or null |
 | `get_results(series, from_round, limit)` | `[[round, result], ...]` for the rounds in range that have a result |
 | `get_print(bucket)` | `{ bucket, price, final, reports: [{ reporter, price, bundle }] }` or null |
@@ -394,7 +399,7 @@ Every state change logs one NEP-297 event: `EVENT_JSON:{"standard":"weir","versi
 | `withdraw` | `account_id`, `amount` |
 | `withdraw_failed` | `account_id`, `amount` |
 | `series_opened` | `series`, `anchor`, `floor`, `band` |
-| `commit` | `series`, `round`, `seq`, `account_id`, `lock` |
+| `commit` | `series`, `round`, `seq`, `account_id`, `hash`, `lock` |
 | `evict` | `series`, `round`, `seq`, `account_id`, `lock` |
 | `reveal` | `series`, `round`, `seq`, `account_id`, `side`, `size`, `price`, `void` |
 | `clear` | `series`, `round`, `price`, `volume`, `forfeited` |
