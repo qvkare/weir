@@ -1,0 +1,17 @@
+{
+  "name": "@weir/engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference engine for the Weir spec: timing, band, commit hash, clearing, index, settlement and an in-memory market.",
+  "type": "module",
+  "exports": {
+    ".": "./src/mod.ts"
+  },
+  "scripts": {
+    "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

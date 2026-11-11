@@ -375,9 +375,13 @@ Details:
 - `get_result`: `long_size`, `short_size` and `orders` count the revealed orders that
   are not void. `commits` counts every commit the round held when it was cleared.
   `price` is null when nothing traded.
-- `get_results`: the range is `from_round` to `from_round + limit - 1`; `limit` is at
-  most 100.
+- `get_results`: the range is `from_round` to `from_round + limit - 1`.
 - `get_print`: `price` is null until the print is final.
+- `get_results`: a `limit` above 100 is treated as 100.
+- `get_accumulator`: `sum` is a decimal string, `count` a number.
+
+Return values of the state-changing methods: `commit` returns the commit's `seq`
+(a number) and `report` returns a boolean. Every other method returns nothing.
 
 ## 13. Events
 
