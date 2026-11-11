@@ -137,6 +137,7 @@ const BUNDLE: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
 const T0: u64 = 100_000;
 const SERIES: [u32; 2] = [0, 1];
 const DOLLAR: u128 = 1_000_000;
+const FEE: u128 = 500;
 
 fn id(name: &str) -> AccountId {
     name.parse().unwrap()
@@ -156,12 +157,13 @@ fn params() -> Params {
         tick: 1_000,
         print_interval_secs: 10,
         report_grace_secs: 20,
-        max_move_bps: 500,
+        max_spread_bps: 100,
         min_prints: 2,
         void_after_secs: 100,
         max_anchor_age_secs: 300,
         forfeit_bps: 2_500,
         min_lock: U128(1_000),
+        commit_fee: U128(FEE),
         max_commits: 3,
         max_order_size: 20,
         reporters: REPORTERS.iter().map(|r| id(r)).collect(),
@@ -263,7 +265,8 @@ enum Action {
     Transfer(usize, usize, u32, u64, u64),
     Settle(u32),
     Redeem(usize, usize, u32),
-    Guard(usize, Option<u64>),
+    Guard(usize, Option<u64>, Option<u128>),
+    Finalize(usize),
 }
 
 fn action() -> impl Strategy<Value = Action> {
@@ -293,7 +296,9 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(f, t, s, l, sh)| Action::Transfer(f, t, s, l, sh)),
         2 => series.clone().prop_map(Action::Settle),
         2 => (who.clone(), who.clone(), series).prop_map(|(by, of, s)| Action::Redeem(by, of, s)),
-        1 => (who, prop::option::of(0..=50_000u64)).prop_map(|(w, g)| Action::Guard(w, g)),
+        1 => (who, prop::option::of(0..=50_000u64), prop::option::of(1_000..=20 * DOLLAR))
+            .prop_map(|(w, g, l)| Action::Guard(w, g, l)),
+        1 => any::<usize>().prop_map(Action::Finalize),
     ]
 }
 
@@ -317,7 +322,7 @@ struct World {
     rounds: BTreeSet<(u32, u64)>,
 }
 
-/// Every account's dollars: free balance plus the locks of its live commits.
+/// Every account's dollars: free balance plus the locks and fees its commits hold.
 fn dollars(world: &World) -> Vec<u128> {
     let mut held = vec![0u128; TRADERS.len()];
     for (i, t) in TRADERS.iter().enumerate() {
@@ -325,9 +330,7 @@ fn dollars(world: &World) -> Vec<u128> {
     }
     for &(series, round) in &world.rounds {
         for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
-            if c.state != CommitStateName::Void {
-                held[trader(&c.owner)] += c.lock.0;
-            }
+            held[trader(&c.owner)] += held_by(&c);
         }
     }
     held
@@ -336,11 +339,15 @@ fn dollars(world: &World) -> Vec<u128> {
 fn locks_in(series: u32, round: u64) -> Vec<u128> {
     let mut locks = vec![0u128; TRADERS.len()];
     for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
-        if c.state != CommitStateName::Void {
-            locks[trader(&c.owner)] += c.lock.0;
-        }
+        locks[trader(&c.owner)] += held_by(&c);
     }
     locks
+}
+
+/// What a commit still holds: its fee, and its lock unless the guard voided it.
+fn held_by(c: &weir::types::CommitView) -> u128 {
+    let lock = if c.state == CommitStateName::Void { 0 } else { c.lock.0 };
+    lock + c.fee.0
 }
 
 fn trader(account: &AccountId) -> usize {
@@ -462,8 +469,15 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
         Action::Redeem(by, of, series) => {
             call(now, TRADERS[by], 0, vec![], |w| w.redeem(series, Some(id(TRADERS[of]))));
         }
-        Action::Guard(who, guard) => {
-            call(now, TRADERS[who], 1, vec![], |w| w.set_guard(guard));
+        Action::Guard(who, guard, limit) => {
+            call(now, TRADERS[who], 1, vec![], |w| w.set_guard(guard, limit.map(U128)));
+        }
+        Action::Finalize(pick) => {
+            let pending = view(|w| w.get_pending_prints());
+            if !pending.is_empty() {
+                let bucket = pending[pick % pending.len()];
+                call(now, "anyone.near", 0, vec![], |w| w.finalize_print(bucket));
+            }
         }
     }
     allowed
@@ -474,23 +488,24 @@ fn check_books(world: &World) -> Result<(), TestCaseError> {
     let totals = view(|w| w.get_totals());
     let free: u128 = TRADERS.iter().map(|t| view(|w| w.get_account(id(t))).map_or(0, |a| a.balance.0)).sum();
     let mut locked = 0u128;
+    let mut burned = 0u128;
     for &(series, round) in &world.rounds {
         for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
-            if c.state != CommitStateName::Void {
-                locked += c.lock.0;
-            }
+            locked += held_by(&c);
+        }
+        if let Some(r) = view(|w| w.get_result(series, round)) {
+            burned += r.forfeited.0 + r.fees.0;
         }
     }
     let mut backing = 0u128;
-    let mut bonus_pools = 0u128;
     let mut unredeemed = 0u128;
     for series in SERIES {
         let Some(s) = view(|w| w.get_series(series)) else { continue };
-        bonus_pools += s.bonus_pool.0;
         let (long, short) = TRADERS.iter().fold((0u64, 0u64), |(l, sh), t| {
             let p = view(|w| w.get_position(series, id(t)));
             (l + p.long, sh + p.short)
         });
+        prop_assert!(u128::from(s.open_sets) <= weir::MAX_UNITS);
         match &s.settlement {
             None => {
                 // Invariant 2.
@@ -499,11 +514,10 @@ fn check_books(world: &World) -> Result<(), TestCaseError> {
                 backing += u128::from(s.open_sets) * u128::from(s.band);
             }
             Some(st) => {
-                prop_assert_eq!(s.bonus_pool.0, 0);
                 for t in TRADERS {
                     let p = view(|w| w.get_position(series, id(t)));
-                    unredeemed += u128::from(p.long) * (u128::from(st.long_payout) + st.bonus_long.0)
-                        + u128::from(p.short) * (u128::from(st.short_payout) + st.bonus_short.0);
+                    unredeemed += u128::from(p.long) * u128::from(st.long_payout)
+                        + u128::from(p.short) * u128::from(st.short_payout);
                 }
             }
         }
@@ -511,13 +525,41 @@ fn check_books(world: &World) -> Result<(), TestCaseError> {
     prop_assert_eq!(totals.free.0, free);
     prop_assert_eq!(totals.locked.0, locked);
     prop_assert_eq!(totals.sets_backing.0, backing);
-    prop_assert!(totals.pools.0 >= bonus_pools, "pools hold every bonus pool and the carry pool");
     prop_assert_eq!(totals.unredeemed.0, unredeemed);
-    // Invariant 1. Withdrawals resolve within the step, so nothing is in flight and the
-    // books balance to the unit.
-    let owed = free + locked + backing + totals.pools.0 + unredeemed;
-    prop_assert!(world.held >= owed, "insolvent: holds {} owes {}", world.held, owed);
-    prop_assert_eq!(world.held, owed);
+    prop_assert_eq!(totals.burned.0, burned);
+    // Invariant 1, an equality: withdrawals resolve within the step, so nothing is in
+    // flight.
+    prop_assert_eq!(world.held, free + locked + backing + unredeemed + burned);
+    Ok(())
+}
+
+/// Invariant 7: whatever happened, once time has passed every round that holds
+/// commits can be cleared and every opened series settled, and then every unit
+/// redeemed. Afterwards only free balances and burned dollars remain.
+fn finish(world: &mut World) -> Result<(), TestCaseError> {
+    world.now = world.now.max(T0 + 2 * 600 + 100 + 1);
+    let now = world.now;
+    for &(series, round) in &world.rounds.clone() {
+        if view(|w| w.get_round(series, round)).is_some() {
+            let cleared = call(now, "anyone.near", 0, vec![], |w| w.clear(series, round));
+            prop_assert!(cleared.is_some(), "round {}/{} cannot be cleared", series, round);
+        }
+    }
+    for series in SERIES {
+        let Some(s) = view(|w| w.get_series(series)) else { continue };
+        if s.settlement.is_none() {
+            let settled = call(now, "anyone.near", 0, vec![], |w| w.settle(series));
+            prop_assert!(settled.is_some(), "series {} cannot be settled", series);
+        }
+        for t in TRADERS {
+            if view(|w| w.get_position(series, id(t))) != Position::default() {
+                prop_assert!(call(now, "anyone.near", 0, vec![], |w| w.redeem(series, Some(id(t)))).is_some());
+            }
+        }
+    }
+    check_books(world)?;
+    let totals = view(|w| w.get_totals());
+    prop_assert_eq!((totals.locked.0, totals.sets_backing.0, totals.unredeemed.0), (0, 0, 0));
     Ok(())
 }
 
@@ -554,6 +596,13 @@ proptest! {
                     "{} lost {} on {:?}, allowed {}", TRADERS[i], dollars_before[i] - dollars_after[i], action, allowed[i]
                 );
             }
+            // Invariant 6: clearing never raises anyone's dollars. Forfeits are burned,
+            // so another account's unrevealed commit is worth nothing to anybody.
+            if matches!(action, Action::Clear(_)) {
+                for i in 0..TRADERS.len() {
+                    prop_assert!(dollars_after[i] <= dollars_before[i], "{} gained on a clear", TRADERS[i]);
+                }
+            }
             // And nobody's units fall except by its own merge or transfer, or a redeem.
             let positions_after = positions();
             for (&(series, i), before) in &positions_before {
@@ -567,6 +616,7 @@ proptest! {
                 }
             }
         }
+        finish(&mut world)?;
     }
 }
 
@@ -588,12 +638,13 @@ fn random_walks_reach_every_stage() {
             apply(&mut world, action);
         }
         check_books(&world).unwrap();
+        finish(&mut world).unwrap();
     }
     let seen = SEEN.with(|seen| seen.borrow().clone());
     println!("{seen:#?}");
     for stage in [
         "series_opened", "commit", "evict", "reveal", "void reveal", "clear", "clear with a trade",
-        "mint", "merge", "transfer_position", "print", "settle", "void settle", "redeem",
+        "mint", "merge", "transfer_position", "print", "no_print", "settle", "void settle", "redeem",
         "withdraw", "withdraw_failed", "guard",
     ] {
         assert!(seen.get(stage).copied().unwrap_or(0) > 0, "no {stage} in {seen:#?}");

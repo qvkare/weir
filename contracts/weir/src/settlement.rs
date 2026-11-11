@@ -36,9 +36,6 @@ pub struct SettleInput {
     /// The series' accumulator.
     pub sum: u128,
     pub count: u32,
-    pub open_sets: u64,
-    /// The series' bonus pool plus the carry pool.
-    pub pool: u128,
     /// `now >= delivery_end + void_after_secs`.
     pub void_allowed: bool,
     pub min_prints: u32,
@@ -49,31 +46,15 @@ pub struct Settlement {
     pub fixing: u64,
     pub long_payout: u64,
     pub short_payout: u64,
-    pub bonus_long: u128,
-    pub bonus_short: u128,
-    /// The new carry pool.
-    pub carry: u128,
     pub void: bool,
 }
 
-/// Section 10, `redeem`: `long * (long_payout + bonus_long) + short * (short_payout +
-/// bonus_short)`.
-pub fn payout(
-    long: u64,
-    short: u64,
-    long_payout: u64,
-    short_payout: u64,
-    bonus_long: u128,
-    bonus_short: u128,
-) -> Result<u128, &'static str> {
-    let leg = |units: u64, payout: u64, bonus: u128| {
-        u128::from(payout)
-            .checked_add(bonus)
-            .and_then(|each| each.checked_mul(u128::from(units)))
-    };
-    leg(long, long_payout, bonus_long)
-        .zip(leg(short, short_payout, bonus_short))
-        .and_then(|(a, b)| a.checked_add(b))
+/// Section 10, `redeem`: `long * long_payout + short * short_payout`.
+pub fn payout(long: u64, short: u64, long_payout: u64, short_payout: u64) -> Result<u128, &'static str> {
+    // Each product fits a u128; only their sum can overflow, and only far beyond
+    // anything `mint`'s cap allows.
+    (u128::from(long) * u128::from(long_payout))
+        .checked_add(u128::from(short) * u128::from(short_payout))
         .ok_or(ERR_OVERFLOW)
 }
 
@@ -93,26 +74,11 @@ pub fn settle(input: SettleInput) -> Result<Settlement, &'static str> {
     } else {
         return Err(ERR_NOT_ENOUGH_PRINTS);
     };
-
     let long_payout = fixing.saturating_sub(input.floor).min(input.band);
-    let short_payout = input.band - long_payout;
-
-    let (bonus_long, bonus_short, carry) = if input.open_sets > 0 {
-        let sets = u128::from(input.open_sets);
-        let per_set = input.pool / sets;
-        let bonus_long = per_set / 2;
-        (bonus_long, per_set - bonus_long, input.pool - per_set * sets)
-    } else {
-        (0, 0, input.pool)
-    };
-
     Ok(Settlement {
         fixing,
         long_payout,
-        short_payout,
-        bonus_long,
-        bonus_short,
-        carry,
+        short_payout: input.band - long_payout,
         void,
     })
 }
@@ -126,8 +92,6 @@ mod tests {
         band: 400_000,
         sum: 0,
         count: 0,
-        open_sets: 10,
-        pool: 0,
         void_allowed: false,
         min_prints: 3,
     };
@@ -199,22 +163,8 @@ mod tests {
     }
 
     #[test]
-    fn bonus_splits_per_set_and_carries_the_remainder() {
-        let s = settle(SettleInput { sum: 6_000_000, count: 3, pool: 1_007, ..INPUT }).unwrap();
-        // per_set = 100, carry 7; LONG gets 50, SHORT 50.
-        assert_eq!((s.bonus_long, s.bonus_short, s.carry), (50, 50, 7));
-        let s = settle(SettleInput { sum: 6_000_000, count: 3, pool: 1_019, ..INPUT }).unwrap();
-        // per_set = 101: the odd unit goes to SHORT.
-        assert_eq!((s.bonus_long, s.bonus_short, s.carry), (50, 51, 9));
-        let pay = |long, short| payout(long, short, s.long_payout, s.short_payout, s.bonus_long, s.bonus_short);
-        assert_eq!(pay(2, 1), Ok(2 * 200_050 + 200_051));
-        assert_eq!(pay(1, 1), Ok(400_000 + 101));
-        assert_eq!(payout(u64::MAX, 0, u64::MAX, 0, u128::MAX, 0), Err(ERR_OVERFLOW));
-    }
-
-    #[test]
-    fn no_open_sets_carries_the_whole_pool() {
-        let s = settle(SettleInput { sum: 6_000_000, count: 3, pool: 999, open_sets: 0, ..INPUT }).unwrap();
-        assert_eq!((s.bonus_long, s.bonus_short, s.carry), (0, 0, 999));
+    fn payout_pays_each_side_its_share_of_the_band() {
+        assert_eq!(payout(2, 1, 250_000, 150_000), Ok(650_000));
+        assert_eq!(payout(u64::MAX, u64::MAX, u64::MAX, u64::MAX), Err(ERR_OVERFLOW));
     }
 }

@@ -31,6 +31,7 @@ pub enum WeirEvent {
         account_id: AccountId,
         hash: String,
         lock: U128,
+        fee: U128,
     },
     #[event_version("1.0.0")]
     Evict {
@@ -39,6 +40,7 @@ pub enum WeirEvent {
         seq: u32,
         account_id: AccountId,
         lock: U128,
+        fee: U128,
     },
     #[event_version("1.0.0")]
     Reveal {
@@ -58,6 +60,7 @@ pub enum WeirEvent {
         price: Option<u64>,
         volume: u64,
         forfeited: U128,
+        fees: U128,
     },
     #[event_version("1.0.0")]
     Mint {
@@ -89,6 +92,13 @@ pub enum WeirEvent {
     /// `reports` is how many reports the print was made from.
     #[event_version("1.0.0")]
     Print { bucket: u64, price: u64, reports: u32 },
+    /// A bucket decided without a print.
+    #[event_version("1.0.0")]
+    NoPrint { bucket: u64, reports: u32 },
+    #[event_version("1.0.0")]
+    PrunePrint { bucket: u64 },
+    #[event_version("1.0.0")]
+    PruneResult { series: u32, round: u64 },
     #[event_version("1.0.0")]
     Settle {
         series: u32,
@@ -107,5 +117,6 @@ pub enum WeirEvent {
     Guard {
         account_id: AccountId,
         guard: Option<u64>,
+        max_round_lock: Option<U128>,
     },
 }

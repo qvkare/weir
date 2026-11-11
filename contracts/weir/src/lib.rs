@@ -18,7 +18,7 @@ mod tests;
 use std::collections::BTreeMap;
 
 use near_sdk::json_types::U128;
-use near_sdk::store::{LookupMap, Vector};
+use near_sdk::store::LookupMap;
 use near_sdk::{
     env, ext_contract, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise,
     PromiseError,
@@ -35,6 +35,12 @@ pub const FT_TRANSFER_GAS: Gas = Gas::from_tgas(10);
 pub const ON_WITHDRAW_GAS: Gas = Gas::from_tgas(10);
 /// The most prints `get_prints` returns.
 pub const MAX_PRINTS: u32 = 200;
+/// `get_prints` looks at most this many chunks of 64 buckets per call.
+pub const MAX_PRINT_CHUNKS: u64 = 4_096;
+/// Closed, undecided buckets that one `report` decides on its way out.
+pub const DECIDE_PER_REPORT: usize = 4;
+/// The largest unit count JSON carries exactly: 2^53 - 1.
+pub const MAX_UNITS: u128 = (1 << 53) - 1;
 /// The most rounds `get_results` looks at.
 pub const MAX_RESULTS: u32 = 100;
 
@@ -48,6 +54,13 @@ pub const ERR_CUTOFF: &str = "cutoff_secs must be below lead_secs";
 pub const ERR_BUCKET_GRID: &str =
     "t0 and period_secs must be multiples of print_interval_secs";
 pub const ERR_MIN_PRINTS: &str = "min_prints must be at least 1";
+pub const ERR_MIN_PRINTS_TOO_MANY: &str =
+    "min_prints must be at most period_secs / print_interval_secs";
+pub const ERR_VOID_AFTER: &str = "void_after_secs must be at least report_grace_secs";
+pub const ERR_GRACE: &str = "report_grace_secs must be at most period_secs";
+pub const ERR_MAX_SPREAD: &str = "max_spread_bps must be between 1 and 10000";
+pub const ERR_CAPACITY: &str =
+    "max_order_size * max_commits * rounds_per_series must be below 2^52";
 pub const ERR_REPORTERS: &str = "reporters must be 1 to 9 accounts with no duplicates";
 pub const ERR_QUORUM: &str = "quorum must be 1 to the number of reporters";
 
@@ -66,6 +79,7 @@ pub const ERR_NOT_COMMIT_PHASE: &str = "not in a commit phase";
 pub const ERR_BAD_HASH: &str = "hash must be 64 lowercase hex characters";
 pub const ERR_LOCK_TOO_SMALL: &str = "lock is below min_lock";
 pub const ERR_ROUND_FULL: &str = "round is full";
+pub const ERR_ROUND_LOCK: &str = "over the round lock limit";
 
 pub const ERR_NO_COMMIT: &str = "commit not found";
 pub const ERR_NOT_OWNER: &str = "caller does not own this commit";
@@ -88,6 +102,7 @@ pub const ERR_SETTLED: &str = "series is settled";
 pub const ERR_POSITION_TOO_SMALL: &str = "position is too small";
 pub const ERR_SELF_TRANSFER: &str = "cannot transfer a position to yourself";
 pub const ERR_NOTHING_TO_TRANSFER: &str = "long + short must be at least 1";
+pub const ERR_TOO_MANY_SETS: &str = "too many sets";
 
 pub const ERR_NOT_REPORTER: &str = "caller is not a reporter";
 pub const ERR_BUCKET: &str = "bucket must be a multiple of print_interval_secs";
@@ -95,6 +110,11 @@ pub const ERR_REPORT_WINDOW: &str = "outside the report window of this bucket";
 pub const ERR_ZERO_PRICE: &str = "price must be above zero";
 pub const ERR_BAD_BUNDLE: &str = "bundle must be 64 lowercase hex characters";
 pub const ERR_DUPLICATE_REPORT: &str = "reporter already reported this bucket";
+pub const ERR_WINDOW_OPEN: &str = "the report window of this bucket has not closed";
+pub const ERR_NO_REPORTS: &str = "bucket has no reports";
+pub const ERR_DECIDED: &str = "bucket is already decided";
+pub const ERR_UNDECIDED: &str = "bucket is not decided";
+pub const ERR_PRUNE_TOO_EARLY: &str = "a print can be pruned two periods after its bucket";
 
 pub const ERR_DELIVERY_NOT_OVER: &str = "the report window of the delivery has not closed";
 pub const ERR_PENDING_ROUNDS: &str = "a round of the series is waiting to be cleared";
@@ -141,7 +161,7 @@ fn require_one_yocto() {
     );
 }
 
-/// Section 3.
+/// Section 3, in the order the spec lists the rules.
 pub fn check_params(params: &Params) -> Result<(), &'static str> {
     // `cutoff_secs` may be zero: auctions may run until delivery starts.
     let durations = [
@@ -154,8 +174,10 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
         params.void_after_secs,
         params.max_anchor_age_secs,
     ];
+    if !durations.iter().all(|&d| d > 0) {
+        return Err(ERR_DURATION);
+    }
     let checks = [
-        (durations.iter().all(|&d| d > 0), ERR_DURATION),
         (params.tick > 0, ERR_TICK),
         (params.band_bps > 0 && params.band_bps < 10_000, ERR_BAND_BPS),
         (params.forfeit_bps <= 10_000, ERR_FORFEIT_BPS),
@@ -163,9 +185,20 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
         (params.max_order_size >= 1, ERR_MAX_ORDER_SIZE),
         (params.cutoff_secs < params.lead_secs, ERR_CUTOFF),
         (params.min_prints >= 1, ERR_MIN_PRINTS),
+        (
+            u64::from(params.min_prints) <= params.period_secs / params.print_interval_secs,
+            ERR_MIN_PRINTS_TOO_MANY,
+        ),
+        (params.void_after_secs >= params.report_grace_secs, ERR_VOID_AFTER),
+        (params.report_grace_secs <= params.period_secs, ERR_GRACE),
+        (params.max_spread_bps > 0 && params.max_spread_bps <= 10_000, ERR_MAX_SPREAD),
     ];
     if let Some(&(_, err)) = checks.iter().find(|(ok, _)| !ok) {
         return Err(err);
+    }
+    // Below 2^52, so that `mint`'s cap leaves room for every auction of a series.
+    if params.auction_capacity() >= 1 << 52 {
+        return Err(ERR_CAPACITY);
     }
     // A delivery window is a whole number of print buckets, so its last bucket's
     // report window closes exactly when `settle` becomes possible.
@@ -197,11 +230,18 @@ pub struct Weir {
     books: LookupMap<(u32, u64), Book>,
     results: LookupMap<(u32, u64), RoundResult>,
     prints: LookupMap<u64, Print>,
-    /// Buckets of final prints, ascending, for `get_prints`.
-    final_buckets: Vector<u64>,
+    /// Undecided buckets that have reports, ascending. Bounded: a bucket joins only
+    /// while its report window is open, and every `report` decides up to
+    /// `DECIDE_PER_REPORT` closed ones.
+    pending: Vec<u64>,
+    /// Which buckets have a stored final print, 64 buckets to a word, for
+    /// `get_prints`. Pruning clears bits and deletes empty words.
+    print_index: LookupMap<u64, u64>,
+    /// The lowest bucket that ever had a final print, where `get_prints` starts.
+    first_print: Option<u64>,
+    /// Kept apart from `prints`, so pruning prints cannot touch them.
     accumulators: LookupMap<u32, Accumulator>,
     last_print: Option<LastPrint>,
-    carry_pool: u128,
     totals: Totals,
 }
 
@@ -220,10 +260,11 @@ impl Weir {
             books: LookupMap::new(b"b"),
             results: LookupMap::new(b"r"),
             prints: LookupMap::new(b"i"),
-            final_buckets: Vector::new(b"f"),
+            pending: Vec::new(),
+            print_index: LookupMap::new(b"x"),
+            first_print: None,
             accumulators: LookupMap::new(b"c"),
             last_print: None,
-            carry_pool: 0,
             totals: Totals::default(),
         }
     }
@@ -242,6 +283,7 @@ impl Weir {
             Account {
                 balance: 0,
                 guard: None,
+                max_round_lock: None,
             },
         );
         let refund = deposit.saturating_sub(REGISTRATION_FEE);
@@ -309,17 +351,27 @@ impl Weir {
     }
 
     #[payable]
-    pub fn set_guard(&mut self, guard: Option<u64>) {
+    pub fn set_guard(&mut self, guard: Option<u64>, max_round_lock: Option<U128>) {
         require_one_yocto();
         let account_id = env::predecessor_account_id();
-        self.account_mut(&account_id).guard = guard;
-        WeirEvent::Guard { account_id, guard }.emit();
+        let account = self.account_mut(&account_id);
+        account.guard = guard;
+        account.max_round_lock = max_round_lock.map(|limit| limit.0);
+        WeirEvent::Guard {
+            account_id,
+            guard,
+            max_round_lock,
+        }
+        .emit();
     }
 
     // ---- Section 6: orders ----
 
+    /// Checks in the order of section 6.2: registered, phase, hash and minimum lock,
+    /// free balance, round lock limit (before any eviction), round full.
     pub fn commit(&mut self, series: u32, hash: String, lock: U128) -> u32 {
         let owner = env::predecessor_account_id();
+        require!(self.accounts.contains_key(&owner), ERR_NOT_REGISTERED);
         let now = now();
         let round = match self.params.schedule().current(series, now) {
             (Some(round), Phase::Commit) => round,
@@ -328,12 +380,20 @@ impl Weir {
         let hash = hash::parse_digest(&hash).unwrap_or_else(|| env::panic_str(ERR_BAD_HASH));
         let lock = lock.0;
         require!(lock >= self.params.min_lock.0, ERR_LOCK_TOO_SMALL);
-        self.debit(&owner, lock);
-        self.totals.locked = add(self.totals.locked, lock);
+        let fee = self.params.commit_fee.0;
+        let held = add(lock, fee);
+        self.debit(&owner, held);
+        self.totals.locked = add(self.totals.locked, held);
         self.open_series(series, now);
 
-        let max_commits = self.params.max_commits as usize;
-        let mut evicted = None;
+        let account = self.account_mut(&owner).clone();
+        let (floor, band) = {
+            let record = self.series_mut(series);
+            (record.floor, record.band)
+        };
+        let reference = self
+            .last_print
+            .map(|last| last.price.saturating_sub(floor).min(band));
         let key = (series, round);
         if !self.books.contains_key(&key) {
             self.series_mut(series).pending_rounds.push(round);
@@ -343,7 +403,16 @@ impl Weir {
             .books
             .get_mut(&key)
             .unwrap_or_else(|| env::panic_str(ERR_NO_COMMIT));
-        if book.commits.len() >= max_commits {
+        if let Some(limit) = account.max_round_lock {
+            let mine = book
+                .commits
+                .iter()
+                .filter(|c| c.owner == owner)
+                .fold(lock, |sum, c| add(sum, c.lock));
+            require!(mine <= limit, ERR_ROUND_LOCK);
+        }
+        let mut evicted = None;
+        if book.commits.len() >= self.params.max_commits as usize {
             // The smallest lock goes; among equals, the latest.
             let (index, smallest) = book
                 .commits
@@ -362,19 +431,24 @@ impl Weir {
             seq,
             owner: owner.clone(),
             lock,
+            fee,
             hash,
+            guard: account.guard,
+            reference,
             state: CommitState::Committed,
         });
 
         if let Some(evicted) = evicted {
-            self.totals.locked = sub(self.totals.locked, evicted.lock);
-            self.credit(&evicted.owner, evicted.lock);
+            let back = add(evicted.lock, evicted.fee);
+            self.totals.locked = sub(self.totals.locked, back);
+            self.credit(&evicted.owner, back);
             WeirEvent::Evict {
                 series,
                 round,
                 seq: evicted.seq,
                 account_id: evicted.owner,
                 lock: U128(evicted.lock),
+                fee: U128(evicted.fee),
             }
             .emit();
         }
@@ -385,6 +459,7 @@ impl Weir {
             account_id: owner,
             hash: hex::encode(hash),
             lock: U128(lock),
+            fee: U128(fee),
         }
         .emit();
         seq
@@ -433,7 +508,7 @@ impl Weir {
             .series
             .get(&series)
             .unwrap_or_else(|| env::panic_str(ERR_UNKNOWN_SERIES));
-        let (floor, band) = (record.floor, record.band);
+        let band = record.band;
         require!(
             price.is_multiple_of(self.params.tick) && price > 0 && price < band,
             ERR_BAD_PRICE
@@ -444,12 +519,12 @@ impl Weir {
         };
         require!(cost <= commit.lock, ERR_UNDER_LOCKED);
 
-        // Section 6.4. Without a guard or a print there is nothing to compare with.
-        let guard = self.accounts.get(&caller).and_then(|account| account.guard);
-        let void = match (guard, self.last_print) {
-            (Some(guard), Some(last)) => {
-                let reference = u128::from(last.price.saturating_sub(floor).min(band));
-                let (price, guard) = (u128::from(price), u128::from(guard));
+        // Section 6.4, with the guard and reference the commit recorded. Without a
+        // guard or a print there is nothing to compare with.
+        let void = match (commit.guard, commit.reference) {
+            (Some(guard), Some(reference)) => {
+                let (price, guard, reference) =
+                    (u128::from(price), u128::from(guard), u128::from(reference));
                 match side {
                     Side::Long => price > reference + guard,
                     Side::Short => price + guard < reference,
@@ -515,33 +590,36 @@ impl Weir {
         let mut gains: BTreeMap<AccountId, Position> = BTreeMap::new();
         let mut released = 0u128;
         let mut forfeited = 0u128;
-        let mut fills = Vec::with_capacity(orders.len());
+        let mut fees = 0u128;
+        let mut fills = Vec::new();
         let mut next_order = 0;
         for commit in &book.commits {
+            fees = add(fees, commit.fee);
+            released = add(released, add(commit.held_lock(), commit.fee));
             let refund = match commit.state {
                 CommitState::Void(_) => continue,
                 CommitState::Committed => {
                     let forfeit = commit.lock * u128::from(self.params.forfeit_bps) / 10_000;
-                    forfeited += forfeit;
+                    forfeited = add(forfeited, forfeit);
                     commit.lock - forfeit
                 }
                 CommitState::Revealed(order) => {
                     let filled = outcome.fills[next_order];
                     next_order += 1;
-                    fills.push(Fill {
-                        seq: commit.seq,
-                        owner: commit.owner.clone(),
-                        side: order.side,
-                        size: order.size,
-                        price: order.price,
-                        filled,
-                    });
                     let unit_cost = match (outcome.price, order.side) {
                         (None, _) => 0,
                         (Some(p), Side::Long) => p,
                         (Some(p), Side::Short) => band - p,
                     };
                     if filled > 0 {
+                        fills.push(Fill {
+                            seq: commit.seq,
+                            owner: commit.owner.clone(),
+                            side: order.side,
+                            size: order.size,
+                            price: order.price,
+                            filled,
+                        });
                         let gain = gains.entry(commit.owner.clone()).or_default();
                         match order.side {
                             Side::Long => gain.long = add_units(gain.long, filled),
@@ -551,7 +629,6 @@ impl Weir {
                     commit.lock - mul(filled, unit_cost)
                 }
             };
-            released += commit.lock;
             let credit = credits.entry(commit.owner.clone()).or_default();
             *credit = add(*credit, refund);
         }
@@ -564,11 +641,10 @@ impl Weir {
         }
         self.totals.locked = sub(self.totals.locked, released);
         self.totals.sets_backing = add(self.totals.sets_backing, mul(outcome.volume, band));
-        self.totals.pools = add(self.totals.pools, forfeited);
+        self.totals.burned = add(self.totals.burned, add(forfeited, fees));
 
         let record = self.series_mut(series);
         record.open_sets = add_units(record.open_sets, outcome.volume);
-        record.bonus_pool = add(record.bonus_pool, forfeited);
         record.pending_rounds.retain(|&r| r != round);
 
         let size_of = |side: Side| {
@@ -587,6 +663,7 @@ impl Weir {
                 orders: orders.len() as u32,
                 commits: book.commits.len() as u32,
                 forfeited: U128(forfeited),
+                fees: U128(fees),
                 cleared_at: now,
                 fills,
             },
@@ -597,6 +674,7 @@ impl Weir {
             price: outcome.price,
             volume: outcome.volume,
             forfeited: U128(forfeited),
+            fees: U128(fees),
         }
         .emit();
     }
@@ -612,8 +690,14 @@ impl Weir {
         );
         let account_id = env::predecessor_account_id();
         self.open_series(series, now);
+        // Section 8: room is left for everything the series' auctions can still add.
+        let cap = MAX_UNITS - self.params.auction_capacity();
         let record = self.series_mut(series);
-        record.open_sets = add_units(record.open_sets, sets);
+        require!(
+            u128::from(record.open_sets) + u128::from(sets) <= cap,
+            ERR_TOO_MANY_SETS
+        );
+        record.open_sets += sets;
         let cost = mul(sets, record.band);
         self.debit(&account_id, cost);
         self.totals.sets_backing = add(self.totals.sets_backing, cost);
@@ -677,18 +761,19 @@ impl Weir {
         require!(params.reporters.contains(&reporter), ERR_NOT_REPORTER);
         require!(bucket.is_multiple_of(params.print_interval_secs), ERR_BUCKET);
         let now = now();
-        let window_end = bucket
-            .saturating_add(params.print_interval_secs)
-            .saturating_add(params.report_grace_secs);
-        require!(bucket <= now && now < window_end, ERR_REPORT_WINDOW);
+        require!(
+            bucket <= now && now < self.window_end(bucket),
+            ERR_REPORT_WINDOW
+        );
         require!(price > 0, ERR_ZERO_PRICE);
         require!(hash::parse_digest(&bundle).is_some(), ERR_BAD_BUNDLE);
 
         let print = self.prints.entry(bucket).or_insert(Print {
+            state: PrintState::Open,
             price: None,
             reports: Vec::new(),
         });
-        if print.price.is_some() {
+        if print.state != PrintState::Open {
             return false;
         }
         require!(
@@ -700,6 +785,7 @@ impl Weir {
             price,
             bundle: bundle.clone(),
         });
+        let reports = print.reports.len();
         WeirEvent::Report {
             bucket,
             reporter,
@@ -707,104 +793,114 @@ impl Weir {
             bundle,
         }
         .emit();
+        if reports == 1 {
+            let at = self.pending.partition_point(|&b| b < bucket);
+            self.pending.insert(at, bucket);
+        }
+        let made_final = reports == self.params.reporters.len() && self.decide(bucket);
 
-        let prices: Vec<u64> = print.reports.iter().map(|r| r.price).collect();
-        let last = self
-            .last_print
-            .filter(|last| last.bucket < bucket)
-            .map(|last| last.price);
-        let decision = index::decide(
-            &prices,
-            last,
-            params.quorum,
-            params.reporters.len() as u32,
-            params.max_move_bps,
-        );
-        if !decision.is_final {
-            return false;
+        // Up to four earlier buckets whose windows have closed, oldest first.
+        let closed: Vec<u64> = self
+            .pending
+            .iter()
+            .copied()
+            .filter(|&b| b < bucket && self.window_end(b) <= now)
+            .take(DECIDE_PER_REPORT)
+            .collect();
+        for earlier in closed {
+            self.decide(earlier);
         }
-        let price = decision.candidate;
-        print.price = Some(price);
-        WeirEvent::Print {
-            bucket,
-            price,
-            reports: prices.len() as u32,
-        }
-        .emit();
+        made_final
+    }
 
-        if self.last_print.is_none_or(|last| bucket > last.bucket) {
-            self.last_print = Some(LastPrint { bucket, price });
-        }
-        self.insert_final_bucket(bucket);
-        if bucket >= self.params.t0 {
-            // A series number past u32 has no record and can never settle.
-            if let Ok(series) = u32::try_from((bucket - self.params.t0) / self.params.period_secs) {
-                let acc = self.accumulators.entry(series).or_default();
-                acc.sum = add(acc.sum, u128::from(price));
-                acc.count = acc
-                    .count
-                    .checked_add(1)
-                    .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW));
+    /// Decides a bucket whose report window has closed. Returns whether it got a
+    /// final print.
+    pub fn finalize_print(&mut self, bucket: u64) -> bool {
+        require!(now() >= self.window_end(bucket), ERR_WINDOW_OPEN);
+        let print = self
+            .prints
+            .get(&bucket)
+            .unwrap_or_else(|| env::panic_str(ERR_NO_REPORTS));
+        require!(print.state == PrintState::Open, ERR_DECIDED);
+        self.decide(bucket)
+    }
+
+    /// Deletes a decided bucket's reports and price. The last print and the
+    /// accumulators are kept apart and do not change.
+    pub fn prune_print(&mut self, bucket: u64) {
+        let print = self
+            .prints
+            .get(&bucket)
+            .unwrap_or_else(|| env::panic_str(ERR_NO_REPORTS));
+        require!(print.state != PrintState::Open, ERR_UNDECIDED);
+        let is_final = print.state == PrintState::Final;
+        // `new` keeps report_grace_secs <= period_secs, so this is past the bucket's
+        // report window too: no report can recreate a pruned bucket.
+        let prunable = bucket.saturating_add(self.params.period_secs.saturating_mul(2));
+        require!(now() >= prunable, ERR_PRUNE_TOO_EARLY);
+        self.prints.remove(&bucket);
+        if is_final {
+            let (word, bit) = self.index_slot(bucket);
+            let left = self.print_index.get(&word).copied().unwrap_or(0) & !(1 << bit);
+            if left == 0 {
+                self.print_index.remove(&word);
+            } else {
+                self.print_index.insert(word, left);
             }
         }
-        true
+        WeirEvent::PrunePrint { bucket }.emit();
     }
 
     // ---- Section 10: settlement ----
 
     pub fn settle(&mut self, series: u32) {
         let now = now();
-        let delivery_end = self.params.schedule().delivery_end(series);
-        let acc = self.accumulators.get(&series).copied().unwrap_or_default();
+        let schedule = self.params.schedule();
+        let (start, end) = (schedule.delivery_start(series), schedule.delivery_end(series));
         let (grace, void_after, min_prints) = (
             self.params.report_grace_secs,
             self.params.void_after_secs,
             self.params.min_prints,
         );
-        let carry_pool = self.carry_pool;
         let record = self.series_mut(series);
         require!(record.settlement.is_none(), ERR_SETTLED);
-        require!(
-            now >= delivery_end.saturating_add(grace),
-            ERR_DELIVERY_NOT_OVER
-        );
+        require!(now >= end.saturating_add(grace), ERR_DELIVERY_NOT_OVER);
         require!(record.pending_rounds.is_empty(), ERR_PENDING_ROUNDS);
-        let pool = add(record.bonus_pool, carry_pool);
+
+        // Every bucket of the window has closed; decide the ones still undecided.
+        let window: Vec<u64> = self
+            .pending
+            .iter()
+            .copied()
+            .filter(|&b| start <= b && b < end)
+            .collect();
+        for bucket in window {
+            self.decide(bucket);
+        }
+
+        let acc = self.accumulators.get(&series).copied().unwrap_or_default();
+        let record = self.series_mut(series);
         let s = or_panic(settlement::settle(settlement::SettleInput {
             floor: record.floor,
             band: record.band,
             sum: acc.sum,
             count: acc.count,
-            open_sets: record.open_sets,
-            pool,
-            void_allowed: now >= delivery_end.saturating_add(void_after),
+            void_allowed: now >= end.saturating_add(void_after),
             min_prints,
         }));
-        let owed = or_panic(settlement::payout(
-            record.open_sets,
-            record.open_sets,
-            s.long_payout,
-            s.short_payout,
-            s.bonus_long,
-            s.bonus_short,
-        ));
         let backing = mul(record.open_sets, record.band);
-        record.bonus_pool = 0;
         record.settlement = Some(SettlementView {
             fixing: s.fixing,
             long_payout: s.long_payout,
             short_payout: s.short_payout,
-            bonus_long: U128(s.bonus_long),
-            bonus_short: U128(s.bonus_short),
             prints: acc.count,
             void: s.void,
             settled_at: now,
         });
-        self.carry_pool = s.carry;
+        // Each set pays long_payout + short_payout = band: the backing becomes owed.
         let totals = &mut self.totals;
         totals.sets_backing = sub(totals.sets_backing, backing);
-        totals.pools = add(sub(totals.pools, pool), s.carry);
-        totals.unredeemed = add(totals.unredeemed, owed);
+        totals.unredeemed = add(totals.unredeemed, backing);
         WeirEvent::Settle {
             series,
             fixing: s.fixing,
@@ -834,8 +930,6 @@ impl Weir {
             position.short,
             s.long_payout,
             s.short_payout,
-            s.bonus_long.0,
-            s.bonus_short.0,
         ));
         self.totals.unredeemed = sub(self.totals.unredeemed, amount);
         self.credit(&account_id, amount);
@@ -858,6 +952,7 @@ impl Weir {
             self.results.remove(&(series, round)).is_some(),
             ERR_NO_RESULT
         );
+        WeirEvent::PruneResult { series, round }.emit();
     }
 
     // ---- Section 12: views ----
@@ -902,7 +997,6 @@ impl Weir {
             band: s.band,
             opened_at: s.opened_at,
             open_sets: s.open_sets,
-            bonus_pool: U128(s.bonus_pool),
             pending_rounds: s.pending_rounds.clone(),
             settlement: s.settlement.clone(),
         })
@@ -912,6 +1006,7 @@ impl Weir {
         self.accounts.get(&account_id).map(|a| AccountView {
             balance: U128(a.balance),
             guard: a.guard,
+            max_round_lock: a.max_round_lock.map(U128),
         })
     }
 
@@ -939,6 +1034,7 @@ impl Weir {
                         owner: c.owner.clone(),
                         hash: hex::encode(c.hash),
                         lock: U128(c.lock),
+                        fee: U128(c.fee),
                         state,
                         order,
                     }
@@ -968,30 +1064,46 @@ impl Weir {
         self.prints.get(&bucket).map(|p| PrintView {
             bucket,
             price: p.price,
-            is_final: p.price.is_some(),
+            state: p.state,
             reports: p.reports.clone(),
         })
+    }
+
+    /// The undecided buckets that have reports, ascending.
+    pub fn get_pending_prints(&self) -> Vec<u64> {
+        self.pending.clone()
     }
 
     pub fn get_last_print(&self) -> Option<LastPrint> {
         self.last_print
     }
 
+    /// Final prints from `from_bucket` upward, at most `limit` (up to 200). It walks
+    /// the print index from the first final print ever made to the last print, and
+    /// looks at no more than `MAX_PRINT_CHUNKS` words of 64 buckets per call.
     pub fn get_prints(&self, from_bucket: u64, limit: u32) -> Vec<PrintView> {
-        // First index whose bucket is at least `from_bucket`.
-        let (mut lo, mut hi) = (0, self.final_buckets.len());
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            if self.final_buckets[mid] < from_bucket {
-                lo = mid + 1;
-            } else {
-                hi = mid;
+        let (Some(first), Some(last)) = (self.first_print, self.last_print) else {
+            return Vec::new();
+        };
+        let interval = self.params.print_interval_secs;
+        let from = from_bucket.div_ceil(interval).max(first / interval);
+        let last = last.bucket / interval;
+        let limit = limit.min(MAX_PRINTS) as usize;
+        let mut prints = Vec::new();
+        let mut word = from / 64;
+        while word <= last / 64 && word < (from / 64).saturating_add(MAX_PRINT_CHUNKS) && prints.len() < limit {
+            let mut bits = self.print_index.get(&word).copied().unwrap_or(0);
+            if word == from / 64 {
+                bits &= u64::MAX << (from % 64);
             }
+            while bits != 0 && prints.len() < limit {
+                let bit = u64::from(bits.trailing_zeros());
+                bits &= bits - 1;
+                prints.extend(self.get_print((word * 64 + bit) * interval));
+            }
+            word += 1;
         }
-        let end = lo.saturating_add(limit.min(MAX_PRINTS)).min(self.final_buckets.len());
-        (lo..end)
-            .filter_map(|i| self.get_print(self.final_buckets[i]))
-            .collect()
+        prints
     }
 
     pub fn get_accumulator(&self, series: u32) -> AccumulatorView {
@@ -1008,8 +1120,8 @@ impl Weir {
             free: U128(t.free),
             locked: U128(t.locked),
             sets_backing: U128(t.sets_backing),
-            pools: U128(t.pools),
             unredeemed: U128(t.unredeemed),
+            burned: U128(t.burned),
         }
     }
 
@@ -1087,7 +1199,6 @@ impl Weir {
                 band: b.band,
                 opened_at: now,
                 open_sets: 0,
-                bonus_pool: 0,
                 pending_rounds: Vec::new(),
                 settlement: None,
             },
@@ -1129,15 +1240,67 @@ impl Weir {
         }
     }
 
-    /// Keeps `final_buckets` ascending. Prints finalize out of order only within a
-    /// report window, so this moves the new bucket back a few places at most.
-    fn insert_final_bucket(&mut self, bucket: u64) {
-        self.final_buckets.push(bucket);
-        let mut i = self.final_buckets.len() - 1;
-        while i > 0 && self.final_buckets[i - 1] > bucket {
-            self.final_buckets[i] = self.final_buckets[i - 1];
-            i -= 1;
+    /// The first second at which a report for `bucket` is no longer accepted.
+    fn window_end(&self, bucket: u64) -> u64 {
+        bucket
+            .saturating_add(self.params.print_interval_secs)
+            .saturating_add(self.params.report_grace_secs)
+    }
+
+    /// The word of `print_index` that holds `bucket`, and its bit there.
+    fn index_slot(&self, bucket: u64) -> (u64, u64) {
+        let slot = bucket / self.params.print_interval_secs;
+        (slot / 64, slot % 64)
+    }
+
+    /// Section 9: decides an undecided bucket. Returns whether it got a final print.
+    fn decide(&mut self, bucket: u64) -> bool {
+        let (quorum, max_spread) = (self.params.quorum, self.params.max_spread_bps);
+        let print = self
+            .prints
+            .get_mut(&bucket)
+            .unwrap_or_else(|| env::panic_str(ERR_NO_REPORTS));
+        let prices: Vec<u64> = print.reports.iter().map(|r| r.price).collect();
+        let reports = prices.len() as u32;
+        let price = index::decide(&prices, quorum, max_spread);
+        print.state = if price.is_some() {
+            PrintState::Final
+        } else {
+            PrintState::NoPrint
+        };
+        print.price = price;
+        self.pending.retain(|&b| b != bucket);
+        let Some(price) = price else {
+            WeirEvent::NoPrint { bucket, reports }.emit();
+            return false;
+        };
+        WeirEvent::Print {
+            bucket,
+            price,
+            reports,
         }
-        self.final_buckets[i] = bucket;
+        .emit();
+
+        if self.last_print.is_none_or(|last| bucket > last.bucket) {
+            self.last_print = Some(LastPrint { bucket, price });
+        }
+        if self.first_print.is_none_or(|first| bucket < first) {
+            self.first_print = Some(bucket);
+        }
+        let (word, bit) = self.index_slot(bucket);
+        let bits = self.print_index.get(&word).copied().unwrap_or(0) | (1 << bit);
+        self.print_index.insert(word, bits);
+        if bucket >= self.params.t0 {
+            // A series number past u32 has no record and can never settle.
+            if let Ok(series) = u32::try_from((bucket - self.params.t0) / self.params.period_secs) {
+                let acc = self.accumulators.entry(series).or_default();
+                acc.sum = add(acc.sum, u128::from(price));
+                acc.count = acc
+                    .count
+                    .checked_add(1)
+                    .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW));
+            }
+        }
+        true
     }
 }

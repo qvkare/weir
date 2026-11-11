@@ -56,12 +56,13 @@ fn params() -> Params {
         tick: 1_000,
         print_interval_secs: 10,
         report_grace_secs: 20,
-        max_move_bps: 1_000,
+        max_spread_bps: 100,
         min_prints: 3,
         void_after_secs: 500,
         max_anchor_age_secs: 300,
         forfeit_bps: 1_000,
         min_lock: U128(1_000),
+        commit_fee: U128(0),
         max_commits: 4,
         max_order_size: 1_000,
         reporters: vec![id(R1), id(R2), id(R3)],
@@ -276,7 +277,7 @@ impl H {
 }
 
 fn sum_of(t: Totals) -> u128 {
-    t.free + t.locked + t.sets_backing + t.pools + t.unredeemed
+    t.free + t.locked + t.sets_backing + t.unredeemed + t.burned
 }
 
 // ---- new ----
@@ -309,6 +310,15 @@ fn new_refuses_bad_params() {
         (|p| p.max_order_size = 0, ERR_MAX_ORDER_SIZE),
         (|p| p.cutoff_secs = p.lead_secs, ERR_CUTOFF),
         (|p| p.min_prints = 0, ERR_MIN_PRINTS),
+        (|p| p.min_prints = 101, ERR_MIN_PRINTS_TOO_MANY),
+        (|p| p.void_after_secs = 19, ERR_VOID_AFTER),
+        (|p| {
+            p.report_grace_secs = 1_001;
+            p.void_after_secs = 2_000;
+        }, ERR_GRACE),
+        (|p| p.max_spread_bps = 0, ERR_MAX_SPREAD),
+        (|p| p.max_spread_bps = 10_001, ERR_MAX_SPREAD),
+        (|p| p.max_order_size = 1 << 47, ERR_CAPACITY),
         (|p| p.t0 += 5, ERR_BUCKET_GRID),
         (|p| p.period_secs = 1_005, ERR_BUCKET_GRID),
         (|p| p.reporters.clear(), ERR_REPORTERS),
@@ -328,6 +338,11 @@ fn new_refuses_bad_params() {
     edges.max_commits = 128;
     edges.cutoff_secs = 1_099;
     edges.quorum = 3;
+    edges.min_prints = 100;
+    edges.void_after_secs = 20;
+    edges.max_spread_bps = 10_000;
+    // With cutoff 0 below: 11 rounds of 128 commits, just below 2^52.
+    edges.max_order_size = ((1u64 << 52) - 1) / 1_408;
     edges.reporters = (0..9).map(|i| id(&format!("r{i}.near"))).collect();
     assert_eq!(check_params(&edges), Ok(()));
     edges.cutoff_secs = 0;
@@ -360,7 +375,7 @@ fn register_for_self_or_another_and_refund_the_excess() {
         matches!(refunds.as_slice(), [MockAction::Transfer { deposit, .. }] if deposit.as_yoctonear() == extra),
         "{refunds:?}"
     );
-    assert_eq!(h.view(|w| w.get_account(id(ALICE))), Some(AccountView { balance: U128(0), guard: None }));
+    assert_eq!(h.view(|w| w.get_account(id(ALICE))), Some(AccountView { balance: U128(0), guard: None, max_round_lock: None }));
 
     h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(Some(id(BOB))))
         .unwrap();
@@ -446,12 +461,12 @@ fn withdraw_sends_and_a_failed_transfer_credits_back() {
 fn set_guard_needs_exactly_one_yocto() {
     let mut h = H::new();
     h.register(ALICE);
-    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.set_guard(Some(5)));
-    h.refused_with(CAROL, 1, ERR_NOT_REGISTERED, |w| w.set_guard(Some(5)));
-    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(5))).unwrap();
-    assert_eq!(event("guard")["data"], serde_json::json!({ "account_id": ALICE, "guard": 5 }));
+    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.set_guard(Some(5), None));
+    h.refused_with(CAROL, 1, ERR_NOT_REGISTERED, |w| w.set_guard(Some(5), None));
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(5), None)).unwrap();
+    assert_eq!(event("guard")["data"], serde_json::json!({ "account_id": ALICE, "guard": 5, "max_round_lock": null }));
     assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().guard, Some(5));
-    h.run(ALICE, 1, vec![], |w| w.set_guard(None)).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None)).unwrap();
     assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().guard, None);
 }
 
@@ -528,7 +543,7 @@ fn commit_checks_its_inputs() {
     assert_eq!(h.ok(ALICE, |w| w.commit(0, hash.clone(), U128(100 * DOLLAR))), 0);
     assert_eq!(
         event("commit")["data"],
-        serde_json::json!({ "series": 0, "round": 0, "seq": 0, "account_id": ALICE, "hash": "ab".repeat(32), "lock": "100000000" })
+        serde_json::json!({ "series": 0, "round": 0, "seq": 0, "account_id": ALICE, "hash": "ab".repeat(32), "lock": "100000000", "fee": "0" })
     );
     assert_eq!(h.balance(ALICE), 0);
     let round = h.view(|w| w.get_round(0, 0)).unwrap();
@@ -540,6 +555,7 @@ fn commit_checks_its_inputs() {
             owner: id(ALICE),
             hash: "ab".repeat(32),
             lock: U128(100 * DOLLAR),
+            fee: U128(0),
             state: CommitStateName::Committed,
             order: None,
         }]
@@ -565,7 +581,7 @@ fn a_full_round_evicts_the_smallest_lock_latest_first() {
     assert_eq!(h.try_commit(DAVE, Side::Long, 1, 1_000, 3_001), Ok(4));
     assert_eq!(
         event("evict")["data"],
-        serde_json::json!({ "series": 0, "round": 0, "seq": 2, "account_id": CAROL, "lock": "3000" })
+        serde_json::json!({ "series": 0, "round": 0, "seq": 2, "account_id": CAROL, "lock": "3000", "fee": "0" })
     );
     assert_eq!(h.balance(CAROL), before + 3_000);
     let seqs: Vec<u32> = h.view(|w| w.get_round(0, 0)).unwrap().commits.iter().map(|c| c.seq).collect();
@@ -668,7 +684,7 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
     let mut h = H::new();
     h.funded(&[ALICE, BOB]);
     for who in [ALICE, BOB] {
-        h.run(who, 1, vec![], |w| w.set_guard(Some(10_000))).unwrap();
+        h.run(who, 1, vec![], |w| w.set_guard(Some(10_000), None)).unwrap();
     }
     h.open_at_round(0);
     // ref = 2_000_000 - 1_800_000 = 200_000. LONG void above 210_000, SHORT below 190_000.
@@ -702,24 +718,51 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
 }
 
 #[test]
-fn guard_follows_the_last_print_and_clamps_the_reference() {
+fn guard_and_reference_are_fixed_when_the_commit_is_made() {
     let mut h = H::new();
     h.funded(&[ALICE, BOB]);
-    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0))).unwrap();
-    h.run(BOB, 1, vec![], |w| w.set_guard(Some(0))).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
     h.open_at_round(0);
-    let long = h.commit(ALICE, Side::Long, 1, 1_000, DOLLAR);
-    let short = h.commit(BOB, Side::Short, 1, BAND - 1_000, DOLLAR);
-    h.at(reveal_start(0));
-    // Far below the floor: ref clamps to 0, so LONG at 1_000 > 0 + 0 is void.
+    // Committed with ref 0.20 and guard 0: a LONG at 0.001 is inside it.
+    let kept = h.commit(ALICE, Side::Long, 1, 1_000, DOLLAR);
+    h.at(round_start(0) + 10);
+    // The index crashes below the floor: ref would clamp to 0 now.
     for reporter in [R1, R2, R3] {
-        h.ok(reporter, |w| w.report(reveal_start(0), 1_000_000, BUNDLE.into()));
+        h.ok(reporter, |w| w.report(round_start(0) + 10, 1_000_000, BUNDLE.into()));
     }
-    h.reveal(ALICE, 0, long, Side::Long, 1, 1_000).unwrap();
-    assert_eq!(event("reveal")["data"]["void"], true);
-    // And a SHORT at 399_000 + 0 is not below 0.
-    h.reveal(BOB, 0, short, Side::Short, 1, BAND - 1_000).unwrap();
+    // A commit made now records ref 0, and Bob's guard does not exist yet.
+    let late = h.commit(ALICE, Side::Long, 1, 1_000, DOLLAR);
+    let unguarded = h.commit(BOB, Side::Long, 1, 1_000, DOLLAR);
+    // Guards changed after commit change nothing.
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None)).unwrap();
+    h.run(BOB, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
+    h.at(reveal_start(0));
+    h.reveal(ALICE, 0, kept, Side::Long, 1, 1_000).unwrap();
     assert_eq!(event("reveal")["data"]["void"], false);
+    h.reveal(ALICE, 0, late, Side::Long, 1, 1_000).unwrap();
+    assert_eq!(event("reveal")["data"]["void"], true, "0.001 > 0 + 0 against the recorded ref");
+    h.reveal(BOB, 0, unguarded, Side::Long, 1, 1_000).unwrap();
+    assert_eq!(event("reveal")["data"]["void"], false, "no guard when committed");
+}
+
+#[test]
+fn a_void_order_gets_its_lock_back_but_its_fee_stays_with_the_round() {
+    let mut params = params();
+    params.commit_fee = U128(500);
+    let mut h = H::with(params);
+    h.funded(&[ALICE]);
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
+    h.open_at_round(0);
+    let seq = h.commit(ALICE, Side::Long, 1, 300_000, DOLLAR);
+    assert_eq!(h.balance(ALICE), 100 * DOLLAR - DOLLAR - 500);
+    h.at(reveal_start(0));
+    h.reveal(ALICE, 0, seq, Side::Long, 1, 300_000).unwrap();
+    assert_eq!(event("reveal")["data"]["void"], true);
+    assert_eq!(h.balance(ALICE), 100 * DOLLAR - 500);
+    assert_eq!(h.totals().locked, 500);
+    h.at(round_end(0));
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    assert_eq!((h.totals().locked, h.totals().burned), (0, 500));
 }
 
 // ---- Section 7 ----
@@ -752,14 +795,15 @@ fn clear_prices_fills_and_accounts_for_every_commit() {
     let p = 210_000u64;
     assert_eq!(
         event("clear")["data"],
-        serde_json::json!({ "series": 0, "round": 0, "price": p, "volume": 8, "forfeited": "400000" })
+        serde_json::json!({ "series": 0, "round": 0, "price": p, "volume": 8, "forfeited": "400000", "fees": "0" })
     );
     let result = h.view(|w| w.get_result(0, 0)).unwrap();
     assert_eq!(result.long_size, 15);
     assert_eq!(result.short_size, 8);
     assert_eq!(result.cleared_at, round_end(0));
     let filled: Vec<(u32, u64)> = result.fills.iter().map(|f| (f.seq, f.filled)).collect();
-    assert_eq!(filled, vec![(0, 8), (1, 0), (2, 8)]);
+    // Only filled orders are kept: Bob's LONG at 0.20 took no part in the trade.
+    assert_eq!(filled, vec![(0, 8), (2, 8)]);
     assert!(h.view(|w| w.get_round(0, 0)).is_none(), "the book is deleted");
 
     // Alice paid 8 * 0.21; Bob nothing; Carol 8 * (0.40 - 0.21); Dave forfeited 10%.
@@ -770,11 +814,11 @@ fn clear_prices_fills_and_accounts_for_every_commit() {
     assert_eq!(h.position(ALICE), Position { long: 8, short: 0 });
     assert_eq!(h.position(CAROL), Position { long: 0, short: 8 });
     let s = h.series(0);
-    assert_eq!((s.open_sets, s.bonus_pool, s.pending_rounds), (8, U128(400_000), vec![]));
+    assert_eq!((s.open_sets, s.pending_rounds), (8, vec![]));
     let after = h.totals();
     assert_eq!(after.locked, 0);
     assert_eq!(after.sets_backing, 8 * u128::from(BAND));
-    assert_eq!(after.pools, 400_000);
+    assert_eq!(after.burned, 400_000, "Dave's forfeit belongs to nobody");
     assert_eq!(sum_of(after), sum_of(before));
 }
 
@@ -818,7 +862,7 @@ fn forfeit_rounds_down() {
     h.at(round_end(0));
     h.ok(ALICE, |w| w.clear(0, 0));
     // 1_001 * 3_333 / 10_000 = 333.6 -> 333.
-    assert_eq!(h.series(0).bonus_pool, U128(333));
+    assert_eq!(h.totals().burned, 333);
     assert_eq!(h.balance(ALICE), 100 * DOLLAR - 333);
 }
 
@@ -893,84 +937,142 @@ fn report_checks_caller_bucket_window_price_and_bundle() {
     );
     h.refused(R1, ERR_DUPLICATE_REPORT, |w| w.report(b, PRICE, BUNDLE.into()));
     let print = h.view(|w| w.get_print(b)).unwrap();
-    assert_eq!((print.price, print.is_final, print.reports.len()), (None, false, 1));
+    assert_eq!((print.price, print.state, print.reports.len()), (None, PrintState::Open, 1));
 }
 
 #[test]
-fn quorum_makes_a_print_final_and_a_late_reporter_is_ignored() {
+fn every_reporter_reporting_decides_at_once_on_the_median() {
     let mut h = H::new();
     let b = T0 + 10;
     h.at(b);
     assert!(!h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into())));
-    assert!(h.ok(R2, |w| w.report(b, 2_100_001, BUNDLE.into())));
-    assert_eq!(
-        event("print")["data"],
-        serde_json::json!({ "bucket": b, "price": 2_050_000, "reports": 2 })
-    );
-    // Final already: nothing is stored and the call returns false, even for a
-    // reporter who already reported, because finality is checked first.
-    assert!(!h.ok(R3, |w| w.report(b, 9_000_000, BUNDLE.into())));
+    assert!(!h.ok(R2, |w| w.report(b, 2_100_000, BUNDLE.into())));
+    assert_eq!(h.view(|w| w.get_pending_prints()), vec![b]);
+    // A wild third report cannot move the median.
+    assert!(h.ok(R3, |w| w.report(b, 9_000_000, BUNDLE.into())));
+    assert_eq!(event("print")["data"], serde_json::json!({ "bucket": b, "price": 2_100_000, "reports": 3 }));
+    assert_eq!(h.view(|w| w.get_pending_prints()), Vec::<u64>::new());
+    // Decided: nothing is stored and the call returns false, before the duplicate check.
+    assert!(!h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into())));
     assert!(events().is_empty());
-    assert!(!h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into())));
     let print = h.view(|w| w.get_print(b)).unwrap();
-    assert_eq!((print.price, print.is_final, print.reports.len()), (Some(2_050_000), true, 2));
-    assert_eq!(h.view(|w| w.get_last_print()), Some(LastPrint { bucket: b, price: 2_050_000 }));
-    assert_eq!(h.view(|w| w.get_accumulator(0)), AccumulatorView { sum: U128(2_050_000), count: 1 });
+    assert_eq!((print.price, print.state, print.reports.len()), (Some(2_100_000), PrintState::Final, 3));
+    assert_eq!(h.view(|w| w.get_last_print()), Some(LastPrint { bucket: b, price: 2_100_000 }));
+    assert_eq!(h.view(|w| w.get_accumulator(0)), AccumulatorView { sum: U128(2_100_000), count: 1 });
 }
 
 #[test]
-fn a_far_print_needs_every_reporter() {
+fn a_bucket_short_of_reporters_waits_for_its_window_to_close() {
     let mut h = H::new();
-    h.at(T0);
-    h.print(PRICE);
     let b = T0 + 10;
     h.at(b);
-    // 2.21 is more than 10% from 2.00.
-    assert!(!h.ok(R1, |w| w.report(b, 2_210_000, BUNDLE.into())));
-    assert!(!h.ok(R2, |w| w.report(b, 2_210_000, BUNDLE.into())));
-    assert!(h.ok(R3, |w| w.report(b, 2_210_000, BUNDLE.into())));
-    assert_eq!(h.view(|w| w.get_last_print()).unwrap().price, 2_210_000);
-
-    // Exactly 10% away is not far.
-    let b = T0 + 20;
-    h.at(b);
-    h.ok(R1, |w| w.report(b, 2_431_000, BUNDLE.into()));
-    assert!(h.ok(R2, |w| w.report(b, 2_431_000, BUNDLE.into())));
-}
-
-#[test]
-fn far_is_measured_only_against_an_earlier_bucket() {
-    let mut h = H::new();
-    let early = T0 + 10;
-    let late = T0 + 20;
-    h.at(late);
-    h.ok(R1, |w| w.report(early, PRICE, BUNDLE.into()));
-    h.print(PRICE);
-    assert_eq!(h.view(|w| w.get_last_print()).unwrap().bucket, late);
-    // The earlier bucket is not compared with the later last print: quorum is enough.
-    assert!(h.ok(R2, |w| w.report(early, 5_000_000, BUNDLE.into())));
-    assert_eq!(h.view(|w| w.get_print(early)).unwrap().price, Some(3_500_000));
-    assert_eq!(h.view(|w| w.get_last_print()).unwrap(), LastPrint { bucket: late, price: PRICE });
-    assert_eq!(h.view(|w| w.get_accumulator(0)).count, 2);
-    // get_prints is in bucket order though `early` became final last.
-    let buckets: Vec<u64> = h.view(|w| w.get_prints(0, 10)).iter().map(|p| p.bucket).collect();
-    assert_eq!(buckets, vec![early, late]);
-}
-
-#[test]
-fn a_print_not_final_when_its_window_closes_never_is() {
-    let mut h = H::new();
-    h.at(T0);
-    h.print(PRICE);
-    let b = T0 + 10;
-    h.at(b);
-    h.ok(R1, |w| w.report(b, 3_000_000, BUNDLE.into()));
-    h.ok(R2, |w| w.report(b, 3_000_000, BUNDLE.into()));
+    h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into()));
+    h.ok(R2, |w| w.report(b, 2_020_000, BUNDLE.into()));
+    assert_eq!(h.view(|w| w.get_print(b)).unwrap().state, PrintState::Open);
+    // The window is [b, b + 10 + 20).
+    h.at(b + 29);
+    h.refused(STRANGER, ERR_WINDOW_OPEN, |w| w.finalize_print(b));
     h.at(b + 30);
-    h.refused(R3, ERR_REPORT_WINDOW, |w| w.report(b, 3_000_000, BUNDLE.into()));
-    assert!(!h.view(|w| w.get_print(b)).unwrap().is_final);
-    assert_eq!(h.view(|w| w.get_accumulator(0)).count, 1);
+    h.refused(STRANGER, ERR_NO_REPORTS, |w| w.finalize_print(b - 10));
+    // 2.00 and 2.02 are exactly 1% apart: within the spread, the mean.
+    assert!(h.ok(STRANGER, |w| w.finalize_print(b)));
+    assert_eq!(event("print")["data"], serde_json::json!({ "bucket": b, "price": 2_010_000, "reports": 2 }));
+    h.refused(STRANGER, ERR_DECIDED, |w| w.finalize_print(b));
+    h.refused(R3, ERR_REPORT_WINDOW, |w| w.report(b, 2_000_000, BUNDLE.into()));
+}
+
+#[test]
+fn two_reports_further_apart_than_the_spread_make_no_print() {
+    let mut h = H::new();
+    h.at(T0);
+    h.print(PRICE);
+    let b = T0 + 10;
+    h.at(b);
+    h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into()));
+    h.ok(R2, |w| w.report(b, 2_020_001, BUNDLE.into()));
+    h.at(b + 30);
+    assert!(!h.ok(STRANGER, |w| w.finalize_print(b)));
+    assert_eq!(event("no_print")["data"], serde_json::json!({ "bucket": b, "reports": 2 }));
+    let print = h.view(|w| w.get_print(b)).unwrap();
+    assert_eq!((print.price, print.state), (None, PrintState::NoPrint));
     assert_eq!(h.view(|w| w.get_last_print()).unwrap().bucket, T0);
+    assert_eq!(h.view(|w| w.get_accumulator(0)).count, 1);
+}
+
+#[test]
+fn fewer_reports_than_quorum_make_no_print() {
+    let mut h = H::new();
+    let b = T0 + 10;
+    h.at(b);
+    h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into()));
+    h.at(b + 30);
+    assert!(!h.ok(STRANGER, |w| w.finalize_print(b)));
+    assert_eq!(h.view(|w| w.get_print(b)).unwrap().state, PrintState::NoPrint);
+    assert_eq!(h.view(|w| w.get_last_print()), None);
+}
+
+#[test]
+fn a_report_decides_up_to_four_closed_buckets_oldest_first() {
+    // A long grace keeps eleven buckets open at once, so six can wait together.
+    let mut params = params();
+    params.report_grace_secs = 100;
+    let mut h = H::with(params);
+    let now = T0 + 50;
+    h.at(now);
+    let waiting: Vec<u64> = (0..6).map(|k| T0 + 10 * k).collect();
+    for &b in &waiting {
+        h.ok(R1, |w| w.report(b, PRICE + b - T0, BUNDLE.into()));
+        h.ok(R2, |w| w.report(b, PRICE + b - T0, BUNDLE.into()));
+    }
+    assert_eq!(h.view(|w| w.get_pending_prints()), waiting);
+    // Every window above has closed by T0 + 160; a report for a new bucket decides
+    // the four oldest, after storing its own report.
+    let b = T0 + 160;
+    h.at(b);
+    assert!(!h.ok(R1, |w| w.report(b, PRICE, BUNDLE.into())));
+    let names: Vec<String> = events().iter().map(|e| e["event"].as_str().unwrap().to_string()).collect();
+    assert_eq!(names, vec!["report", "print", "print", "print", "print"]);
+    let decided: Vec<u64> = events().iter().skip(1).map(|e| e["data"]["bucket"].as_u64().unwrap()).collect();
+    assert_eq!(decided, waiting[..4]);
+    assert_eq!(h.view(|w| w.get_pending_prints()), vec![T0 + 40, T0 + 50, b]);
+    assert_eq!(h.view(|w| w.get_last_print()).unwrap().bucket, T0 + 30);
+}
+
+#[test]
+fn the_pending_set_stays_small_whatever_reporters_do() {
+    let mut h = H::new();
+    // One reporter reports every bucket for a whole period, alone.
+    for k in 0..100 {
+        let b = T0 + 10 * k;
+        h.at(b);
+        h.ok(R1, |w| w.report(b, PRICE, BUNDLE.into()));
+        // Open windows: 3 buckets; at most 4 closed ones are waiting at any time.
+        assert!(h.view(|w| w.get_pending_prints()).len() <= 7);
+    }
+}
+
+#[test]
+fn prune_print_deletes_a_decided_bucket_but_not_the_index_state() {
+    let mut h = H::new();
+    let (a, b) = (T0 + 10, T0 + 20);
+    h.at(a);
+    h.print(PRICE);
+    h.at(b);
+    h.print(PRICE + 1_000);
+    h.at(b + 10);
+    h.ok(R1, |w| w.report(b + 10, PRICE, BUNDLE.into()));
+    h.at(a + 1_999);
+    h.refused(STRANGER, ERR_PRUNE_TOO_EARLY, |w| w.prune_print(a));
+    h.refused(STRANGER, ERR_NO_REPORTS, |w| w.prune_print(a + 5));
+    h.at(a + 2_000);
+    h.refused(STRANGER, ERR_UNDECIDED, |w| w.prune_print(b + 10));
+    h.ok(STRANGER, |w| w.prune_print(a));
+    assert_eq!(event("prune_print")["data"], serde_json::json!({ "bucket": a }));
+    assert!(h.view(|w| w.get_print(a)).is_none());
+    assert_eq!(h.view(|w| w.get_prints(0, 10)).iter().map(|p| p.bucket).collect::<Vec<_>>(), vec![b]);
+    assert_eq!(h.view(|w| w.get_last_print()), Some(LastPrint { bucket: b, price: PRICE + 1_000 }));
+    assert_eq!(h.view(|w| w.get_accumulator(0)).count, 2);
+    h.refused(STRANGER, ERR_NO_REPORTS, |w| w.prune_print(a));
 }
 
 #[test]
@@ -1042,19 +1144,16 @@ fn settle_at_min_prints_and_redeem_for_another_account() {
         event("settle")["data"],
         serde_json::json!({ "series": 0, "fixing": 2_033_333, "long_payout": 233_333, "short_payout": 166_667, "void": false })
     );
-    // Dave's 400_000 forfeit over 8 sets: 50_000 a set, 25_000 to each side.
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.bonus_long, s.bonus_short, s.prints, s.void, s.settled_at), (U128(25_000), U128(25_000), 3, false, END + 20));
-    assert_eq!(h.series(0).bonus_pool, U128(0));
+    assert_eq!((s.prints, s.void, s.settled_at), (3, false, END + 20));
     let t = h.totals();
-    assert_eq!((t.sets_backing, t.pools, t.unredeemed), (0, 0, 8 * 400_000 + 400_000));
+    assert_eq!((t.sets_backing, t.unredeemed, t.burned), (0, 8 * 400_000, 400_000));
     assert_eq!(sum_of(t), before);
 
     let alice = h.balance(ALICE);
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
-    // 8 * (233_333 + 25_000).
-    assert_eq!(event("redeem")["data"], serde_json::json!({ "series": 0, "account_id": ALICE, "amount": "2066664" }));
-    assert_eq!(h.balance(ALICE), alice + 8 * 258_333);
+    assert_eq!(event("redeem")["data"], serde_json::json!({ "series": 0, "account_id": ALICE, "amount": "1866664" }));
+    assert_eq!(h.balance(ALICE), alice + 8 * 233_333);
     assert_eq!(h.position(ALICE), Position::default());
     h.refused(STRANGER, ERR_NO_POSITION, |w| w.redeem(0, Some(id(ALICE))));
     h.refused(BOB, ERR_NO_POSITION, |w| w.redeem(0, None));
@@ -1063,13 +1162,33 @@ fn settle_at_min_prints_and_redeem_for_another_account() {
     let (carol, bob) = (h.balance(CAROL), h.balance(BOB));
     h.ok(CAROL, |w| w.redeem(0, None));
     h.ok(CAROL, |w| w.redeem(0, Some(id(BOB))));
-    assert_eq!(h.balance(CAROL), carol + 6 * (166_667 + 25_000));
-    assert_eq!(h.balance(BOB), bob + 2 * (166_667 + 25_000));
+    assert_eq!(h.balance(CAROL), carol + 6 * 166_667);
+    assert_eq!(h.balance(BOB), bob + 2 * 166_667);
     assert_eq!(h.totals().unredeemed, 0);
 
     h.ok(STRANGER, |w| w.prune_result(0, 0));
+    assert_eq!(event("prune_result")["data"], serde_json::json!({ "series": 0, "round": 0 }));
     assert!(h.view(|w| w.get_result(0, 0)).is_none());
     h.refused(STRANGER, ERR_NO_RESULT, |w| w.prune_result(0, 0));
+}
+
+#[test]
+fn settle_decides_the_undecided_buckets_of_its_window_first() {
+    let mut h = crossed_round();
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    // Three buckets with two reports each, never finalized: each waits for its window.
+    // The last bucket of the window is still pending when settle comes.
+    for b in [T0 + 900, T0 + 960, T0 + 990] {
+        h.at(b);
+        h.ok(R1, |w| w.report(b, PRICE, BUNDLE.into()));
+        h.ok(R2, |w| w.report(b, PRICE, BUNDLE.into()));
+    }
+    assert!(h.view(|w| w.get_pending_prints()).contains(&(T0 + 990)));
+    h.at(END + 20);
+    h.ok(STRANGER, |w| w.settle(0));
+    assert_eq!(h.view(|w| w.get_pending_prints()), Vec::<u64>::new());
+    let s = h.series(0).settlement.unwrap();
+    assert_eq!((s.prints, s.void, s.fixing), (3, false, PRICE));
 }
 
 #[test]
@@ -1094,61 +1213,120 @@ fn void_settlement_with_no_prints_fixes_mid_band() {
 }
 
 #[test]
-fn the_carry_pool_goes_to_the_next_series_that_settles() {
+fn forfeits_and_fees_are_burned_and_nobody_collects_them() {
     let mut params = params();
-    params.min_prints = 1;
+    params.commit_fee = U128(1_000);
     let mut h = H::with(params);
-    h.funded(&[ALICE, BOB, CAROL]);
-    // Series 0: three forfeits of 10% of 1_001 (100 each) over 3 minted sets.
+    h.funded(&[ALICE, BOB]);
     h.open_at_round(0);
-    h.ok(ALICE, |w| w.mint(0, 3));
-    for who in [ALICE, BOB, CAROL] {
-        h.commit(who, Side::Long, 1, 1_000, 1_001);
-    }
+    // Alice holds every set of the series; Bob forfeits.
+    h.ok(ALICE, |w| w.mint(0, 10));
+    h.commit(BOB, Side::Long, 1, 1_000, 2 * DOLLAR);
+    assert_eq!(event("commit")["data"]["fee"], "1000");
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
-    // Series 1, whose auction runs from T0 - 100: no sets at all, one forfeit in
-    // round 5.
-    h.at(T0 + 400);
-    h.print(PRICE);
-    h.try_commit_in(1, BOB, Side::Long, 1, 1_000, 2_000).unwrap();
-    h.at(T0 + 500);
-    h.ok(STRANGER, |w| w.clear(1, 5));
-    assert_eq!(h.series(0).bonus_pool, U128(300));
-    assert_eq!(h.series(1).bonus_pool, U128(200));
-
-    // Series 0: 300 over 3 sets, nothing carried. The print at T0 + 400 counts.
+    assert_eq!(
+        event("clear")["data"],
+        serde_json::json!({ "series": 0, "round": 0, "price": null, "volume": 0, "forfeited": "200000", "fees": "1000" })
+    );
+    let result = h.view(|w| w.get_result(0, 0)).unwrap();
+    assert_eq!((result.forfeited, result.fees), (U128(200_000), U128(1_000)));
+    assert_eq!(h.totals().burned, 201_000);
+    for i in 0..3 {
+        h.at(T0 + 100 * i);
+        h.print(PRICE);
+    }
     h.at(END + 20);
     h.ok(STRANGER, |w| w.settle(0));
-    let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.bonus_long, s.bonus_short, s.prints), (U128(50), U128(50), 1));
-    assert_eq!(h.totals().pools, 200);
-
-    // Series 2 opens with 7 sets before series 1 settles.
-    h.at(T0 + 1_100);
-    h.print(PRICE);
-    h.at(T0 + 1_400);
-    h.print(PRICE);
-    h.ok(ALICE, |w| w.mint(2, 7));
-
-    // Series 1 has no sets: its whole pool carries.
-    h.at(T0 + 2_020);
-    h.ok(STRANGER, |w| w.settle(1));
-    let s = h.series(1).settlement.unwrap();
-    assert_eq!((s.bonus_long, s.bonus_short), (U128(0), U128(0)));
-    assert_eq!(h.totals().pools, 200, "the carry pool");
-
-    // Series 2 picks it up: 200 over 7 sets is 28 a set, 4 carried; 14 to each side.
-    h.at(T0 + 2_100);
-    h.print(PRICE);
-    h.at(T0 + 3_020);
-    h.ok(STRANGER, |w| w.settle(2));
-    let s = h.series(2).settlement.unwrap();
-    assert_eq!((s.bonus_long, s.bonus_short), (U128(14), U128(14)));
-    assert_eq!(h.totals().pools, 4);
     let alice = h.balance(ALICE);
-    h.ok(BOB, |w| w.redeem(2, Some(id(ALICE))));
-    assert_eq!(h.balance(ALICE), alice + 7 * (400_000 + 28));
+    h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
+    // Exactly the band per set: nothing of Bob's forfeit.
+    assert_eq!(h.balance(ALICE), alice + 10 * u128::from(BAND));
+    assert_eq!(h.balance(BOB), 100 * DOLLAR - 201_000);
+}
+
+#[test]
+fn eviction_returns_the_fee_with_the_lock() {
+    let mut params = params();
+    params.commit_fee = U128(777);
+    params.max_commits = 1;
+    let mut h = H::with(params);
+    h.funded(&[ALICE, BOB]);
+    h.open_at_round(0);
+    h.commit(ALICE, Side::Long, 1, 1_000, 5_000);
+    h.commit(BOB, Side::Long, 1, 1_000, 5_001);
+    assert_eq!(event("evict")["data"]["fee"], "777");
+    assert_eq!(h.balance(ALICE), 100 * DOLLAR);
+    assert_eq!(h.totals().locked, 5_001 + 777);
+    let round = h.view(|w| w.get_round(0, 0)).unwrap();
+    assert_eq!(round.commits[0].fee, U128(777));
+}
+
+#[test]
+fn commits_beyond_the_round_lock_limit_are_refused() {
+    let mut h = H::new();
+    h.funded(&[ALICE]);
+    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.set_guard(None, Some(U128(5 * DOLLAR))));
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, Some(U128(5 * DOLLAR)))).unwrap();
+    assert_eq!(event("guard")["data"]["max_round_lock"], "5000000");
+    assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().max_round_lock, Some(U128(5 * DOLLAR)));
+    h.open_at_round(0);
+    h.commit(ALICE, Side::Long, 1, 1_000, 3 * DOLLAR);
+    h.commit(ALICE, Side::Long, 1, 1_000, 2 * DOLLAR);
+    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_ROUND_LOCK.into()));
+    // The limit is per round.
+    h.at(round_start(1));
+    h.commit(ALICE, Side::Long, 1, 1_000, 5 * DOLLAR);
+}
+
+#[test]
+fn the_round_lock_limit_counts_commits_before_any_eviction() {
+    let mut params = params();
+    params.max_commits = 1;
+    let mut h = H::with(params);
+    h.funded(&[ALICE]);
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, Some(U128(5 * DOLLAR)))).unwrap();
+    h.open_at_round(0);
+    h.commit(ALICE, Side::Long, 1, 1_000, 3 * DOLLAR);
+    // This would evict Alice's own 3 $ commit and leave 4 $ in the round, but the
+    // limit is counted first: 3 + 4 > 5.
+    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 4 * DOLLAR), Err(ERR_ROUND_LOCK.into()));
+}
+
+#[test]
+fn commit_refuses_an_unregistered_caller_before_anything_else() {
+    let mut h = H::new();
+    // Outside any commit phase and with a bad hash: registration is still checked first.
+    h.at(OPEN - 1);
+    h.refused(CAROL, ERR_NOT_REGISTERED, |w| w.commit(0, "XYZ".into(), U128(0)));
+}
+
+#[test]
+fn mint_stops_at_the_cap_and_a_full_round_still_clears() {
+    let mut params = params();
+    params.max_commits = 2;
+    let mut h = H::with(params.clone());
+    let cap = (1u64 << 53) - 1 - params.max_order_size * 2 * params.rounds_per_series();
+    let whale_dollars = u128::from(cap) * u128::from(BAND);
+    h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(None)).unwrap();
+    h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(whale_dollars + 300 * DOLLAR), String::new()));
+    h.funded(&[BOB]);
+    h.deposit(BOB, 200 * DOLLAR);
+    h.open_at_round(0);
+    h.refused(ALICE, ERR_TOO_MANY_SETS, |w| w.mint(0, cap + 1));
+    h.ok(ALICE, |w| w.mint(0, cap - 5));
+    h.refused(ALICE, ERR_TOO_MANY_SETS, |w| w.mint(0, 6));
+    h.ok(ALICE, |w| w.mint(0, 5));
+    // Each round at most max_order_size * max_commits more: a full trading round.
+    let a = h.commit(ALICE, Side::Long, 1_000, 200_000, 200 * DOLLAR);
+    let b = h.commit(BOB, Side::Short, 1_000, 200_000, 200 * DOLLAR);
+    h.at(reveal_start(0));
+    h.reveal(ALICE, 0, a, Side::Long, 1_000, 200_000).unwrap();
+    h.reveal(BOB, 0, b, Side::Short, 1_000, 200_000).unwrap();
+    h.at(round_end(0));
+    h.ok(STRANGER, |w| w.clear(0, 0));
+    assert_eq!(u128::from(h.series(0).open_sets), u128::from(cap) + 1_000);
+    assert!(u128::from(h.series(0).open_sets) <= MAX_UNITS);
 }
 
 // ---- Section 12 ----
@@ -1254,16 +1432,20 @@ fn views_serialize_as_section_12_says() {
     let mut h = delivered(&[2_000_000, 2_000_000, 2_000_000]);
     h.ok(STRANGER, |w| w.settle(0));
     let series = serde_json::to_value(h.series(0)).unwrap();
-    assert_eq!(series["bonus_pool"], "0");
-    assert_eq!(series["settlement"]["bonus_long"], "25000");
+    assert!(series.get("bonus_pool").is_none());
+    assert!(series["settlement"].get("bonus_long").is_none());
     assert_eq!(series["settlement"]["fixing"], 2_000_000);
     let result = serde_json::to_value(h.view(|w| w.get_result(0, 0))).unwrap();
-    assert_eq!(result["forfeited"], "400000");
+    assert_eq!((result["forfeited"].as_str(), result["fees"].as_str()), (Some("400000"), Some("0")));
     assert_eq!(result["fills"][0]["side"], "Long");
     let print = serde_json::to_value(h.view(|w| w.get_print(T0))).unwrap();
-    assert_eq!(print["final"], true);
+    assert_eq!(print["state"], "Final");
     let totals = serde_json::to_value(h.view(|w| w.get_totals())).unwrap();
-    assert!(totals["free"].is_string());
+    let mut keys: Vec<_> = totals.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["burned", "free", "locked", "sets_backing", "unredeemed"]);
+    let account = serde_json::to_value(h.view(|w| w.get_account(id(ALICE)))).unwrap();
+    assert_eq!(account["max_round_lock"], Value::Null);
 }
 
 #[test]
@@ -1282,8 +1464,8 @@ fn totals_balance_the_books_through_a_whole_life() {
         h.ok(STRANGER, |w| w.redeem(0, Some(id(who))));
     }
     let t = h.totals();
-    assert_eq!((t.locked, t.sets_backing, t.pools, t.unredeemed), (0, 0, 0, 0));
-    assert_eq!(t.free, deposits);
+    assert_eq!((t.locked, t.sets_backing, t.unredeemed, t.burned), (0, 0, 0, 400_000));
+    assert_eq!(t.free + t.burned, deposits);
     let each: u128 = [ALICE, BOB, CAROL, DAVE].iter().map(|w| h.balance(w)).sum();
-    assert_eq!(each, deposits);
+    assert_eq!(each, deposits - 400_000);
 }

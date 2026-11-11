@@ -1,6 +1,9 @@
-//! Audit demonstrations. Each test drives the contract through its public API in
-//! near-sdk's mocked VM, one call per "transaction" (a panic rolls state back), and
-//! prints the bad state it reaches. Run with `--nocapture` to see the numbers.
+//! The independent audit's eight demonstrations, turned around. Each test began as
+//! the auditor's proof that an attack reached a bad state. Spec 0.4 changed the rules,
+//! and each test now keeps the auditor's scenario and numbers and asserts that the
+//! attack fails. Every test drives the contract through its public API in near-sdk's
+//! mocked VM, one call per "transaction" (a panic rolls state back). Run with
+//! `--nocapture` to see the numbers.
 
 use std::collections::HashMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -31,14 +34,15 @@ const END: u64 = T0 + 1_000;
 const PRICE: u64 = 2_000_000;
 const BAND: u64 = 400_000;
 const DOLLAR: u128 = 1_000_000;
+const FEE: u128 = 10_000;
 
 fn id(name: &str) -> AccountId {
     name.parse().unwrap()
 }
 
 /// The unit-test schedule (10 rounds of 100 s, prints every 10 s) with the economic
-/// numbers of the `weekly` preset in agents/src/presets.ts: forfeit 1%, max move 15%,
-/// 2 of 3 reporters.
+/// numbers of the `weekly` preset in agents/src/presets.ts: forfeit 1%, 2 of 3
+/// reporters; and the spec 0.4 additions: a 1% spread and a 0.01 $ commit fee.
 fn params() -> Params {
     Params {
         usdc: id(USDC),
@@ -53,12 +57,13 @@ fn params() -> Params {
         tick: 1_000,
         print_interval_secs: 10,
         report_grace_secs: 20,
-        max_move_bps: 1_500,
+        max_spread_bps: 100,
         min_prints: 3,
         void_after_secs: 500,
         max_anchor_age_secs: 300,
         forfeit_bps: 100,
         min_lock: U128(1_000),
+        commit_fee: U128(FEE),
         max_commits: 4,
         max_order_size: 10_000,
         reporters: vec![id(R1), id(R2), id(R3)],
@@ -155,7 +160,7 @@ impl H {
     fn balance(&mut self, name: &str) -> u128 {
         self.view(|w| w.get_account(id(name)).map_or(0, |a| a.balance.0))
     }
-    /// Every reporter reports the current bucket until it is final.
+    /// Every reporter reports the current bucket; the third report decides it.
     fn print(&mut self, price: u64) {
         let bucket = self.now - self.now % 10;
         for r in [R1, R2, R3] {
@@ -186,10 +191,11 @@ impl H {
 
 // ---------------------------------------------------------------------------------
 
-/// Finding: the guard can be changed between commit and reveal, so an account can
-/// look at the revealed book and walk away from an aggressive commit with no forfeit.
+/// Finding 1: the guard could be changed between commit and reveal, so an account
+/// could look at the revealed book and walk away from an aggressive commit for free.
+/// Fix (6.2, 6.4): the commit records the guard and reference; reveal applies those.
 #[test]
-fn audit_guard_change_after_commit_cancels_for_free() {
+fn audit_guard_change_after_commit_no_longer_cancels() {
     let mut h = H::with(params());
     h.fund("alice.near", 100 * DOLLAR);
     h.fund("bob.near", 100 * DOLLAR);
@@ -199,52 +205,46 @@ fn audit_guard_change_after_commit_cancels_for_free() {
     // Alice: no guard at commit time. LONG 10 @ 0.300 (above ref), lock 3 $.
     let a = h.commit(0, "alice.near", Side::Long, 10, 300_000, 3 * DOLLAR).unwrap();
     let b = h.commit(0, "bob.near", Side::Short, 10, 290_000, 2 * DOLLAR).unwrap();
-    h.at(reveal_start(0) + 39); // last second of the reveal phase
+    h.at(reveal_start(0) + 39);
     h.reveal(0, b, "bob.near", Side::Short, 10, 290_000).unwrap();
-    // Alice sees Bob's SHORT at 0.290 and decides she does not like it.
+    // Alice sees Bob's SHORT at 0.290 and tightens her guard: too late.
     let before = h.balance("alice.near");
-    h.run("alice.near", 1, |w| w.set_guard(Some(0))).unwrap();
+    h.run("alice.near", 1, |w| w.set_guard(Some(0), None)).unwrap();
     h.reveal(0, a, "alice.near", Side::Long, 10, 300_000).unwrap();
     let after = h.balance("alice.near");
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
     let r = h.view(|w| w.get_result(0, 0)).unwrap();
-    println!(
-        "alice free balance before reveal {before}, after void reveal {after}; result volume {} forfeited {}",
-        r.volume, r.forfeited.0
-    );
-    println!("had alice simply not revealed she would have forfeited {}", 3 * DOLLAR / 100);
-    assert_eq!(after - before, 3 * DOLLAR, "whole lock back, nothing forfeited");
-    assert_eq!(r.forfeited.0, 0);
-    assert_eq!(r.volume, 0);
+    println!("alice's reveal returned {} (was the whole 3 $); the round traded {} at {:?}", after - before, r.volume, r.price);
+    assert_eq!(after, before, "no lock back at reveal: the order stands");
+    assert_eq!((r.volume, r.price), (10, Some(295_000)));
 }
 
-/// Finding: an agent with only a function-call key (commit/reveal/clear...) on an
-/// account WITH a guard can still burn its dollars into the bonus pool by committing
-/// and never revealing, and a confederate who holds the series' open sets collects.
+/// Finding 2: an agent holding only a function-call key could commit the whole free
+/// balance of a guarded account and never reveal, and a confederate holding the
+/// series' sets collected the forfeits. Fix (6.2, 7.3): `max_round_lock` caps what
+/// the agent can put at risk in a round, and forfeits are burned, not shared.
 #[test]
-fn audit_function_call_agent_drains_a_guarded_account_through_forfeits() {
+fn audit_function_call_agent_can_no_longer_drain_a_guarded_account() {
     let mut h = H::with(params());
     h.fund("victim.near", 100 * DOLLAR);
     h.fund("mallory.near", 1_000 * DOLLAR);
-    // Victim protects herself as tightly as possible (needs a full-access key).
-    h.run("victim.near", 1, |w| w.set_guard(Some(0))).unwrap();
+    // The victim's full-access key sets both limits; the agent cannot change them.
+    h.run("victim.near", 1, |w| w.set_guard(Some(0), Some(U128(DOLLAR)))).unwrap();
     h.at(round_start(0) - 5);
     h.print(PRICE);
     h.at(round_start(0));
-    // Mallory mints sets: risk free, gets band back at settlement plus the bonus.
     h.ok("mallory.near", |w| w.mint(0, 2_000));
+    let junk = "ee".repeat(32);
     for round in 0..10 {
         h.at(round_start(round));
-        let lock = h.balance("victim.near");
-        // The agent (calls with no deposit, as a function-call key would) commits
-        // the whole free balance with a random hash it never reveals.
-        let junk = "ee".repeat(32);
-        h.ok("victim.near", |w| w.commit(0, junk, U128(lock)));
+        let everything = h.balance("victim.near") - FEE;
+        let all_in = h.run("victim.near", 0, |w| w.commit(0, junk.clone(), U128(everything)));
+        assert_eq!(all_in, Err("over the round lock limit".into()));
+        h.ok("victim.near", |w| w.commit(0, junk.clone(), U128(DOLLAR)));
         h.at(round_end(round));
         h.ok(STRANGER, |w| w.clear(0, round));
     }
-    // Delivery with enough prints, then settle.
     for b in [T0, T0 + 10, T0 + 20] {
         h.at(b);
         h.print(PRICE);
@@ -254,19 +254,20 @@ fn audit_function_call_agent_drains_a_guarded_account_through_forfeits() {
     h.ok(STRANGER, |w| w.redeem(0, Some(id("mallory.near"))));
     let victim = h.balance("victim.near");
     let mallory = h.balance("mallory.near");
-    println!(
-        "victim 100.000000 -> {}.{:06}; mallory 1000.000000 -> {}.{:06}",
-        victim / DOLLAR, victim % DOLLAR, mallory / DOLLAR, mallory % DOLLAR
-    );
-    assert!(victim < 91 * DOLLAR);
-    assert!(mallory > 1_009 * DOLLAR);
+    let burned = h.view(|w| w.get_totals()).burned.0;
+    println!("victim 100 $ -> {victim}; mallory 1000 $ -> {mallory}; burned {burned}");
+    // Ten rounds of 1% of 1 $ and a 0.01 $ fee: 0.2 $ in all, and nobody got it.
+    assert_eq!(victim, 100 * DOLLAR - 10 * (DOLLAR / 100 + FEE));
+    assert_eq!(mallory, 1_000 * DOLLAR, "invariant 6: no gain from another's forfeit");
+    assert_eq!(burned, 10 * (DOLLAR / 100 + FEE));
 }
 
-/// Finding: eviction lets anyone push every rival out of a round in the last second
-/// of its commit phase, and get every dollar back by revealing an order that cannot
-/// trade.
+/// Finding 3: eviction let anyone push every rival out of a round in the last second
+/// of its commit phase and get every dollar back. Fix (6.2, 7.3): each slot taken
+/// costs `commit_fee`, burned at clearing, so blocking a round costs exactly
+/// `max_commits * commit_fee`.
 #[test]
-fn audit_eviction_griefing_costs_nothing() {
+fn audit_eviction_griefing_now_costs_a_fee_per_slot() {
     let mut h = H::with(params()); // max_commits 4
     for who in ["a.near", "b.near", "c.near", "d.near"] {
         h.fund(who, 100 * DOLLAR);
@@ -285,8 +286,9 @@ fn audit_eviction_griefing_costs_nothing() {
     for _ in 0..4 {
         seqs.push(h.commit(0, "evil.near", Side::Long, 1, 1_000, 10 * DOLLAR + 1).unwrap());
     }
+    // The evicted got lock and fee back in full.
+    assert_eq!(h.balance("a.near"), 100 * DOLLAR);
     h.at(reveal_start(0));
-    let honest = h.reveal(0, 0, "a.near", Side::Long, 10, 210_000);
     for seq in seqs {
         h.reveal(0, seq, "evil.near", Side::Long, 1, 1_000).unwrap();
     }
@@ -294,99 +296,142 @@ fn audit_eviction_griefing_costs_nothing() {
     h.ok(STRANGER, |w| w.clear(0, 0));
     let r = h.view(|w| w.get_result(0, 0)).unwrap();
     let end = h.balance("evil.near");
-    println!("honest reveal: {honest:?}; result volume {} commits {}; evil balance {start} -> {end}", r.volume, r.commits);
-    assert_eq!(honest, Err("commit not found".into()));
-    assert_eq!(r.volume, 0);
-    assert_eq!(start, end, "the griefer paid nothing");
+    println!("blocking the round cost the griefer {} (4 slots at {FEE}); fees burned {}", start - end, r.fees.0);
+    assert_eq!(start - end, 4 * FEE);
+    assert_eq!(r.fees.0, 4 * FEE);
 }
 
-/// Finding: with quorum 2 of 3, the "median" of two reports is their mean, so ONE
-/// reporter who reports first moves each print by up to max_move against the last
-/// print, and the moves compound bucket after bucket while the true price stands still.
+/// Finding 4: with 2 of 3 reporters, one reporter who reported first moved each
+/// print by up to max_move against the last print, compounding. Fix (9): with every
+/// reporter present the print is the median; with one missing, the two must agree
+/// within max_spread_bps or there is no print. Nothing compares with earlier prints.
 #[test]
-fn audit_one_reporter_ratchets_the_index() {
-    let mut h = H::with(params()); // max_move 15%
+fn audit_one_reporter_can_no_longer_steer_the_index() {
+    let mut h = H::with(params());
     let start = OPEN - 200;
     h.at(start);
     h.print(PRICE);
     let honest = PRICE;
+    let mut evil = PRICE;
     let mut prints = vec![];
     for k in 1..=10u64 {
         let bucket = start + 10 * k;
         h.at(bucket);
-        let last = h.view(|w| w.get_last_print()).unwrap().price;
-        let target = last + last * 1_500 / 10_000;
-        let evil = 2 * target - honest;
+        evil += evil * 1_500 / 10_000;
         assert!(!h.ok(R1, |w| w.report(bucket, evil, BUNDLE.into())));
-        assert!(h.ok(R2, |w| w.report(bucket, honest, BUNDLE.into())), "honest report finalizes");
-        assert!(!h.ok(R3, |w| w.report(bucket, honest, BUNDLE.into())), "third honest report ignored");
+        assert!(!h.ok(R2, |w| w.report(bucket, honest, BUNDLE.into())), "two reports decide nothing yet");
+        assert!(h.ok(R3, |w| w.report(bucket, honest, BUNDLE.into())), "the third decides on the median");
         prints.push(h.view(|w| w.get_print(bucket)).unwrap().price.unwrap());
     }
-    println!("true price 2000000 throughout; prints: {prints:?}");
-    assert!(*prints.last().unwrap() > 4 * PRICE);
+    // One honest and one dishonest reporter, the third silent: no print.
+    let mut no_prints = 0;
+    for k in 11..=20u64 {
+        let bucket = start + 10 * k;
+        h.at(bucket);
+        evil += evil * 1_500 / 10_000;
+        h.ok(R1, |w| w.report(bucket, evil, BUNDLE.into()));
+        h.ok(R2, |w| w.report(bucket, honest, BUNDLE.into()));
+        h.at(bucket + 30);
+        if !h.ok(STRANGER, |w| w.finalize_print(bucket)) {
+            no_prints += 1;
+        }
+    }
+    let last = h.view(|w| w.get_last_print()).unwrap();
+    println!("true price 2000000; prints with all three: {prints:?}; buckets with one honest and one dishonest: {no_prints} of 10 without a print; last print {last:?}");
+    assert!(prints.iter().all(|&p| p == honest));
+    assert_eq!(no_prints, 10);
+    assert_eq!(last.price, honest);
 }
 
-/// Finding: after a move larger than max_move_bps, every print needs every reporter,
-/// so one reporter who is offline or withholding freezes the index for good, and no
-/// series can open.
+/// Finding 5: after a move larger than max_move_bps every print needed every
+/// reporter, so one silent reporter froze the index and no series could open. Fix
+/// (9): there is no move limit; two agreeing reporters make a print once the window
+/// closes.
 #[test]
-fn audit_one_reporter_freezes_the_index_after_a_big_move() {
+fn audit_a_silent_reporter_can_no_longer_freeze_the_index() {
     let mut h = H::with(params());
     h.at(OPEN - 400);
     h.print(PRICE);
     // The market moves 20%. R3 stays silent.
-    let mut finals = 0;
     for b in (OPEN - 390..OPEN + 400).step_by(10) {
         h.at(b);
-        if h.ok(R1, |w| w.report(b, 2_400_000, BUNDLE.into())) { finals += 1; }
-        if h.ok(R2, |w| w.report(b, 2_400_000, BUNDLE.into())) { finals += 1; }
+        h.ok(R1, |w| w.report(b, 2_400_000, BUNDLE.into()));
+        h.ok(R2, |w| w.report(b, 2_400_000, BUNDLE.into()));
     }
+    // Later reports decided the closed buckets on their way; finalize the rest.
+    h.at(OPEN + 430);
+    for b in h.view(|w| w.get_pending_prints()) {
+        h.ok(STRANGER, |w| w.finalize_print(b));
+    }
+    let finals = h.view(|w| w.get_prints(OPEN - 390, 200)).len();
     h.at(round_start(4));
     h.fund("alice.near", 100 * DOLLAR);
     let open = h.commit(4, "alice.near", Side::Long, 1, 200_000, DOLLAR);
     let last = h.view(|w| w.get_last_print());
     println!("79 buckets reported by 2 of 3 at 2.4: {finals} final; last print {last:?}; commit: {open:?}");
-    assert_eq!(finals, 0);
-    assert_eq!(open, Err("index is stale".into()));
+    assert_eq!(finals, 79);
+    assert_eq!(last.unwrap().price, 2_400_000);
+    assert!(open.is_ok());
 }
 
-/// Finding: `far` is skipped when the last print is for a later bucket, so a quorum
-/// that finalizes bucket B+1 first can then put ANY price into bucket B inside its
-/// grace window, straight into the series accumulator.
+/// Finding 6: `far` was skipped when the last print was for a later bucket, so a
+/// quorum that finalized bucket B+1 first could put any price into bucket B. Fix (9):
+/// nothing compares a print with earlier prints, so there is no limit to bypass and
+/// the order of reporting changes nothing. A majority of reporters can set the
+/// fixing, as section 15 says; one honest third reporter keeps the median.
 #[test]
-fn audit_quorum_bypasses_max_move_by_reporting_out_of_order() {
-    let mut h = H::with(params());
-    let b = T0 + 100; // in series 0's delivery window
-    h.at(b - 10);
-    h.print(PRICE);
-    h.at(b + 10); // bucket b is still open until b + 30
-    h.ok(R1, |w| w.report(b + 10, PRICE, BUNDLE.into()));
-    assert!(h.ok(R2, |w| w.report(b + 10, PRICE, BUNDLE.into())));
-    h.ok(R1, |w| w.report(b, 100 * PRICE, BUNDLE.into()));
-    let made_final = h.ok(R2, |w| w.report(b, 100 * PRICE, BUNDLE.into()));
-    let acc = h.view(|w| w.get_accumulator(0));
-    println!("bucket {b} at 100x the last print, final: {made_final}; accumulator sum {} count {}", acc.sum.0, acc.count);
-    assert!(made_final);
+fn audit_reporting_out_of_order_no_longer_bypasses_anything() {
+    let b = T0 + 100;
+    let outcome = |out_of_order: bool, honest_third: bool| {
+        let mut h = H::with(params());
+        h.at(b - 10);
+        h.print(PRICE);
+        h.at(b + 10);
+        if out_of_order {
+            h.print(PRICE);
+        }
+        h.ok(R1, |w| w.report(b, 100 * PRICE, BUNDLE.into()));
+        h.ok(R2, |w| w.report(b, 100 * PRICE, BUNDLE.into()));
+        if honest_third {
+            h.ok(R3, |w| w.report(b, PRICE, BUNDLE.into()));
+        }
+        h.at(b + 30);
+        if h.view(|w| w.get_pending_prints()).contains(&b) {
+            h.ok(STRANGER, |w| w.finalize_print(b));
+        }
+        h.view(|w| w.get_print(b)).unwrap().price
+    };
+    let (in_order, reordered) = (outcome(false, false), outcome(true, false));
+    let (in_order_3, reordered_3) = (outcome(false, true), outcome(true, true));
+    println!("two colluding reporters at 100x: in order {in_order:?}, out of order {reordered:?}; with an honest third: {in_order_3:?} / {reordered_3:?}");
+    assert_eq!(in_order, reordered, "order changes nothing");
+    assert_eq!(in_order_3, reordered_3);
+    assert_eq!(in_order_3, Some(100 * PRICE), "two of three are a majority: section 15");
 }
 
-/// Finding (testnet: the mock token mints any amount): one account can mint
-/// u64::MAX sets, after which `open_sets + volume` overflows in every `clear` that
-/// trades, the round can never be cleared, and the series can never settle.
+/// Finding 7: one account could mint u64::MAX sets, after which `clear` overflowed in
+/// every round that traded and the series could never settle. Fix (8): `mint` stops
+/// at 2^53 - 1 less what the series' auctions can still add, so `clear` always fits.
 #[test]
-fn audit_open_sets_overflow_freezes_a_series() {
-    let mut h = H::with(params());
-    h.fund("a.near", 100 * DOLLAR);
-    h.fund("b.near", 100 * DOLLAR);
-    h.fund("whale.near", u128::from(u64::MAX) * u128::from(BAND));
+fn audit_open_sets_can_no_longer_overflow() {
+    let mut p = params();
+    p.max_order_size = 1_000;
+    let cap = (1u64 << 53) - 1 - 1_000 * 4 * p.rounds_per_series();
+    let mut h = H::with(p);
+    h.fund("a.near", 1_000 * DOLLAR);
+    h.fund("b.near", 1_000 * DOLLAR);
+    h.fund("whale.near", u128::from(cap) * u128::from(BAND));
     h.at(round_start(0) - 5);
     h.print(PRICE);
     h.at(round_start(0));
-    let a = h.commit(0, "a.near", Side::Long, 10, 200_000, 2 * DOLLAR).unwrap();
-    let b = h.commit(0, "b.near", Side::Short, 10, 200_000, 2 * DOLLAR).unwrap();
-    h.ok("whale.near", |w| w.mint(0, u64::MAX));
+    let a = h.commit(0, "a.near", Side::Long, 1_000, 200_000, 200 * DOLLAR).unwrap();
+    let b = h.commit(0, "b.near", Side::Short, 1_000, 200_000, 200 * DOLLAR).unwrap();
+    let max = h.run("whale.near", 0, |w| w.mint(0, u64::MAX));
+    h.ok("whale.near", |w| w.mint(0, cap));
+    let one_more = h.run("whale.near", 0, |w| w.mint(0, 1));
     h.at(reveal_start(0));
-    h.reveal(0, a, "a.near", Side::Long, 10, 200_000).unwrap();
-    h.reveal(0, b, "b.near", Side::Short, 10, 200_000).unwrap();
+    h.reveal(0, a, "a.near", Side::Long, 1_000, 200_000).unwrap();
+    h.reveal(0, b, "b.near", Side::Short, 1_000, 200_000).unwrap();
     h.at(round_end(0));
     let clear = h.run(STRANGER, 0, |w| w.clear(0, 0));
     for bucket in [T0, T0 + 10, T0 + 20] {
@@ -394,34 +439,36 @@ fn audit_open_sets_overflow_freezes_a_series() {
         h.print(PRICE);
     }
     h.at(END + 600);
-    let clear_later = h.run(STRANGER, 0, |w| w.clear(0, 0));
     let settle = h.run(STRANGER, 0, |w| w.settle(0));
-    let locked = h.view(|w| w.get_totals()).locked.0;
-    println!("clear: {clear:?}; clear later: {clear_later:?}; settle: {settle:?}; locked {locked}");
-    assert_eq!(clear, Err("arithmetic overflow".into()));
-    assert_eq!(settle, Err("a round of the series is waiting to be cleared".into()));
-    assert_eq!(locked, 4 * DOLLAR);
+    let open_sets = h.view(|w| w.get_series(0)).unwrap().open_sets;
+    println!("mint u64::MAX: {max:?}; mint to the cap {cap} ok, one more: {one_more:?}; clear: {clear:?}; settle: {settle:?}; open_sets {open_sets}");
+    assert_eq!(max, Err("too many sets".into()));
+    assert_eq!(one_more, Err("too many sets".into()));
+    assert_eq!(clear, Ok(()));
+    assert_eq!(settle, Ok(()));
+    assert_eq!(open_sets, cap + 1_000);
+    assert!(u128::from(open_sets) < 1 << 53);
 }
 
-/// Storage the contract pays for and cannot charge back: per print, per full round
-/// book, per stored result.
+/// Finding 8: storage the contract pays for and cannot charge back. Fix (12, 14):
+/// a result keeps only the orders that were filled, and `prune_print` and
+/// `prune_result` release prints and results.
 #[test]
-fn audit_storage_bytes_per_object() {
+fn audit_storage_bytes_per_object_and_pruning() {
     let mut p = params();
     p.max_commits = 64;
     p.reporters = vec![id("reporter-a.weir.testnet"), id("reporter-b.weir.testnet"), id("reporter-c.weir.testnet")];
+    let reporters = ["reporter-a.weir.testnet", "reporter-b.weir.testnet", "reporter-c.weir.testnet"];
     let mut h = H::with(p);
     let base = h.storage_bytes();
     let who = "a".repeat(64); // an implicit account id
     h.fund(&who, 1_000 * DOLLAR);
     let account = h.storage_bytes() - base;
 
-    // One hourly print with all three reports (the keeper keeps reporting until final
-    // but a third report after final is a no-op; count the worst case of 3).
     h.at(round_start(0) - 5);
     let bucket = h.now - h.now % 10;
     let s0 = h.storage_bytes();
-    for r in ["reporter-a.weir.testnet", "reporter-b.weir.testnet"] {
+    for r in reporters {
         h.ok(r, |w| w.report(bucket, PRICE, BUNDLE.into()));
     }
     let print = h.storage_bytes() - s0;
@@ -440,9 +487,32 @@ fn audit_storage_bytes_per_object() {
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
     let result = h.storage_bytes() - s1;
+
+    // Settle, then prune the result and, two periods on, the print.
+    for b in [T0, T0 + 10, T0 + 20] {
+        h.at(b);
+        for r in reporters {
+            h.ok(r, |w| w.report(b, PRICE, BUNDLE.into()));
+        }
+    }
+    h.at(END + 20);
+    h.ok(STRANGER, |w| w.settle(0));
+    let s2 = h.storage_bytes();
+    h.ok(STRANGER, |w| w.prune_result(0, 0));
+    let result_freed = s2 - h.storage_bytes();
+    h.at(bucket + 2_000);
+    let s3 = h.storage_bytes();
+    h.ok(STRANGER, |w| w.prune_print(bucket));
+    let print_freed = s3 - h.storage_bytes();
+
     let near = |b: u64| b as f64 * 1e19 / 1e24;
     println!("account {account} B ({:.4} NEAR, fee 0.02)", near(account));
-    println!("print with 2 reports {print} B ({:.5} NEAR)", near(print));
+    println!("print with 3 reports {print} B ({:.5} NEAR); prune_print frees {print_freed} B", near(print));
     println!("book of 64 commits {book} B ({:.4} NEAR)", near(book));
-    println!("result of 64 unfilled orders (kept until settle + prune) {result} B ({:.4} NEAR)", near(result));
+    println!("result of 64 unfilled orders {result} B ({:.5} NEAR); prune_result frees {result_freed} B", near(result));
+    assert!(result < 300, "a result with no fills is small: {result} B");
+    // The 220 B above also hold the series record the first commit opened; the
+    // result itself is what pruning frees.
+    assert!(result_freed > 0 && result_freed <= result, "prune_result frees the result: {result_freed} B");
+    assert!(print_freed > 0 && print_freed + 100 >= print, "prune_print releases the print: {print_freed} of {print}");
 }

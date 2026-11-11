@@ -23,12 +23,13 @@ pub struct Params {
     pub tick: u64,
     pub print_interval_secs: u64,
     pub report_grace_secs: u64,
-    pub max_move_bps: u32,
+    pub max_spread_bps: u32,
     pub min_prints: u32,
     pub void_after_secs: u64,
     pub max_anchor_age_secs: u64,
     pub forfeit_bps: u32,
     pub min_lock: U128,
+    pub commit_fee: U128,
     pub max_commits: u32,
     pub max_order_size: u64,
     pub reporters: Vec<AccountId>,
@@ -36,6 +37,18 @@ pub struct Params {
 }
 
 impl Params {
+    /// `(lead_secs - cutoff_secs) / round_secs`: the most rounds a series can have.
+    pub fn rounds_per_series(&self) -> u64 {
+        (self.lead_secs - self.cutoff_secs) / (self.commit_secs + self.reveal_secs)
+    }
+
+    /// The most units a series' auctions can ever add to its `open_sets`.
+    pub fn auction_capacity(&self) -> u128 {
+        u128::from(self.max_order_size)
+            * u128::from(self.max_commits)
+            * u128::from(self.rounds_per_series())
+    }
+
     pub fn schedule(&self) -> Schedule {
         Schedule {
             t0: self.t0,
@@ -70,6 +83,7 @@ impl Side {
 pub struct Account {
     pub balance: u128,
     pub guard: Option<u64>,
+    pub max_round_lock: Option<u128>,
 }
 
 #[near(serializers = [borsh, json])]
@@ -103,13 +117,19 @@ pub struct Commit {
     pub seq: u32,
     pub owner: AccountId,
     pub lock: u128,
+    pub fee: u128,
     pub hash: [u8; 32],
+    /// The owner's guard and the reference price when the commit was made
+    /// (section 6.4). Reveal applies these, not the values at reveal time.
+    pub guard: Option<u64>,
+    pub reference: Option<u64>,
     pub state: CommitState,
 }
 
 impl Commit {
-    /// The dollars this commit still holds. A void commit's lock went back at reveal.
-    pub fn held(&self) -> u128 {
+    /// The lock this commit still holds. A void commit's lock went back at reveal;
+    /// its fee stays until clearing.
+    pub fn held_lock(&self) -> u128 {
         match self.state {
             CommitState::Void(_) => 0,
             _ => self.lock,
@@ -131,8 +151,6 @@ pub struct SettlementView {
     pub fixing: u64,
     pub long_payout: u64,
     pub short_payout: u64,
-    pub bonus_long: U128,
-    pub bonus_short: U128,
     pub prints: u32,
     pub void: bool,
     pub settled_at: u64,
@@ -146,9 +164,8 @@ pub struct Series {
     pub band: u64,
     pub opened_at: u64,
     pub open_sets: u64,
-    pub bonus_pool: u128,
-    /// Rounds that hold commits and have not been cleared, in the order they got
-    /// their first commit.
+    /// Rounds that hold commits and have not been cleared, ascending: a round gets
+    /// its first commit only during its own commit phase, so they arrive in order.
     pub pending_rounds: Vec<u64>,
     pub settlement: Option<SettlementView>,
 }
@@ -180,8 +197,9 @@ pub struct RoundResult {
     /// Commits the round held when it was cleared.
     pub commits: u32,
     pub forfeited: U128,
+    pub fees: U128,
     pub cleared_at: u64,
-    /// One entry per order that took part, in `seq` order, filled or not.
+    /// The orders that were filled, in `seq` order.
     pub fills: Vec<Fill>,
 }
 
@@ -193,10 +211,19 @@ pub struct Report {
     pub bundle: String,
 }
 
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrintState {
+    Open,
+    Final,
+    NoPrint,
+}
+
 #[near(serializers = [borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Print {
-    /// Set when the print becomes final.
+    pub state: PrintState,
+    /// Set when the print is final.
     pub price: Option<u64>,
     pub reports: Vec<Report>,
 }
@@ -220,10 +247,12 @@ pub struct Accumulator {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Totals {
     pub free: u128,
+    /// Locks and fees held in rounds not yet cleared.
     pub locked: u128,
     pub sets_backing: u128,
-    pub pools: u128,
     pub unredeemed: u128,
+    /// Forfeits and fees: in the contract, owed to nobody.
+    pub burned: u128,
 }
 
 // ---- View shapes (section 12) ----
@@ -258,7 +287,6 @@ pub struct SeriesView {
     pub band: u64,
     pub opened_at: u64,
     pub open_sets: u64,
-    pub bonus_pool: U128,
     pub pending_rounds: Vec<u64>,
     pub settlement: Option<SettlementView>,
 }
@@ -268,6 +296,7 @@ pub struct SeriesView {
 pub struct AccountView {
     pub balance: U128,
     pub guard: Option<u64>,
+    pub max_round_lock: Option<U128>,
 }
 
 #[near(serializers = [json])]
@@ -285,6 +314,7 @@ pub struct CommitView {
     pub owner: AccountId,
     pub hash: String,
     pub lock: U128,
+    pub fee: U128,
     pub state: CommitStateName,
     pub order: Option<OrderSpec>,
 }
@@ -300,10 +330,9 @@ pub struct RoundView {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrintView {
     pub bucket: u64,
-    /// Null until the print is final.
+    /// Null unless `state` is `Final`.
     pub price: Option<u64>,
-    #[serde(rename = "final")]
-    pub is_final: bool,
+    pub state: PrintState,
     pub reports: Vec<Report>,
 }
 
@@ -320,6 +349,6 @@ pub struct TotalsView {
     pub free: U128,
     pub locked: U128,
     pub sets_backing: U128,
-    pub pools: U128,
     pub unredeemed: U128,
+    pub burned: U128,
 }

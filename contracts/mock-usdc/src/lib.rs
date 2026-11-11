@@ -150,9 +150,18 @@ impl MockUsdc {
         if refund > 0 {
             self.balances.insert(receiver_id.clone(), receiver_balance - refund);
             match self.balances.get_mut(&sender_id) {
-                Some(balance) => *balance += refund,
+                Some(balance) => {
+                    *balance = balance
+                        .checked_add(refund)
+                        .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
+                }
                 // The sender left; the refund is burned.
-                None => self.total_supply -= refund,
+                None => {
+                    self.total_supply = self
+                        .total_supply
+                        .checked_sub(refund)
+                        .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
+                }
             }
             log_event(
                 "ft_transfer",

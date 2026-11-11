@@ -274,48 +274,55 @@ fn band_vectors() {
 
 // ---- print.json ----
 
-/// Reports, last print, quorum, reporters, max_move_bps.
-type PrintInput = (Vec<u64>, Option<u64>, u32, u32, u32);
+/// Reports, quorum, reporters, max_spread_bps, window closed.
+type PrintInput = (Vec<u64>, u32, u32, u32, bool);
 
 #[test]
 fn print_vectors() {
-    let mut rng = Rng(0x0091_4701);
+    let mut rng = Rng(0x0091_4702);
     let mut inputs: Vec<PrintInput> = vec![
-        // Exactly max_move away is not far; one more is.
-        (vec![2_200_000, 2_200_000], Some(2_000_000), 2, 3, 1_000),
-        (vec![2_200_001, 2_200_001], Some(2_000_000), 2, 3, 1_000),
-        (vec![2_200_001, 2_200_001, 2_200_001], Some(2_000_000), 2, 3, 1_000),
+        // Every reporter: the median, however wild one report is.
+        (vec![2_000_000, 2_000_000, 400_000_000], 2, 3, 100, false),
+        // Two of three, window open: undecided.
+        (vec![2_000_000, 2_020_000], 2, 3, 100, false),
+        // Two of three, window closed: exactly at the spread is a print; one more is not.
+        (vec![2_000_000, 2_020_000], 2, 3, 100, true),
+        (vec![2_000_000, 2_020_001], 2, 3, 100, true),
+        // Below quorum.
+        (vec![2_000_000], 2, 3, 100, true),
         // Even count rounds the mean of the middle two down.
-        (vec![1, 2], None, 2, 2, 0),
-        (vec![4, 1, 3, 2], None, 4, 9, 0),
-        // max_move_bps 0: any move needs everyone.
-        (vec![2_000_001], Some(2_000_000), 1, 2, 0),
-        (vec![2_000_000], Some(2_000_000), 1, 2, 0),
+        (vec![1, 2], 2, 2, 10_000, false),
+        (vec![4, 1, 3, 2], 4, 9, 10_000, true),
+        // The widest spread allowed.
+        (vec![1, 2], 1, 3, 10_000, true),
+        (vec![1, 3], 1, 3, 10_000, true),
     ];
     while inputs.len() < 500 {
         let reporters = rng.range(1, 9) as u32;
         let quorum = rng.range(1, u64::from(reporters)) as u32;
         let n = rng.range(1, u64::from(reporters)) as usize;
         let center = rng.pick(&[1_000u64, 2_000_000, 2_500_000, 40_000_000]);
-        let spread = center / rng.pick(&[1u64, 5, 20, 200]);
+        let spread = center / rng.pick(&[1u64, 20, 200, 2_000, 20_000]);
         let reports: Vec<u64> = (0..n)
             .map(|_| rng.range(center.saturating_sub(spread).max(1), center + spread))
             .collect();
-        let last = rng.chance(80).then(|| rng.range(center.saturating_sub(spread).max(1), center + spread));
-        let max_move_bps = rng.pick(&[0u32, 50, 500, 1_000, 2_000, 10_000]);
-        inputs.push((reports, last, quorum, reporters, max_move_bps));
+        let max_spread_bps = rng.pick(&[1u32, 10, 50, 100, 500, 10_000]);
+        inputs.push((reports, quorum, reporters, max_spread_bps, rng.chance(60)));
     }
     let cases: Vec<Value> = inputs
         .into_iter()
-        .map(|(reports, last, quorum, reporters, max_move_bps)| {
-            let d = index::decide(&reports, last, quorum, reporters, max_move_bps);
+        .map(|(reports, quorum, reporters, max_spread_bps, window_closed)| {
+            let (state, price) = index::state(&reports, quorum, reporters, max_spread_bps, window_closed);
             json!({
-                "reports": reports, "last": last, "quorum": quorum, "reporters": reporters,
-                "max_move_bps": max_move_bps,
-                "expect": { "final": d.is_final, "price": d.is_final.then_some(d.candidate) },
+                "reports": reports, "quorum": quorum, "reporters": reporters,
+                "max_spread_bps": max_spread_bps, "window_closed": window_closed,
+                "expect": { "state": state, "price": price },
             })
         })
         .collect();
+    for state in ["Open", "Final", "NoPrint"] {
+        assert!(cases.iter().filter(|c| c["expect"]["state"] == state).count() >= 50, "{state}");
+    }
     write_or_check("print.json", render(&[], &cases));
 }
 
@@ -323,14 +330,12 @@ fn print_vectors() {
 
 #[test]
 fn settlement_vectors() {
-    let mut rng = Rng(0x0053_7701);
+    let mut rng = Rng(0x0053_7702);
     let base = SettleInput {
         floor: 1_800_000,
         band: 400_000,
         sum: 0,
         count: 0,
-        open_sets: 10,
-        pool: 0,
         void_allowed: false,
         min_prints: 3,
     };
@@ -340,15 +345,12 @@ fn settlement_vectors() {
         SettleInput { sum: 4_000_000, count: 2, ..base },
         SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base },
         SettleInput { void_allowed: true, ..base },
-        // Fixing below the floor and above the cap.
+        // Fixing below the floor, at it, and above the cap.
         SettleInput { sum: 3_000_000, count: 3, ..base },
+        SettleInput { sum: 5_400_000, count: 3, ..base },
         SettleInput { sum: 9_000_000, count: 3, ..base },
-        // A pool that does not divide: the odd unit goes to SHORT, the rest carries.
-        SettleInput { sum: 6_000_000, count: 3, pool: 1_019, ..base },
-        // No sets: the whole pool carries.
-        SettleInput { sum: 6_000_000, count: 3, pool: 999, open_sets: 0, ..base },
-        // A pool smaller than the number of sets.
-        SettleInput { sum: 6_000_000, count: 3, pool: 9, ..base },
+        // The fixing rounds down.
+        SettleInput { sum: 6_100_001, count: 3, ..base },
     ];
     while inputs.len() < 500 {
         let half = rng.range(1, 5_000) * rng.pick(&[1u64, 10, 1_000]);
@@ -362,18 +364,11 @@ fn settlement_vectors() {
         let sum: u128 = (0..count)
             .map(|_| u128::from(rng.range(around.saturating_sub(3 * half).max(1), around + 3 * half)))
             .sum();
-        let pool = match rng.range(0, 2) {
-            0 => 0,
-            1 => u128::from(rng.range(0, 10_000)),
-            _ => u128::from(rng.next() % 1_000_000_000_000_000),
-        };
         inputs.push(SettleInput {
             floor,
             band: 2 * half,
             sum,
             count,
-            open_sets: if rng.chance(10) { 0 } else { rng.range(1, 1_000_000) },
-            pool,
             void_allowed: rng.chance(40),
             min_prints: rng.range(1, 2_016) as u32,
         });
@@ -383,16 +378,14 @@ fn settlement_vectors() {
         .map(|i| {
             let expect = match settlement::settle(i) {
                 Ok(s) => json!({
-                    "fixing": s.fixing, "long_payout": s.long_payout, "short_payout": s.short_payout,
-                    "bonus_long": s.bonus_long.to_string(), "bonus_short": s.bonus_short.to_string(),
-                    "carry": s.carry.to_string(), "void": s.void,
+                    "fixing": s.fixing, "long_payout": s.long_payout,
+                    "short_payout": s.short_payout, "void": s.void,
                 }),
                 Err(err) => json!({ "error": err }),
             };
             json!({
                 "floor": i.floor, "band": i.band, "sum": i.sum.to_string(), "count": i.count,
-                "open_sets": i.open_sets, "pool": i.pool.to_string(), "void_allowed": i.void_allowed,
-                "min_prints": i.min_prints, "expect": expect,
+                "void_allowed": i.void_allowed, "min_prints": i.min_prints, "expect": expect,
             })
         })
         .collect();
