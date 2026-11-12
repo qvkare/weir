@@ -12,7 +12,7 @@ Weir was built by Qvkare ([qvkare.com](https://qvkare.com), [GitHub](https://git
 - Mirror Search: 1st place, Bless Network Genesis Hackathon ([announcement](https://x.com/theblessnetwork/status/1935370517336440866)).
 - Copil: 2nd place, Chainlink Chromion Hackathon ([recording](https://www.youtube.com/live/xuGBbwtmjFc)).
 
-AI was used as a tool in developing this project. The author's statement: he checked the contracts himself, by hand; that is his own check, not an independent audit.
+AI was used as a tool in developing this project. The author checked the contracts himself, by hand; that is his own check, not an independent audit.
 
 The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
 
