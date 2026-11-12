@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "network": "testnet",
   "suffix": "w1",
-  "updated_at": "2026-11-12T00:46:04.057Z",
+  "updated_at": "2026-11-12T19:14:39.628Z",
   "note": "Written by apply against testnet. Real USDC is out of scope: the dollar is the test token tUSDC.",
   "wasm": {
     "weir": {
@@ -83,168 +83,168 @@
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h100-fast: trades with a function-call key, deposit $88.8"
+      "why": "buyer agent on h100-fast: trades with a function-call key, deposit $117.6"
     },
     {
       "id": "h100-fast-buyer-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h100-fast: trades with a function-call key, deposit $88.8"
+      "why": "buyer agent on h100-fast: trades with a function-call key, deposit $117.6"
     },
     {
       "id": "h100-fast-seller-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h100-fast: trades with a function-call key, deposit $228.8"
+      "why": "seller agent on h100-fast: trades with a function-call key, deposit $257.6"
     },
     {
       "id": "h100-fast-seller-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h100-fast: trades with a function-call key, deposit $228.8"
+      "why": "seller agent on h100-fast: trades with a function-call key, deposit $257.6"
     },
     {
       "id": "h100-fast-maker-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "maker agent on h100-fast: trades with a function-call key, deposit $457.6"
+      "why": "maker agent on h100-fast: trades with a function-call key, deposit $515.2"
     },
     {
       "id": "h100-fast-noise-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-fast",
       "created_by": "weir-ops-w1.testnet",
-      "why": "noise agent on h100-fast: trades with a function-call key, deposit $58.8"
+      "why": "noise agent on h100-fast: trades with a function-call key, deposit $87.6"
     },
     {
       "id": "h100-weekly-buyer-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h100-weekly: trades with a function-call key, deposit $506.4"
+      "why": "buyer agent on h100-weekly: trades with a function-call key, deposit $508.8"
     },
     {
       "id": "h100-weekly-buyer-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h100-weekly: trades with a function-call key, deposit $506.4"
+      "why": "buyer agent on h100-weekly: trades with a function-call key, deposit $508.8"
     },
     {
       "id": "h100-weekly-seller-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h100-weekly: trades with a function-call key, deposit $1682.4"
+      "why": "seller agent on h100-weekly: trades with a function-call key, deposit $1684.8"
     },
     {
       "id": "h100-weekly-seller-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h100-weekly: trades with a function-call key, deposit $1682.4"
+      "why": "seller agent on h100-weekly: trades with a function-call key, deposit $1684.8"
     },
     {
       "id": "h100-weekly-maker-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "maker agent on h100-weekly: trades with a function-call key, deposit $3364.8"
+      "why": "maker agent on h100-weekly: trades with a function-call key, deposit $3369.6"
     },
     {
       "id": "h100-weekly-noise-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h100-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "noise agent on h100-weekly: trades with a function-call key, deposit $254.4"
+      "why": "noise agent on h100-weekly: trades with a function-call key, deposit $256.8"
     },
     {
       "id": "h200-weekly-buyer-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h200-weekly: trades with a function-call key, deposit $741.4"
+      "why": "buyer agent on h200-weekly: trades with a function-call key, deposit $743.8"
     },
     {
       "id": "h200-weekly-buyer-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on h200-weekly: trades with a function-call key, deposit $741.4"
+      "why": "buyer agent on h200-weekly: trades with a function-call key, deposit $743.8"
     },
     {
       "id": "h200-weekly-seller-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h200-weekly: trades with a function-call key, deposit $2465.4"
+      "why": "seller agent on h200-weekly: trades with a function-call key, deposit $2467.8"
     },
     {
       "id": "h200-weekly-seller-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on h200-weekly: trades with a function-call key, deposit $2465.4"
+      "why": "seller agent on h200-weekly: trades with a function-call key, deposit $2467.8"
     },
     {
       "id": "h200-weekly-maker-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "maker agent on h200-weekly: trades with a function-call key, deposit $4929.8"
+      "why": "maker agent on h200-weekly: trades with a function-call key, deposit $4934.6"
     },
     {
       "id": "h200-weekly-noise-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "h200-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "noise agent on h200-weekly: trades with a function-call key, deposit $372.4"
+      "why": "noise agent on h200-weekly: trades with a function-call key, deposit $374.8"
     },
     {
       "id": "a100-80-weekly-buyer-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on a100-80-weekly: trades with a function-call key, deposit $506.4"
+      "why": "buyer agent on a100-80-weekly: trades with a function-call key, deposit $508.8"
     },
     {
       "id": "a100-80-weekly-buyer-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "buyer agent on a100-80-weekly: trades with a function-call key, deposit $506.4"
+      "why": "buyer agent on a100-80-weekly: trades with a function-call key, deposit $508.8"
     },
     {
       "id": "a100-80-weekly-seller-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on a100-80-weekly: trades with a function-call key, deposit $1682.4"
+      "why": "seller agent on a100-80-weekly: trades with a function-call key, deposit $1684.8"
     },
     {
       "id": "a100-80-weekly-seller-2.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "seller agent on a100-80-weekly: trades with a function-call key, deposit $1682.4"
+      "why": "seller agent on a100-80-weekly: trades with a function-call key, deposit $1684.8"
     },
     {
       "id": "a100-80-weekly-maker-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "maker agent on a100-80-weekly: trades with a function-call key, deposit $3364.8"
+      "why": "maker agent on a100-80-weekly: trades with a function-call key, deposit $3369.6"
     },
     {
       "id": "a100-80-weekly-noise-1.weir-ops-w1.testnet",
       "role": "agent",
       "market": "a100-80-weekly",
       "created_by": "weir-ops-w1.testnet",
-      "why": "noise agent on a100-80-weekly: trades with a function-call key, deposit $254.4"
+      "why": "noise agent on a100-80-weekly: trades with a function-call key, deposit $256.8"
     },
     {
       "id": "keeper.weir-ops-w1.testnet",
@@ -580,7 +580,7 @@
     },
     {
       "account": "reporter-a.weir-ops-w1.testnet",
-      "public_key": "ed25519:ASxLS8ASDSkWWDGu3a3KbMKKbbi3sURDqyXnMTRgwds8",
+      "public_key": "ed25519:FxXJgw7qK9VJKmNx2vtePrnn6L6uKuiRW9HBcjwNzVia",
       "kind": "function call (reporter)",
       "receiver": "weir-h100-fast-w1.testnet",
       "methods": [
@@ -1216,7 +1216,7 @@
       "account": "h100-fast-buyer-1.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "buyer",
-      "deposit_usdc": "88.80",
+      "deposit_usdc": "117.60",
       "guard": 174000,
       "max_round_lock": "15000000"
     },
@@ -1224,7 +1224,7 @@
       "account": "h100-fast-buyer-2.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "buyer",
-      "deposit_usdc": "88.80",
+      "deposit_usdc": "117.60",
       "guard": 174000,
       "max_round_lock": "15000000"
     },
@@ -1232,7 +1232,7 @@
       "account": "h100-fast-seller-1.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "seller",
-      "deposit_usdc": "228.80",
+      "deposit_usdc": "257.60",
       "guard": 174000,
       "max_round_lock": "50000000"
     },
@@ -1240,7 +1240,7 @@
       "account": "h100-fast-seller-2.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "seller",
-      "deposit_usdc": "228.80",
+      "deposit_usdc": "257.60",
       "guard": 174000,
       "max_round_lock": "50000000"
     },
@@ -1248,7 +1248,7 @@
       "account": "h100-fast-maker-1.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "maker",
-      "deposit_usdc": "457.60",
+      "deposit_usdc": "515.20",
       "guard": 174000,
       "max_round_lock": "100000000"
     },
@@ -1256,7 +1256,7 @@
       "account": "h100-fast-noise-1.weir-ops-w1.testnet",
       "market": "h100-fast",
       "role": "noise",
-      "deposit_usdc": "58.80",
+      "deposit_usdc": "87.60",
       "guard": 174000,
       "max_round_lock": "10000000"
     },
@@ -1264,7 +1264,7 @@
       "account": "h100-weekly-buyer-1.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "buyer",
-      "deposit_usdc": "506.40",
+      "deposit_usdc": "508.80",
       "guard": 174000,
       "max_round_lock": "126000000"
     },
@@ -1272,7 +1272,7 @@
       "account": "h100-weekly-buyer-2.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "buyer",
-      "deposit_usdc": "506.40",
+      "deposit_usdc": "508.80",
       "guard": 174000,
       "max_round_lock": "126000000"
     },
@@ -1280,7 +1280,7 @@
       "account": "h100-weekly-seller-1.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "seller",
-      "deposit_usdc": "1682.40",
+      "deposit_usdc": "1684.80",
       "guard": 174000,
       "max_round_lock": "420000000"
     },
@@ -1288,7 +1288,7 @@
       "account": "h100-weekly-seller-2.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "seller",
-      "deposit_usdc": "1682.40",
+      "deposit_usdc": "1684.80",
       "guard": 174000,
       "max_round_lock": "420000000"
     },
@@ -1296,7 +1296,7 @@
       "account": "h100-weekly-maker-1.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "maker",
-      "deposit_usdc": "3364.80",
+      "deposit_usdc": "3369.60",
       "guard": 174000,
       "max_round_lock": "840000000"
     },
@@ -1304,7 +1304,7 @@
       "account": "h100-weekly-noise-1.weir-ops-w1.testnet",
       "market": "h100-weekly",
       "role": "noise",
-      "deposit_usdc": "254.40",
+      "deposit_usdc": "256.80",
       "guard": 174000,
       "max_round_lock": "63000000"
     },
@@ -1312,7 +1312,7 @@
       "account": "h200-weekly-buyer-1.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "buyer",
-      "deposit_usdc": "741.40",
+      "deposit_usdc": "743.80",
       "guard": 255000,
       "max_round_lock": "184750000"
     },
@@ -1320,7 +1320,7 @@
       "account": "h200-weekly-buyer-2.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "buyer",
-      "deposit_usdc": "741.40",
+      "deposit_usdc": "743.80",
       "guard": 255000,
       "max_round_lock": "184750000"
     },
@@ -1328,7 +1328,7 @@
       "account": "h200-weekly-seller-1.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "seller",
-      "deposit_usdc": "2465.40",
+      "deposit_usdc": "2467.80",
       "guard": 255000,
       "max_round_lock": "615750000"
     },
@@ -1336,7 +1336,7 @@
       "account": "h200-weekly-seller-2.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "seller",
-      "deposit_usdc": "2465.40",
+      "deposit_usdc": "2467.80",
       "guard": 255000,
       "max_round_lock": "615750000"
     },
@@ -1344,7 +1344,7 @@
       "account": "h200-weekly-maker-1.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "maker",
-      "deposit_usdc": "4929.80",
+      "deposit_usdc": "4934.60",
       "guard": 255000,
       "max_round_lock": "1231250000"
     },
@@ -1352,7 +1352,7 @@
       "account": "h200-weekly-noise-1.weir-ops-w1.testnet",
       "market": "h200-weekly",
       "role": "noise",
-      "deposit_usdc": "372.40",
+      "deposit_usdc": "374.80",
       "guard": 255000,
       "max_round_lock": "92500000"
     },
@@ -1360,7 +1360,7 @@
       "account": "a100-80-weekly-buyer-1.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "buyer",
-      "deposit_usdc": "506.40",
+      "deposit_usdc": "508.80",
       "guard": 93000,
       "max_round_lock": "126000000"
     },
@@ -1368,7 +1368,7 @@
       "account": "a100-80-weekly-buyer-2.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "buyer",
-      "deposit_usdc": "506.40",
+      "deposit_usdc": "508.80",
       "guard": 93000,
       "max_round_lock": "126000000"
     },
@@ -1376,7 +1376,7 @@
       "account": "a100-80-weekly-seller-1.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "seller",
-      "deposit_usdc": "1682.40",
+      "deposit_usdc": "1684.80",
       "guard": 93000,
       "max_round_lock": "420000000"
     },
@@ -1384,7 +1384,7 @@
       "account": "a100-80-weekly-seller-2.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "seller",
-      "deposit_usdc": "1682.40",
+      "deposit_usdc": "1684.80",
       "guard": 93000,
       "max_round_lock": "420000000"
     },
@@ -1392,7 +1392,7 @@
       "account": "a100-80-weekly-maker-1.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "maker",
-      "deposit_usdc": "3364.80",
+      "deposit_usdc": "3369.60",
       "guard": 93000,
       "max_round_lock": "840000000"
     },
@@ -1400,7 +1400,7 @@
       "account": "a100-80-weekly-noise-1.weir-ops-w1.testnet",
       "market": "a100-80-weekly",
       "role": "noise",
-      "deposit_usdc": "254.40",
+      "deposit_usdc": "256.80",
       "guard": 93000,
       "max_round_lock": "63000000"
     }
@@ -3093,6 +3093,382 @@
       "how": "sent",
       "at": "2026-11-12T00:46:04.057Z",
       "explorer": "https://testnet.nearblocks.io/txns/5Hekok9DYT8fTVFU9JHPk4cevyeqVuwjUeo82Bde5Ats"
+    },
+    {
+      "step": "fund:weir-fund-w1-1.testnet",
+      "purpose": "create weir-fund-w1-1.testnet to fund weir-ops-w1.testnet",
+      "tx": "6TK9j2JhahPoHDo7CFiP4c8MLMmSZJs5oXtfZa5rmn2N",
+      "how": "sent",
+      "at": "2026-11-12T07:38:57.271Z",
+      "explorer": "https://testnet.nearblocks.io/txns/6TK9j2JhahPoHDo7CFiP4c8MLMmSZJs5oXtfZa5rmn2N"
+    },
+    {
+      "step": "sweep:weir-fund-w1-1.testnet:20261112T073843",
+      "purpose": "sweep 9.985 NEAR from weir-fund-w1-1.testnet to weir-ops-w1.testnet, leaving 0.010 NEAR",
+      "tx": "3kT7LpELbMgqAqCtoe9N4Y3rounP649YZyjnR9ci1BxB",
+      "how": "sent",
+      "at": "2026-11-12T07:39:01.085Z",
+      "explorer": "https://testnet.nearblocks.io/txns/3kT7LpELbMgqAqCtoe9N4Y3rounP649YZyjnR9ci1BxB"
+    },
+    {
+      "step": "fund:weir-fund-w1-2.testnet",
+      "purpose": "create weir-fund-w1-2.testnet to fund weir-ops-w1.testnet",
+      "tx": "7TnvukeJC6o6fuwUnMJpBEFLxcx9NeR5oH2Xcj1ZngWy",
+      "how": "sent",
+      "at": "2026-11-12T07:39:05.745Z",
+      "explorer": "https://testnet.nearblocks.io/txns/7TnvukeJC6o6fuwUnMJpBEFLxcx9NeR5oH2Xcj1ZngWy"
+    },
+    {
+      "step": "sweep:weir-fund-w1-2.testnet:20261112T073843",
+      "purpose": "sweep 9.985 NEAR from weir-fund-w1-2.testnet to weir-ops-w1.testnet, leaving 0.010 NEAR",
+      "tx": "48jAKABtgmAZ6HTwu5Kz5ifWaVcrxid9ZdJo7CA2fpQR",
+      "how": "sent",
+      "at": "2026-11-12T07:39:09.684Z",
+      "explorer": "https://testnet.nearblocks.io/txns/48jAKABtgmAZ6HTwu5Kz5ifWaVcrxid9ZdJo7CA2fpQR"
+    },
+    {
+      "step": "topup:reporter-a.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.730 NEAR to reporter-a.weir-ops-w1.testnet: holds 0.127 NEAR; 7 days at 0.1082 NEAR a day plus 0.024 NEAR kept need 0.781 NEAR",
+      "tx": "HwMPf5FEK157s5LP93b4V9MNLf1iSr1Ggegb5grsXSWS",
+      "how": "sent",
+      "at": "2026-11-12T07:39:13.964Z",
+      "explorer": "https://testnet.nearblocks.io/txns/HwMPf5FEK157s5LP93b4V9MNLf1iSr1Ggegb5grsXSWS"
+    },
+    {
+      "step": "topup:reporter-b.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.730 NEAR to reporter-b.weir-ops-w1.testnet: holds 0.127 NEAR; 7 days at 0.1082 NEAR a day plus 0.024 NEAR kept need 0.781 NEAR",
+      "tx": "5Vto9ZPoPD6w6csM7yJLEr2dqxoNapq6B3y9QJpZQ4bD",
+      "how": "sent",
+      "at": "2026-11-12T07:39:18.028Z",
+      "explorer": "https://testnet.nearblocks.io/txns/5Vto9ZPoPD6w6csM7yJLEr2dqxoNapq6B3y9QJpZQ4bD"
+    },
+    {
+      "step": "topup:reporter-c.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.731 NEAR to reporter-c.weir-ops-w1.testnet: holds 0.126 NEAR; 7 days at 0.1082 NEAR a day plus 0.024 NEAR kept need 0.781 NEAR",
+      "tx": "2B1yKCdmhUetVWBsGgvWt2ips2FNNLiPah5cy52ZNsXG",
+      "how": "sent",
+      "at": "2026-11-12T07:39:22.333Z",
+      "explorer": "https://testnet.nearblocks.io/txns/2B1yKCdmhUetVWBsGgvWt2ips2FNNLiPah5cy52ZNsXG"
+    },
+    {
+      "step": "topup:h100-fast-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 1.379 NEAR to h100-fast-buyer-1.weir-ops-w1.testnet: holds 0.360 NEAR; 7 days at 0.2057 NEAR a day plus 0.155 NEAR kept need 1.595 NEAR",
+      "tx": "GYmUA2ShyKb1eP2ecRjkXN9gnHwVvbeFho2Z9YNpZcky",
+      "how": "sent",
+      "at": "2026-11-12T07:39:25.935Z",
+      "explorer": "https://testnet.nearblocks.io/txns/GYmUA2ShyKb1eP2ecRjkXN9gnHwVvbeFho2Z9YNpZcky"
+    },
+    {
+      "step": "topup:h100-fast-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 1.379 NEAR to h100-fast-buyer-2.weir-ops-w1.testnet: holds 0.360 NEAR; 7 days at 0.2057 NEAR a day plus 0.155 NEAR kept need 1.595 NEAR",
+      "tx": "EyY3KXjFT4yRbA3JYf2XoS6TsKj6mAi1ueGfn2zCjLXF",
+      "how": "sent",
+      "at": "2026-11-12T07:39:29.756Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EyY3KXjFT4yRbA3JYf2XoS6TsKj6mAi1ueGfn2zCjLXF"
+    },
+    {
+      "step": "topup:h100-fast-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 1.381 NEAR to h100-fast-seller-1.weir-ops-w1.testnet: holds 0.358 NEAR; 7 days at 0.2057 NEAR a day plus 0.155 NEAR kept need 1.595 NEAR",
+      "tx": "7uyhkFz9zMbND9bhKZPX2EBEC7NVt43mSuNBFW5xsGPk",
+      "how": "sent",
+      "at": "2026-11-12T07:39:33.964Z",
+      "explorer": "https://testnet.nearblocks.io/txns/7uyhkFz9zMbND9bhKZPX2EBEC7NVt43mSuNBFW5xsGPk"
+    },
+    {
+      "step": "topup:h100-fast-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 1.381 NEAR to h100-fast-seller-2.weir-ops-w1.testnet: holds 0.358 NEAR; 7 days at 0.2057 NEAR a day plus 0.155 NEAR kept need 1.595 NEAR",
+      "tx": "C5syofkryeidFEJwP7rjbyJ9k2NiHnPteH5gk8H7oaii",
+      "how": "sent",
+      "at": "2026-11-12T07:39:38.046Z",
+      "explorer": "https://testnet.nearblocks.io/txns/C5syofkryeidFEJwP7rjbyJ9k2NiHnPteH5gk8H7oaii"
+    },
+    {
+      "step": "topup:h100-fast-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 2.721 NEAR to h100-fast-maker-1.weir-ops-w1.testnet: holds 0.555 NEAR; 7 days at 0.4053 NEAR a day plus 0.155 NEAR kept need 2.992 NEAR",
+      "tx": "5rDDAV4mWeejxPK9yXQLsUsdGgy66L6qinBrCfCRVPod",
+      "how": "sent",
+      "at": "2026-11-12T07:39:41.974Z",
+      "explorer": "https://testnet.nearblocks.io/txns/5rDDAV4mWeejxPK9yXQLsUsdGgy66L6qinBrCfCRVPod"
+    },
+    {
+      "step": "topup:h100-fast-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 1.381 NEAR to h100-fast-noise-1.weir-ops-w1.testnet: holds 0.358 NEAR; 7 days at 0.2057 NEAR a day plus 0.155 NEAR kept need 1.595 NEAR",
+      "tx": "2rx6zbsjkKZsGEBpjBf6seRCn91PhTbKm3huvVdqn5m3",
+      "how": "sent",
+      "at": "2026-11-12T07:39:46.220Z",
+      "explorer": "https://testnet.nearblocks.io/txns/2rx6zbsjkKZsGEBpjBf6seRCn91PhTbKm3huvVdqn5m3"
+    },
+    {
+      "step": "topup:h100-weekly-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h100-weekly-buyer-1.weir-ops-w1.testnet: holds 0.173 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "douwv5hzeeMF5p2a8X71xRh4QVREbtccFJ6rQQxYCJk",
+      "how": "sent",
+      "at": "2026-11-12T07:39:50.440Z",
+      "explorer": "https://testnet.nearblocks.io/txns/douwv5hzeeMF5p2a8X71xRh4QVREbtccFJ6rQQxYCJk"
+    },
+    {
+      "step": "topup:h100-weekly-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h100-weekly-buyer-2.weir-ops-w1.testnet: holds 0.173 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "6wUZCxup6SA1f6b1vdWNmYQREWVofxtVzZD2ynv3X68k",
+      "how": "sent",
+      "at": "2026-11-12T07:39:54.640Z",
+      "explorer": "https://testnet.nearblocks.io/txns/6wUZCxup6SA1f6b1vdWNmYQREWVofxtVzZD2ynv3X68k"
+    },
+    {
+      "step": "topup:h100-weekly-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h100-weekly-seller-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "E2texnzk8UtH8XLeaUQSr6JUZpjmK6oLq67fEThxiqqn",
+      "how": "sent",
+      "at": "2026-11-12T07:39:58.822Z",
+      "explorer": "https://testnet.nearblocks.io/txns/E2texnzk8UtH8XLeaUQSr6JUZpjmK6oLq67fEThxiqqn"
+    },
+    {
+      "step": "topup:h100-weekly-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h100-weekly-seller-2.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "6h9CfY312qrERPvLFtFNtqNsmhHu5vvVJjg4Lff87hbM",
+      "how": "sent",
+      "at": "2026-11-12T07:40:03.139Z",
+      "explorer": "https://testnet.nearblocks.io/txns/6h9CfY312qrERPvLFtFNtqNsmhHu5vvVJjg4Lff87hbM"
+    },
+    {
+      "step": "topup:h100-weekly-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.223 NEAR to h100-weekly-maker-1.weir-ops-w1.testnet: holds 0.189 NEAR; 7 days at 0.0334 NEAR a day plus 0.155 NEAR kept need 0.389 NEAR",
+      "tx": "7rpzNLuT7muvnCWx2bru5mWQa61TL6UArWzsRSzJJXwZ",
+      "how": "sent",
+      "at": "2026-11-12T07:40:07.348Z",
+      "explorer": "https://testnet.nearblocks.io/txns/7rpzNLuT7muvnCWx2bru5mWQa61TL6UArWzsRSzJJXwZ"
+    },
+    {
+      "step": "topup:h100-weekly-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h100-weekly-noise-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "xipEXxy9BefAtey6hGWQfV2DJ2qRzzHUKvyUWRP72Rg",
+      "how": "sent",
+      "at": "2026-11-12T07:40:10.929Z",
+      "explorer": "https://testnet.nearblocks.io/txns/xipEXxy9BefAtey6hGWQfV2DJ2qRzzHUKvyUWRP72Rg"
+    },
+    {
+      "step": "topup:h200-weekly-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h200-weekly-buyer-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "6bF7UunbCAvLKuxXVPdhbbumADNK6g5A68ng7V7NFdcx",
+      "how": "sent",
+      "at": "2026-11-12T07:40:14.606Z",
+      "explorer": "https://testnet.nearblocks.io/txns/6bF7UunbCAvLKuxXVPdhbbumADNK6g5A68ng7V7NFdcx"
+    },
+    {
+      "step": "topup:h200-weekly-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h200-weekly-buyer-2.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "FDEW16cDoXkux73CncLxMW5z9HWYQ9MCEci6zSc57JvZ",
+      "how": "sent",
+      "at": "2026-11-12T07:40:18.148Z",
+      "explorer": "https://testnet.nearblocks.io/txns/FDEW16cDoXkux73CncLxMW5z9HWYQ9MCEci6zSc57JvZ"
+    },
+    {
+      "step": "topup:h200-weekly-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h200-weekly-seller-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "EWnubaNMjasLjDbbLzVAukWZq3bJzhq71txuosvvBj7o",
+      "how": "sent",
+      "at": "2026-11-12T07:40:22.394Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EWnubaNMjasLjDbbLzVAukWZq3bJzhq71txuosvvBj7o"
+    },
+    {
+      "step": "topup:h200-weekly-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h200-weekly-seller-2.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "BtDHCi9mwKKWuARYzzopEnfDz313z7UXq99ML7J3WTmB",
+      "how": "sent",
+      "at": "2026-11-12T07:40:26.997Z",
+      "explorer": "https://testnet.nearblocks.io/txns/BtDHCi9mwKKWuARYzzopEnfDz313z7UXq99ML7J3WTmB"
+    },
+    {
+      "step": "topup:h200-weekly-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.224 NEAR to h200-weekly-maker-1.weir-ops-w1.testnet: holds 0.188 NEAR; 7 days at 0.0334 NEAR a day plus 0.155 NEAR kept need 0.389 NEAR",
+      "tx": "3XpD5G5NoGWgqPetT7Ei4qw3XLpvSwdFVvJTXsj9aZsX",
+      "how": "sent",
+      "at": "2026-11-12T07:40:30.966Z",
+      "explorer": "https://testnet.nearblocks.io/txns/3XpD5G5NoGWgqPetT7Ei4qw3XLpvSwdFVvJTXsj9aZsX"
+    },
+    {
+      "step": "topup:h200-weekly-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to h200-weekly-noise-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "AdF74xEksKQdMmoM5MWy4QkGMT72LpWrmqJAYmh5Mxtm",
+      "how": "sent",
+      "at": "2026-11-12T07:40:35.190Z",
+      "explorer": "https://testnet.nearblocks.io/txns/AdF74xEksKQdMmoM5MWy4QkGMT72LpWrmqJAYmh5Mxtm"
+    },
+    {
+      "step": "topup:a100-80-weekly-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to a100-80-weekly-buyer-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "JAJGZe1eQ2NjysnxQPpLs2AaNp2xpkM11mb1xDM5XiHm",
+      "how": "sent",
+      "at": "2026-11-12T07:40:39.081Z",
+      "explorer": "https://testnet.nearblocks.io/txns/JAJGZe1eQ2NjysnxQPpLs2AaNp2xpkM11mb1xDM5XiHm"
+    },
+    {
+      "step": "topup:a100-80-weekly-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to a100-80-weekly-buyer-2.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "2w33RpsGnErHwH3iQSH4cU8itNhDw1T4iyxpmcUbPtkM",
+      "how": "sent",
+      "at": "2026-11-12T07:40:43.643Z",
+      "explorer": "https://testnet.nearblocks.io/txns/2w33RpsGnErHwH3iQSH4cU8itNhDw1T4iyxpmcUbPtkM"
+    },
+    {
+      "step": "topup:a100-80-weekly-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to a100-80-weekly-seller-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "BaRikRreCKu5ye2r9xFmmYNN4V8Kk3qWbd2QtfpyW3SC",
+      "how": "sent",
+      "at": "2026-11-12T07:40:47.372Z",
+      "explorer": "https://testnet.nearblocks.io/txns/BaRikRreCKu5ye2r9xFmmYNN4V8Kk3qWbd2QtfpyW3SC"
+    },
+    {
+      "step": "topup:a100-80-weekly-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to a100-80-weekly-seller-2.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "EPYEawASVg9Yx6PTT3XbRosg5bkN5vqfkp2iZHd75NJU",
+      "how": "sent",
+      "at": "2026-11-12T07:40:50.976Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EPYEawASVg9Yx6PTT3XbRosg5bkN5vqfkp2iZHd75NJU"
+    },
+    {
+      "step": "topup:a100-80-weekly-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.224 NEAR to a100-80-weekly-maker-1.weir-ops-w1.testnet: holds 0.189 NEAR; 7 days at 0.0334 NEAR a day plus 0.155 NEAR kept need 0.389 NEAR",
+      "tx": "EW4w4bVpTSZZqKiLhqsTq7HWdo5SwndKSQQbvyMSVEpM",
+      "how": "sent",
+      "at": "2026-11-12T07:40:54.899Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EW4w4bVpTSZZqKiLhqsTq7HWdo5SwndKSQQbvyMSVEpM"
+    },
+    {
+      "step": "topup:a100-80-weekly-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 0.112 NEAR to a100-80-weekly-noise-1.weir-ops-w1.testnet: holds 0.172 NEAR; 7 days at 0.0167 NEAR a day plus 0.155 NEAR kept need 0.272 NEAR",
+      "tx": "41cLnSgnTRd1RCixfrfoAcuFGw2jwAoGkY1ZocJeTuHX",
+      "how": "sent",
+      "at": "2026-11-12T07:40:58.996Z",
+      "explorer": "https://testnet.nearblocks.io/txns/41cLnSgnTRd1RCixfrfoAcuFGw2jwAoGkY1ZocJeTuHX"
+    },
+    {
+      "step": "topup:keeper.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "send 2.390 NEAR to keeper.weir-ops-w1.testnet: holds 0.520 NEAR; 7 days at 0.3561 NEAR a day plus 0.167 NEAR kept need 2.660 NEAR",
+      "tx": "CUHgjna9nAkW5fjJUoXRf3MSymuxgVf35i11pKSAPLZY",
+      "how": "sent",
+      "at": "2026-11-12T07:41:03.144Z",
+      "explorer": "https://testnet.nearblocks.io/txns/CUHgjna9nAkW5fjJUoXRf3MSymuxgVf35i11pKSAPLZY"
+    },
+    {
+      "step": "topup:weir-h100-fast-w1.testnet:20261112T073843",
+      "purpose": "send 4.449 NEAR to weir-h100-fast-w1.testnet (H100, hourly (demo)): 6.995 NEAR spare covers less than 7 days of unpruned prints (1.487 NEAR a day)",
+      "tx": "6iTcRdiohJVsbTWbYt8rdCqgHDwVdS4C91TYGrPHoHoz",
+      "how": "sent",
+      "at": "2026-11-12T07:41:07.361Z",
+      "explorer": "https://testnet.nearblocks.io/txns/6iTcRdiohJVsbTWbYt8rdCqgHDwVdS4C91TYGrPHoHoz"
+    },
+    {
+      "step": "mint:h100-fast-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $195.00 to h100-fast-buyer-1.weir-ops-w1.testnet",
+      "tx": "F7Ary3Dgk6KyVmNDrqAv4X61Kbr8F9BNSwNQHn3TKwhz",
+      "how": "sent",
+      "at": "2026-11-12T07:41:11.951Z",
+      "explorer": "https://testnet.nearblocks.io/txns/F7Ary3Dgk6KyVmNDrqAv4X61Kbr8F9BNSwNQHn3TKwhz"
+    },
+    {
+      "step": "deposit:h100-fast-buyer-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-buyer-1.weir-ops-w1.testnet deposits $195.00 into h100-fast: $66.66 free; 7 days of fees ($201.60) plus a $60.00 working balance",
+      "tx": "CaN3MH9yj7jWNrjjhGm1q18M3zYAzBrW3RjVY3F2CwBA",
+      "how": "sent",
+      "at": "2026-11-12T07:41:16.984Z",
+      "explorer": "https://testnet.nearblocks.io/txns/CaN3MH9yj7jWNrjjhGm1q18M3zYAzBrW3RjVY3F2CwBA"
+    },
+    {
+      "step": "mint:h100-fast-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $190.00 to h100-fast-buyer-2.weir-ops-w1.testnet",
+      "tx": "14qW5Tb1WwMBUDJr257RDDUTLmxDxW7DYZzSB1St4FfC",
+      "how": "sent",
+      "at": "2026-11-12T07:41:21.182Z",
+      "explorer": "https://testnet.nearblocks.io/txns/14qW5Tb1WwMBUDJr257RDDUTLmxDxW7DYZzSB1St4FfC"
+    },
+    {
+      "step": "deposit:h100-fast-buyer-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-buyer-2.weir-ops-w1.testnet deposits $190.00 into h100-fast: $72.06 free; 7 days of fees ($201.60) plus a $60.00 working balance",
+      "tx": "B88qG8Vbb6aXuow5HRo383rX64bhz7Tjx6mYabFbp6pF",
+      "how": "sent",
+      "at": "2026-11-12T07:41:26.027Z",
+      "explorer": "https://testnet.nearblocks.io/txns/B88qG8Vbb6aXuow5HRo383rX64bhz7Tjx6mYabFbp6pF"
+    },
+    {
+      "step": "mint:h100-fast-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $219.00 to h100-fast-seller-1.weir-ops-w1.testnet",
+      "tx": "CDihsQiA8o61rarwPmi8RgGNxUNDaPLcVBbZuEDnmwDm",
+      "how": "sent",
+      "at": "2026-11-12T07:41:30.487Z",
+      "explorer": "https://testnet.nearblocks.io/txns/CDihsQiA8o61rarwPmi8RgGNxUNDaPLcVBbZuEDnmwDm"
+    },
+    {
+      "step": "deposit:h100-fast-seller-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-seller-1.weir-ops-w1.testnet deposits $219.00 into h100-fast: $183.24 free; 7 days of fees ($201.60) plus a $200.00 working balance",
+      "tx": "8rTYwJDt5ikDubezVD4NALdZ9KYb5GYR8K3eknqBKyXT",
+      "how": "sent",
+      "at": "2026-11-12T07:41:35.298Z",
+      "explorer": "https://testnet.nearblocks.io/txns/8rTYwJDt5ikDubezVD4NALdZ9KYb5GYR8K3eknqBKyXT"
+    },
+    {
+      "step": "mint:h100-fast-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $252.00 to h100-fast-seller-2.weir-ops-w1.testnet",
+      "tx": "Q3s1HmrHR6kHakLkPKeQ2S3sM9rcuojAicchtKwsvgy",
+      "how": "sent",
+      "at": "2026-11-12T07:41:39.463Z",
+      "explorer": "https://testnet.nearblocks.io/txns/Q3s1HmrHR6kHakLkPKeQ2S3sM9rcuojAicchtKwsvgy"
+    },
+    {
+      "step": "deposit:h100-fast-seller-2.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-seller-2.weir-ops-w1.testnet deposits $252.00 into h100-fast: $150.10 free; 7 days of fees ($201.60) plus a $200.00 working balance",
+      "tx": "dyHRnyPCnYpniunRa72hCtiC7QA3JBbHQFsTB2uGQGm",
+      "how": "sent",
+      "at": "2026-11-12T07:41:44.327Z",
+      "explorer": "https://testnet.nearblocks.io/txns/dyHRnyPCnYpniunRa72hCtiC7QA3JBbHQFsTB2uGQGm"
+    },
+    {
+      "step": "mint:h100-fast-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $409.00 to h100-fast-maker-1.weir-ops-w1.testnet",
+      "tx": "BsAYNWuuRyY97VrXTFAcC6pSLwqUhwwUdiiHjBUrVHh9",
+      "how": "sent",
+      "at": "2026-11-12T07:41:48.714Z",
+      "explorer": "https://testnet.nearblocks.io/txns/BsAYNWuuRyY97VrXTFAcC6pSLwqUhwwUdiiHjBUrVHh9"
+    },
+    {
+      "step": "deposit:h100-fast-maker-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-maker-1.weir-ops-w1.testnet deposits $409.00 into h100-fast: $394.92 free; 7 days of fees ($403.20) plus a $400.00 working balance",
+      "tx": "3mstvoqa3DAY4Q96f5om17NHp174wDL5dcMv592RG6KD",
+      "how": "sent",
+      "at": "2026-11-12T07:41:54.250Z",
+      "explorer": "https://testnet.nearblocks.io/txns/3mstvoqa3DAY4Q96f5om17NHp174wDL5dcMv592RG6KD"
+    },
+    {
+      "step": "mint:h100-fast-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "mint $192.00 to h100-fast-noise-1.weir-ops-w1.testnet",
+      "tx": "EC5ut2bdktaC4qDBUgsPD6UHZncXetYkH41MsE55cGXq",
+      "how": "sent",
+      "at": "2026-11-12T07:41:58.254Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EC5ut2bdktaC4qDBUgsPD6UHZncXetYkH41MsE55cGXq"
+    },
+    {
+      "step": "deposit:h100-fast-noise-1.weir-ops-w1.testnet:20261112T073843",
+      "purpose": "h100-fast-noise-1.weir-ops-w1.testnet deposits $192.00 into h100-fast: $39.84 free; 7 days of fees ($201.60) plus a $30.00 working balance",
+      "tx": "EFTfpn8vgTTT2kkzX8D84Qy1XmH7T6r7PURyX7Vif1sq",
+      "how": "sent",
+      "at": "2026-11-12T07:42:02.984Z",
+      "explorer": "https://testnet.nearblocks.io/txns/EFTfpn8vgTTT2kkzX8D84Qy1XmH7T6r7PURyX7Vif1sq"
+    },
+    {
+      "step": "rotate:reporter-a.weir-ops-w1.testnet:weir-h100-fast-w1.testnet:ed25519:FxXJgw7qK9VJKmNx2vtePrnn6L6uKuiRW9HBcjwNzVia",
+      "purpose": "reporter-a.weir-ops-w1.testnet adds a new key for weir-h100-fast-w1.testnet with 3.26 NEAR (rotate: replacing ed25519:ASxLS8ASDSkWWDGu3a3KbMKKbbi3sURDqyXnMTRgwds8)",
+      "tx": "HGbJNyygam5Vn758dJmRfjPuYdpsgGnZShHUX96rQ1u",
+      "how": "sent",
+      "at": "2026-11-12T19:14:35.503Z",
+      "explorer": "https://testnet.nearblocks.io/txns/HGbJNyygam5Vn758dJmRfjPuYdpsgGnZShHUX96rQ1u"
+    },
+    {
+      "step": "retire:reporter-a.weir-ops-w1.testnet:ed25519:ASxLS8ASDSkWWDGu3a3KbMKKbbi3sURDqyXnMTRgwds8",
+      "purpose": "reporter-a.weir-ops-w1.testnet deletes its replaced key for weir-h100-fast-w1.testnet (rotate)",
+      "tx": "7VAxD6uFqLKTiLRCutQk1sJEtMEffYyNPMpsjTHCYq2X",
+      "how": "sent",
+      "at": "2026-11-12T19:14:39.628Z",
+      "explorer": "https://testnet.nearblocks.io/txns/7VAxD6uFqLKTiLRCutQk1sJEtMEffYyNPMpsjTHCYq2X"
     }
   ]
 }

@@ -5,7 +5,7 @@
     "https://near-testnet.drpc.org"
   ],
   "explorer": "https://testnet.nearblocks.io",
-  "bundles_base": null,
+  "bundles_base": "https://weir-keeper.qvkare.workers.dev/bundles",
   "markets": [
     {
       "id": "h100-fast",
