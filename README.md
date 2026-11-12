@@ -4,6 +4,20 @@ Weir runs sealed-bid, single-price, week-ahead auctions on the price of one GPU-
 
 **Where it runs.** The site is public at https://weir.qvkare.workers.dev. The four markets are deployed on NEAR testnet with a test dollar ([Contracts and accounts](#contracts-and-accounts)). Nothing is on mainnet. A keeper on Cloudflare's free plan reports the index and runs the trading agents (https://weir-keeper.qvkare.workers.dev/status). `make judge` checks the repository and reads the deployment back from testnet, with no keys.
 
+## Who built this
+
+Weir was built by Qvkare ([qvkare.com](https://qvkare.com), [GitHub](https://github.com/qvkare), [X](https://x.com/Qvkare)). His earlier results, as listed on qvkare.com:
+
+- Linea MCP: 1st place, Linea Dev Cook-Off ([announcement](https://x.com/lineabuild/status/1913222836056969581)).
+- Mirror Search: 1st place, Bless Network Genesis Hackathon ([announcement](https://x.com/theblessnetwork/status/1935370517336440866)).
+- Copil: 2nd place, Chainlink Chromion Hackathon ([recording](https://www.youtube.com/live/xuGBbwtmjFc)).
+
+How it was made. AI coding agents were the tools: they wrote most of the code and much of the text, under the author's direction and to a written specification ([`docs/SPEC.md`](docs/SPEC.md)). The direction and the standard are the author's: what to build, how it must be checked, and when it is done. The history shows what it can: every commit is under his account, and each change of rules is its own versioned commit to the specification (`git log -- docs/SPEC.md`). The working rules are in [`AGENTS.md`](AGENTS.md): the contract and the engine are written separately from the specification and compared on shared vectors and on a local node, and every claim in this README names the command or file that shows it. A separate AI reviewer wrote the review record, [`docs/AUDIT.md`](docs/AUDIT.md).
+
+The author's statement: he read and checked the contracts himself, by hand. It is the author checking his own project, not an independent audit. The separate review record in `docs/AUDIT.md` is by an AI reviewer and has not been signed off by a person.
+
+The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
+
 ## The problem
 
 GPU rental prices move, and the bill for next week is not known when the work is planned. In the backtest in this repository (69 delivery weeks of H100 on-demand prices, 2025-04-14 to 2026-11-02), the weekly average moved between -9.4% and +22.5% against the price known 8 to 10 days earlier, and the weekly average went from 2.63 USD (week of 2026-01-26) to 4.26 USD (week of 2026-10-26) per GPU-hour. For a team running 8 GPUs around the clock (1,344 GPU-hours a week), the part of the weekly bill that was not known when the auction would have opened had a standard deviation of 184.72 USD. These figures are list prices, not trades; see [Backtest](#backtest).
@@ -151,7 +165,7 @@ Method, sources, licences and every table: [`backtest/README.md`](backtest/READM
 
 ## Audit
 
-An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in four passes, all on 2026-11-12, against specifications 0.3, 0.4, 0.5 and 0.6, and kept its findings as tests. It covered `contracts/weir/src/` only: not the TypeScript packages, the reporters' code, deployment or real tokens. It did not run the real wasm. It is not an audit by a security firm and not a formal verification, and no person has signed it off. Its record is [`docs/AUDIT.md`](docs/AUDIT.md); `make audit` runs its tests and prints what each one shows.
+An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in four passes, all on 2026-11-12, against specifications 0.3, 0.4, 0.5 and 0.6, and kept its findings as tests. It covered `contracts/weir/src/` only: not the TypeScript packages, the reporters' code, deployment or real tokens. It did not run the real wasm. The review record is not an audit by a security firm and not a formal verification, and no person has signed the review record off. Its record is [`docs/AUDIT.md`](docs/AUDIT.md); `make audit` runs its tests and prints what each one shows.
 
 Found sound in all four passes: the dollar accounting on every path, the 0.6 void path included (`audit4_a_non_reporter_cannot_move_the_void_payout` asserts free plus burned equals deposits after a full void redemption; burned dollars are never credited). Also found sound, by reading: clearing as the spec defines it, the commit hash, the access controls, the recorded guard, the round lock limit and the sets cap.
 
@@ -264,9 +278,7 @@ Built for the NEAR Hackathon (deadline 2026-11-14). Everything here was built in
 - **Unstoppable DeFi**: fully paid positions, no liquidation, no owner, no upgrade method, settlement anyone can call.
 - **AI Security & Defense**: agent keys bounded by the protocol and by two limits the agent cannot change, and an AI review whose findings are kept as tests.
 
-The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
-
-Most of the code was written by AI coding agents under human direction.
+Who built it, and how AI coding agents were used: [Who built this](#who-built-this).
 
 ## License
 
