@@ -8,7 +8,7 @@ import { bundleHash } from "@weir/index";
 import { CLOSED, OPEN, STATED, specHref, type Finding } from "@/lib/audit.ts";
 import { MARKET_INFO } from "@/lib/config.ts";
 import type { FrontData } from "@/lib/data/front.ts";
-import { dollarsOfPrice, fmtUsd, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
+import { dollarsOfPrice, fmtSpan, fmtUsd, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
 import { longPayout } from "@/lib/payoff.ts";
 import { stepOrdersFromResult } from "@/lib/views.ts";
 import { cn } from "@/lib/utils.ts";
@@ -229,10 +229,10 @@ export function Bento({ d, agents }: { d: FrontData; agents: { account: string; 
         sentence={`Five views of the ${MARKET_INFO[d.market].name} market, from the same read as the window above.`}
       />
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="md:col-span-2" title="The life of a round" text="Commit, reveal and clear repeat each round; delivery and settlement come once a series. The step the round is in now is lit.">
+        <Card className="md:col-span-2" textFirst title="The life of a round" text="Commit, reveal and clear repeat each round; delivery and settlement come once a series. The step the round is in now is lit.">
           <Flow d={d} />
         </Card>
-        <Card title="Agents on this market" text="The agents the deploy tool recorded for this market, with their latest action in the rounds above. Each trades with a key that cannot withdraw; the operator also holds a full-access key to each account.">
+        <Card title="Agents on this market" text="Four of the agents the deploy tool recorded for this market, with their latest action in the rounds above. Each trades with a key that cannot withdraw; the operator also holds a full-access key to each account.">
           <Agents d={d} agents={agents} />
         </Card>
         <Card title="Sources around the median" text={d.bundle ? `The last print's bundle: each provider's price at its distance from the median, ${fmtUtc(d.bundle.data.bucket)}.` : "The last print's bundle, when the bundle host answers."}>
@@ -249,12 +249,18 @@ export function Bento({ d, agents }: { d: FrontData; agents: { account: string; 
   );
 }
 
-function Card({ title, text, className, children }: { title: string; text: string; className?: string; children: ReactNode }) {
+function Card({ title, text, className, textFirst, children }: { title: string; text: string; className?: string; /** Title and sentence at the top, the object right under them. */ textFirst?: boolean; children: ReactNode }) {
+  const words = (
+    <>
+      <h3 className={cn("m-0 text-lg font-medium text-foreground", !textFirst && "mt-6")}>{title}</h3>
+      <p className="m-0 mt-2 max-w-none text-sm text-muted-foreground">{text}</p>
+    </>
+  );
   return (
     <div className={cn("flex flex-col rounded-2xl bg-card p-6 ring-1 ring-border md:p-7", className)}>
-      <div className="flex min-h-56 flex-1 items-center justify-center">{children}</div>
-      <h3 className="m-0 mt-6 text-lg font-medium text-foreground">{title}</h3>
-      <p className="m-0 mt-2 max-w-none text-sm text-muted-foreground">{text}</p>
+      {textFirst ? words : null}
+      <div className={cn("flex flex-1 justify-center", textFirst ? "mt-8 items-stretch" : "min-h-56 items-center")}>{children}</div>
+      {textFirst ? null : words}
     </div>
   );
 }
@@ -274,6 +280,7 @@ function Flow({ d }: { d: FrontData }) {
     { name: "Settle", when: `from ${fmtUtcTime(live.delivery_end + p.report_grace_secs)}`, state: "later" },
   ];
   return (
+    <div className="flex h-full w-full flex-col">
     <ol className="m-0 grid w-full list-none grid-cols-1 gap-3 p-0 sm:grid-cols-5 sm:gap-0">
       {steps.map((s, i) => (
         <li key={s.name} className="relative flex flex-col items-center text-center">
@@ -285,6 +292,21 @@ function Flow({ d }: { d: FrontData }) {
         </li>
       ))}
     </ol>
+    <dl className="m-0 mt-auto grid gap-x-6 gap-y-2 border-t border-border pt-5 text-sm sm:grid-cols-3">
+      <div>
+        <dt className="text-xs text-muted-foreground">Series {live.series}, auctions</dt>
+        <dd className="m-0 text-foreground">{fmtUtcTime(live.auction_open)} to {fmtUtcTime(live.auction_close)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-muted-foreground">Each round</dt>
+        <dd className="m-0 text-foreground">{fmtSpan(p.commit_secs)} commit, {fmtSpan(p.reveal_secs)} reveal</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-muted-foreground">Delivery</dt>
+        <dd className="m-0 text-foreground">{fmtUtcTime(live.delivery_start)} to {fmtUtcTime(live.delivery_end)}</dd>
+      </div>
+    </dl>
+    </div>
   );
 }
 
@@ -292,7 +314,7 @@ function Agents({ d, agents }: { d: FrontData; agents: { account: string; role: 
   if (agents.length === 0) return <p className="m-0 text-sm text-muted-foreground">No agents are recorded for this market.</p>;
   return (
     <ul className="m-0 w-full list-none space-y-2 p-0">
-      {agents.slice(0, 6).map((a) => {
+      {agents.slice(0, 4).map((a) => {
         const act = d.actions[a.account];
         return (
           <li key={a.account} className="flex items-center gap-3 rounded-lg bg-background/60 px-3 py-2 ring-1 ring-border">
@@ -480,21 +502,14 @@ export function BuiltBy() {
           ))}
         </ul>
       </div>
-      <div className="mt-10 grid max-w-4xl gap-4 text-base text-muted-foreground">
-        <p className="m-0 max-w-none">
-          <span className="text-foreground">How it was made.</span> AI coding agents were the tools: they wrote most of the code and much of the text, under the author&rsquo;s direction and to a written specification. The direction and the standard are the author&rsquo;s: what to build, how it must be checked, and when it is done.
-        </p>
-        <p className="m-0 max-w-none">
-          The author&rsquo;s statement: he read and checked the contracts himself, by hand. It is the author checking his own project, not an independent audit. The review record above is an AI reviewer&rsquo;s.
-        </p>
-        <p className="m-0 max-w-none text-sm">
-          The same author also entered{" "}
-          <a href="https://github.com/qvkare/levee" {...ext} className="text-foreground underline underline-offset-4">
-            Levee
-          </a>
-          , an independent project that shares no code with this one.
-        </p>
-      </div>
+      <p className="m-0 mt-10 max-w-none text-sm text-muted-foreground">AI was used as a tool in developing this project.</p>
+      <p className="m-0 mt-2 max-w-none text-sm text-muted-foreground">
+        The same author also entered{" "}
+        <a href="https://github.com/qvkare/levee" {...ext} className="text-foreground underline underline-offset-4">
+          Levee
+        </a>
+        , an independent project that shares no code with this one.
+      </p>
     </Shell>
   );
 }

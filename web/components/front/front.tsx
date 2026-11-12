@@ -202,7 +202,7 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
 
       <BuiltBy />
 
-      <section aria-labelledby="close-h" className="relative flex min-h-[720px] items-center overflow-hidden py-32 text-center">
+      <section aria-labelledby="close-h" className="relative flex min-h-[720px] items-start overflow-hidden pb-32 pt-[96px] text-center sm:pt-[170px]">
         {closeBackdrop ? (
           <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 w-[max(1600px,100vw)] -translate-x-1/2">
             {closeBackdrop}
