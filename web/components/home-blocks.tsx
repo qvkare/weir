@@ -541,7 +541,7 @@ export function LimitsList({ params, network }: { params: WireParams | null; net
         <code>network</code>
       </li>
       <li>
-        <span>The index is what {p ? `${p.quorum} of ${p.reporters.length}` : "a majority of the"} named reporters say it is; a majority acting together can set the fixing; with one absent either of the others can leave a bucket without a print, or make a series void (half the band to each side), which a reporter who also trades can profit from.</span>
+        <span>The index is what {p ? `${p.quorum} of ${p.reporters.length}` : "a majority of the"} named reporters say it is. All three are run by one operator today, who can set any price; a majority acting together can set the fixing; with one absent either of the others can leave a bucket without a print, or make a series void (half the band to each side), which a reporter who also trades can profit from.</span>
         <code>quorum</code>
       </li>
       <li>

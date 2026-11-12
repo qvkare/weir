@@ -3532,3 +3532,37 @@ ol.steps > li {
 .spec-body-text code {
   overflow-wrap: anywhere;
 }
+
+/* /proof: the record's residual risks, met before the findings tables. */
+.risks {
+  border: 1px solid var(--flag);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--sheet);
+  padding: var(--s4) var(--s5);
+  display: grid;
+  gap: var(--s2);
+}
+
+.risks h3 {
+  font-size: var(--t17);
+  font-weight: 600;
+}
+
+.risk-list,
+.risk-list ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.risk-list > li + li {
+  margin-top: var(--s2);
+}
+
+.risk-list ul li + li {
+  margin-top: 4px;
+}
+
+.risk-list code {
+  overflow-wrap: anywhere;
+}

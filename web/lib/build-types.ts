@@ -18,6 +18,8 @@ export interface BuildData {
   spec: string | null;
   /** docs/AUDIT.md as text, for /audit. */
   audit: string | null;
+  /** integration/RESULTS.md as text: the sandbox comparison of the contract and the engine. */
+  integration: string | null;
   deployments: unknown;
   bundles: RecordedBundle[];
   bundleCount: number;

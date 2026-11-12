@@ -4,7 +4,7 @@ import { parseMarkdown, type Block, type Inline } from "@/lib/markdown.ts";
 // A Markdown document from the repository (docs/SPEC.md at /spec, docs/AUDIT.md at /audit),
 // rendered as plain elements with an anchor per heading and a table of contents.
 
-function In({ v }: { v: Inline[] }): ReactNode {
+export function In({ v }: { v: Inline[] }): ReactNode {
   return v.map((x, i) =>
     x.t === "text" ? x.v : x.t === "code" ? <code key={i}>{x.v}</code> : x.t === "b" ? <b key={i}><In v={x.v} /></b> : <a key={i} href={x.href.startsWith("http") || x.href.startsWith("/") || x.href.startsWith("#") ? x.href : undefined}><In v={x.v} /></a>,
   );

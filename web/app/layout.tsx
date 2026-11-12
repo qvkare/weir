@@ -25,7 +25,7 @@ const mono = localFont({
 
 const TITLE = "Weir: take the heat out of your GPU bill";
 const DESCRIPTION =
-  "Weir runs sealed, single-price auctions on next week's GPU-hour, one market per chip: H100, H200 and A100 80 GB. Teams that need compute buy LONG, people who own GPUs buy SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash. NEAR testnet.";
+  "Weir runs sealed, single-price auctions on next week's GPU-hour, one market per chip: H100, H200 and A100 80 GB. Teams that need compute buy LONG, people who own GPUs buy SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash; all three reporters are run by one operator today, who can set any price. NEAR testnet.";
 
 export const metadata: Metadata = {
   // Set WEIR_SITE_URL at build time to the deployed address so link previews resolve.

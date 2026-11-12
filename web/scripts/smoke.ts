@@ -98,7 +98,7 @@ if (!process.argv.includes("--no-build")) {
 }
 
 const PAGES: [string, string[]][] = [
-  ["/", ["Take the heat out of your", "GPU bill.", "Who is in the room", "One round, as work", "Example orders", "Simulated", "H100, USD per GPU-hour", "Series and phase clock", "Last clearing", "Payoff and hedge size", "Limits", "Model data, not the chain"]],
+  ["/", ["one operator today", "Take the heat out of your", "GPU bill.", "Who is in the room", "One round, as work", "Example orders", "Simulated", "H100, USD per GPU-hour", "Series and phase clock", "Last clearing", "Payoff and hedge size", "Limits", "Model data, not the chain"]],
   ["/?m=fast", ["H100, USD per GPU-hour", "H100 hourly (demo)", "Model data, not the chain"]],
   ["/?m=h100-fast", ["H100, USD per GPU-hour", "H100 hourly (demo)"]],
   ["/?m=h200-weekly", ["H200, USD per GPU-hour", "Week-ahead H200 auctions", "H200 weekly", "Open the A100 market", "This is the H200 market"]],
@@ -113,13 +113,13 @@ const PAGES: [string, string[]][] = [
   ["/auction?m=h200-weekly", ["Sealed book", "Recent rounds", "Commit fees held"]],
   ["/proof?m=a100-80-weekly", ["Solvency, A100 80 GB weekly market", "evidence/bundles/a100-80/"]],
   ["/spec", ["The rules, as written", "Settlement"]],
-  ["/audit", ["What the review found", "not an audit by a security firm", "Verdict"]],
+  ["/audit", ["What the review found", "in four passes", "not an audit by a security firm", "Fourth pass (spec 0.6)", "Verdict"]],
   ["/simulate?m=h100-fast", ["Silent reporters (void series)", "cancelled at the centre of the band"]],
   ["/?motion=reduce", ["Take the heat out of your", "Simulated"]],
   ["/how?motion=reduce", ["One round, as work", "One price for all"]],
   ["/backtest", ["What a hedge would have done", "The rule", "Average stayed inside the band in", "What this does not show"]],
   ["/how", ["cancelled at the centre of the band", "who also trades", "How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
-  ["/proof", ["Audited", "Closed by a rule", "Open", "Stated limits", "A fix that was itself found faulty", "$6.40 a round", "limit_blocking_a_round_costs_1_28_dollars", "Not fit for real dollars", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
+  ["/proof", ["What you are trusting today", "Residual risks before real money", "All three are run by one operator, who can set any price", "Nothing on chain checks a report against its published data", "about 0.029 $ a unit", "up to 0.299 $ a unit", "A round can be blocked for 6.40 $", "Both are off by default", "remove protections", "settlement turns void", "No mainnet history and no upgrade path", "Contract against the engine", "264 of 264 checks passed", "1,315 state changes, 2,315 views and 61 refusals", "not on a public network", "Audited", "Four passes", "4 passes, against specifications 0.3, 0.4, 0.5 and 0.6", "Closed by a rule", "Open, stated as limits in the specification", "A fix that was itself found faulty", "That fix was faulty", "$6.40 a round", "6.40 $ a round at the 0.10 $ commit fee", "0.299 $ a unit, 49.8% of the band", "About 0.029 $ a unit", "limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee", "audit4_a_non_reporter_cannot_move_the_void_payout", "not fit for real dollars until", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
   ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book", "max_round_lock", "Three things bound an agent"]],
 ];
 

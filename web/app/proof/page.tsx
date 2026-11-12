@@ -4,7 +4,7 @@ import type { WireParams } from "@weir/engine";
 import { BundleVerifier } from "@/components/bundle-verifier.tsx";
 import { ExtLink } from "@/components/ext-link.tsx";
 import { CheckIcon, CrossIcon } from "@/components/icons.tsx";
-import { Empty, NotDeployed, RpcError, Skeleton } from "@/components/state.tsx";
+import { Empty, NotDeployed, RpcError, Skeleton, Stale } from "@/components/state.tsx";
 import { buildData, deployments, sourceKind } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
 import { accountUrl, marketFromParam, MARKET_IDS, MARKET_INFO, mq, txUrl, type MarketId } from "@/lib/config.ts";
@@ -14,7 +14,10 @@ import { loadCore, recordedBundle } from "@/lib/load.ts";
 import { modelContract } from "@/lib/model.ts";
 import { readAccount, readKeys, readTokenBalance } from "@/lib/source.ts";
 import { totalsSum } from "@/lib/views.ts";
-import { auditHref, CLOSED, HISTORY, LIMITS, specHref, VERDICT } from "@/lib/audit.ts";
+import { In } from "@/components/markdown-doc.tsx";
+import { inline } from "@/lib/markdown.ts";
+import { integrationFigures, residualRisks, type RiskItem } from "@/lib/audit.ts";
+import { AUDIT_DOC, auditHref, CLOSED, HISTORY, OPEN, PASSES, SOUND_TESTS, specHref, STATED, VERDICT, type Finding } from "@/lib/audit.ts";
 import { roundsOf } from "@/lib/load.ts";
 import { MODEL_WIRE } from "@/lib/model.ts";
 
@@ -32,7 +35,7 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
         <header className="page-head">
           <span className="eyebrow">Proof · NEAR {d.network}</span>
           <h1>Check every print yourself</h1>
-          <p className="sub">Each report carries the hash of the data behind it. This page fetches the data and hashes it in your browser.</p>
+          <p className="sub">Each report carries the hash of the data behind it. Nothing on chain checks a report against that data, and all three reporters are run by one operator today; this page fetches the data and hashes it in your browser, so you can.</p>
         </header>
 
         <section className="section" id="contracts" aria-labelledby="contracts-h">
@@ -48,11 +51,19 @@ export default async function ProofPage({ searchParams }: { searchParams: Search
         <section className="section" id="audited" aria-labelledby="audited-h">
           <div className="section-head">
             <h2 id="audited-h">Audited</h2>
-            <span className="note">Three passes by an AI reviewer, not an audit firm · <a href="/audit">the full record</a></span>
+            <span className="note">Four passes by an AI reviewer, not an audit firm · <a href="/audit">the full record</a></span>
           </div>
           <Suspense fallback={<Skeleton lines={6} label="Reading the parameters" />}>
             <Audited market={market} />
           </Suspense>
+        </section>
+
+        <section className="section" id="sandbox" aria-labelledby="sandbox-h">
+          <div className="section-head">
+            <h2 id="sandbox-h">Contract against the engine</h2>
+            <span className="note">integration/RESULTS.md</span>
+          </div>
+          <SandboxLine />
         </section>
 
         <section className="section" id="solvency" aria-labelledby="solvency-h">
@@ -103,9 +114,10 @@ async function Audited({ market }: { market: MarketId }) {
   const live = !!valueOf(core.params);
   const perRound = BigInt(p.max_commits) * BigInt(p.commit_fee);
   const rounds = roundsOf(p, 1);
-  const deployed: Record<string, string> = {
-    "2.3": `At ${live ? "this market's" : "the preset"} parameters: ${fmtInt(p.max_commits)} slots at ${fmtUsd(p.commit_fee)} a commit, ${fmtUsd(perRound)} a round, ${fmtUsd(perRound * BigInt(rounds))} for all ${fmtInt(rounds)} rounds of a series, plus capital above the largest honest lock.`,
-    "2.5": `A look costs ${fmtBps(p.forfeit_bps)} of the lock plus ${fmtUsd(p.commit_fee)}.`,
+  // The record's numbers are at the weekly preset; this line recomputes the blocking cost from
+  // the parameters of the market on screen (get_params, or the preset when none answers).
+  const here: Record<string, string> = {
+    "2.3": `At ${live ? `this market's get_params${core.src.kind === "model" ? " (model)" : ""}` : "the preset's parameters"}: ${fmtInt(p.max_commits)} slots × ${fmtUsd(p.commit_fee)} = ${fmtUsd(perRound)} a round, ${fmtUsd(perRound * BigInt(rounds))} for all ${fmtInt(rounds)} rounds of a series.`,
   };
   const Sections = ({ list }: { list: string[] }) => (
     <>
@@ -117,39 +129,38 @@ async function Audited({ market }: { market: MarketId }) {
       ))}
     </>
   );
-  const open = LIMITS.filter((l) => l.status === "Open");
-  const stated = LIMITS.filter((l) => l.status === "Stated");
-  const limitTable = (rows: typeof LIMITS, caption: string) => (
+  const Tests = ({ f }: { f: Finding }) => (f.tests.length ? <>{f.tests.map((t) => <code key={t} style={{ display: "block", overflowWrap: "anywhere" }}>{t}</code>)}</> : <span className="muted">{f.byReading ? "none: found by reading, not tested" : "none"}</span>);
+  const table = (rows: Finding[], caption: string, statusHead: string) => (
     <div className="table-wrap">
       <table>
         <caption>{caption}</caption>
         <thead>
           <tr>
             <th scope="col">#</th>
-            <th scope="col">What remains possible</th>
-            <th scope="col">What the test shows</th>
+            <th scope="col">Finding</th>
+            <th scope="col">{statusHead}</th>
             <th scope="col" className="collapse-sm">Spec</th>
             <th scope="col" className="collapse-sm">Test</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((l) => (
-            <tr key={l.id}>
+          {rows.map((f) => (
+            <tr key={`${f.id}-${f.finding}`}>
               <td className="mono">
-                {l.id}
-                <div className="tiny flag">{l.severity}</div>
+                {f.id}
+                <div className={`tiny ${f.state === "Closed" ? "muted" : "flag"}`}>{f.severity}</div>
               </td>
-              <td>{l.limit}</td>
+              <td>{f.finding}</td>
               <td>
-                {l.shows}
-                {deployed[l.id] ?? l.deployed ? <div className="tiny"><b>{deployed[l.id] ?? `At deployed parameters: ${l.deployed}.`}</b></div> : null}
+                {f.state === "Partly closed" ? <span className="tag flag">Partly closed</span> : null} {f.status}
+                {f.shows ? <div className="tiny muted">The test shows {f.shows}.</div> : null}
+                {here[f.id] ? <div className="tiny"><b>{here[f.id]}</b></div> : null}
                 <div className="only-sm tiny muted">
-                  SPEC <Sections list={l.sections} />
-                  {l.test ? <> · <code>{l.test}</code></> : null}
+                  SPEC <Sections list={f.sections} /> · <Tests f={f} />
                 </div>
               </td>
-              <td className="collapse-sm mono"><Sections list={l.sections} /></td>
-              <td className="collapse-sm mono tiny" style={{ overflowWrap: "anywhere" }}>{l.test ?? "none: found by reading"}</td>
+              <td className="collapse-sm mono"><Sections list={f.sections} /></td>
+              <td className="collapse-sm mono tiny"><Tests f={f} /></td>
             </tr>
           ))}
         </tbody>
@@ -159,74 +170,48 @@ async function Audited({ market }: { market: MarketId }) {
   return (
     <div className="stack">
       <p className="lead" style={{ marginBottom: 0 }}>
-        The contract was reviewed in three passes. Every pass found the dollar accounting exact. The findings are in three groups below: closed by a rule, still open, and limits the specification states and accepts. The full record, with its reasoning, scope and verdict, is at <a href={auditHref()}>/audit</a>.
+        An AI reviewer reviewed the contract in {PASSES} passes, against specifications 0.3, 0.4, 0.5 and 0.6. Every pass found the dollar accounting exact. Below are its findings as the final record states them (<code>{AUDIT_DOC}</code>, &ldquo;Every finding, status under 0.6&rdquo;): closed by a rule, open, and open but stated by the specification as limits it accepts. Numbers are at the deployed weekly preset. The full record is at <a href={auditHref()}>/audit</a>.
       </p>
       <div className="board">
-        <b className="eyebrow">Verdict, in the reviewer&rsquo;s words</b>
+        <b className="eyebrow">Verdict, from the record</b>
         <ul>
           <li><span aria-hidden="true">·</span><span>{VERDICT.testnet}</span></li>
           <li><span aria-hidden="true">·</span><span className="flag">{VERDICT.real}</span></li>
+          <li><span aria-hidden="true">·</span><span>{VERDICT.history}</span></li>
         </ul>
       </div>
 
-      <h3>Closed by a rule</h3>
-      <div className="table-wrap">
-        <table>
-          <caption>Each test keeps the reviewer&rsquo;s attack and now asserts that it fails.</caption>
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">Finding</th>
-              <th scope="col">Rule that closes it</th>
-              <th scope="col" className="collapse-sm">Spec</th>
-              <th scope="col" className="collapse-sm">Test</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CLOSED.map((f) => (
-              <tr key={f.id}>
-                <td className="mono">
-                  {f.id}
-                  <div className="tiny muted">{f.severity}</div>
-                </td>
-                <td>{f.finding}</td>
-                <td>
-                  {f.status !== "Closed" ? <span className="tag flag">{f.status}</span> : null} {f.rule}
-                  <div className="only-sm tiny muted">
-                    SPEC <Sections list={f.sections} /> · <code>{f.test}</code>
-                  </div>
-                </td>
-                <td className="collapse-sm mono"><Sections list={f.sections} /></td>
-                <td className="collapse-sm mono tiny" style={{ overflowWrap: "anywhere" }}>{f.test}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Residual />
 
       <h3>Open</h3>
-      {limitTable(open, "Not closed. Each limit_ or audit3_ test passes, which here means the weakness happens.")}
+      {table(OPEN, "The weakness exists in the deployed contract today. A limit_ test passing means the weakness happens.", "What remains, with its number")}
 
-      <h3>Stated limits</h3>
-      {limitTable(stated, "The specification states these and accepts them; each test shows exactly what is possible.")}
+      <h3>Open, stated as limits in the specification</h3>
+      {table(STATED, "The specification states these and accepts them. Each test shows what is possible.", "What remains, with its number")}
+
+      <h3>Closed by a rule</h3>
+      {table(CLOSED, "Each audit test keeps the reviewer's attack and asserts that it now fails.", "Rule that closes it")}
+      <p className="small muted">
+        Also examined and found sound, by reading: the dollar accounting on every path in all four passes, including the 0.6 void path; clearing; the commit hash; access controls; and that a pruned bucket cannot come back (<code>{SOUND_TESTS.join(", ")}</code>). The list is in the record.
+      </p>
 
       <h3>A fix that was itself found faulty</h3>
       <div className="table-wrap">
         <table>
-          <caption>How the rule for a void series changed between passes.</caption>
+          <caption>The record&rsquo;s history, one pass at a time.</caption>
           <thead>
             <tr>
+              <th scope="col">Pass</th>
               <th scope="col">Spec</th>
-              <th scope="col">Rule</th>
-              <th scope="col">What the review found</th>
+              <th scope="col">What it found</th>
             </tr>
           </thead>
           <tbody>
             {HISTORY.map((h) => (
-              <tr key={h.spec}>
+              <tr key={h.pass}>
+                <td className="mono">{h.pass}</td>
                 <td className="mono">{h.spec}</td>
-                <td>{h.rule}</td>
-                <td>{h.review}</td>
+                <td>{h.found}</td>
               </tr>
             ))}
           </tbody>
@@ -237,11 +222,53 @@ async function Audited({ market }: { market: MarketId }) {
         <b className="eyebrow">Who reviewed it, and what it was not</b>
         <ul>
           <li><span aria-hidden="true">·</span><span>An AI reviewer (Claude, an Anthropic model) that did not write the contract. It is not an audit by a security firm and not a formal verification; no person has signed it off. This page makes no claim that the contract is secure.</span></li>
-          <li><span aria-hidden="true">·</span><span>In scope: the contract in <code>contracts/weir</code> against the specification. Out of scope: the TypeScript packages and this site, the reporters&rsquo; code and data sources, any real token, NEAR beyond what near-sdk documents, the behaviour of real participants, deployment and key management.</span></li>
-          <li><span aria-hidden="true">·</span><span>The reviewer&rsquo;s tests run in near-sdk&rsquo;s mocked VM; the real wasm was not run for the review. A finding that is absent means only that it was not found.</span></li>
+          <li><span aria-hidden="true">·</span><span>In scope: the contract in <code>contracts/weir/src</code> against the specification. Out of scope: the TypeScript packages and this site, the reporters&rsquo; code and data sources, any real token, NEAR beyond what near-sdk 5.30.1 documents, the behaviour of real participants, deployment and key management.</span></li>
+          <li><span aria-hidden="true">·</span><span>The reviewer&rsquo;s tests run in near-sdk&rsquo;s mocked VM; the real wasm was not run for the review, and gas was measured only for <code>clear</code>. A finding that is absent means only that it was not found.</span></li>
         </ul>
       </div>
     </div>
+  );
+}
+
+/** The record's residual risks, read from docs/AUDIT.md at build and shown in its own words. */
+function Residual() {
+  const r = residualRisks(buildData().audit);
+  if (!r) return <Stale>The record&rsquo;s list of residual risks was not found at build time. Read it in <code>{AUDIT_DOC}</code>.</Stale>;
+  const Item = ({ it }: { it: RiskItem }) => (
+    <li>
+      <In v={inline(it.text)} />
+      {it.children.length ? (
+        <ul>
+          {it.children.map((c, i) => (
+            <Item key={i} it={c} />
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+  return (
+    <div className="risks" role="note" aria-labelledby="risks-h">
+      <h3 id="risks-h">What you are trusting today</h3>
+      <p className="small">
+        The record&rsquo;s &ldquo;{r.heading}&rdquo;, as written in <code>{AUDIT_DOC}</code>. Its verdict makes this testnet fit only with these stated where users read them.
+      </p>
+      <ul className="risk-list">
+        {r.items.map((it, i) => (
+          <Item key={i} it={it} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The authors' sandbox comparison of the contract and the engine, figures read from integration/RESULTS.md. */
+function SandboxLine() {
+  const f = integrationFigures(buildData().integration);
+  if (!f || !f.checks || !f.stateChanges || !f.views || !f.refusals) return <p className="small muted">The sandbox comparison (<code>integration/RESULTS.md</code>) was not found at build time.</p>;
+  return (
+    <p className="small">
+      {f.run ? `${f.run} run` : "Latest run"}{f.spec ? `, on specification ${f.spec}` : ""}{f.date ? `, ${f.date}` : ""}: {f.checks} checks passed. The contract&rsquo;s wasm and the TypeScript model agreed on {f.stateChanges} state changes, {f.views} views and {f.refusals} refusals. It ran on one local near-sandbox node{f.node ? ` (${f.node})` : ""}, not on a public network, so it says nothing about latency, RPC limits, the real USDC or live index sources. Source: <code>integration/RESULTS.md</code>; the authors ran it, not the reviewer.
+    </p>
   );
 }
 

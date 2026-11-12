@@ -1,6 +1,6 @@
 # Weir
 
-> Weir runs sealed, uniform-price auctions on next week's price of one GPU-hour, one market per chip (NVIDIA H100, H200 and A100 80 GB), on NEAR testnet. Buyers hold LONG, sellers hold SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data bundles anyone can re-hash.
+> Weir runs sealed, uniform-price auctions on next week's price of one GPU-hour, one market per chip (NVIDIA H100, H200 and A100 80 GB), on NEAR testnet. Buyers hold LONG, sellers hold SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data bundles anyone can re-hash; all three reporters are run by one operator today, who can set any price.
 
 Read-only JSON for agents (CORS open, short cache, errors as {"error":{"code","message"}}):
 
