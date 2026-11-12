@@ -77,6 +77,8 @@ export interface Secrets {
   swarmSecret: string | null;
   /** Problems found while reading the secrets, in words that never contain a secret. */
   problems: string[];
+  /** Every key seen in the secrets, also in entries that were dropped: the redactor removes these too. */
+  otherKeys?: string[];
 }
 
 const ROLES = new Set(["buyer", "seller", "maker", "noise"]);
@@ -114,9 +116,39 @@ function parseList(name: string, text: string | undefined, problems: string[]): 
   return [];
 }
 
-/** Reads `REPORTERS`, `AGENTS` and `SWARM_SECRET`. Bad entries are dropped and named. */
-export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_SECRET?: string; KEEPER?: string }): Secrets {
+/** The environment the secrets are read from. Besides the four names, every variable whose
+ * name starts with `REPORTERS_` or `AGENTS_` is a further part of that list (Cloudflare refuses
+ * a secret over 5 KB; `scripts/secrets.ts` splits the lists). Other entries are ignored. */
+export interface SecretVars {
+  REPORTERS?: string;
+  AGENTS?: string;
+  SWARM_SECRET?: string;
+  KEEPER?: string;
+  [name: string]: unknown;
+}
+
+/** The parts of a list, `NAME` first and then every `NAME_*`, sorted by name. */
+export function listParts(vars: SecretVars, name: "REPORTERS" | "AGENTS"): { name: string; value: unknown }[] {
+  const extra = Object.keys(vars)
+    .filter((k) => k.startsWith(`${name}_`) && vars[k] !== undefined && vars[k] !== null)
+    .sort();
+  return [...(vars[name] !== undefined && vars[name] !== null ? [name] : []), ...extra].map((k) => ({ name: k, value: vars[k] }));
+}
+
+/** Every string that looks like a key anywhere in a parsed value: so the redactor also covers
+ * entries that were dropped (a bad role, a duplicate). */
+function keysIn(x: unknown, out: string[]): void {
+  if (typeof x === "string") {
+    if (x.startsWith("ed25519:")) out.push(x);
+  } else if (Array.isArray(x)) for (const y of x) keysIn(y, out);
+  else if (typeof x === "object" && x !== null) for (const y of Object.values(x)) keysIn(y, out);
+}
+
+/** Reads `REPORTERS` (and `REPORTERS_*`), `AGENTS` (and `AGENTS_*`), `SWARM_SECRET` and `KEEPER`.
+ * Bad entries and bad parts are dropped and named; the other parts still load. */
+export function readSecrets(vars: SecretVars): Secrets {
   const problems: string[] = [];
+  const seenKeys: string[] = [];
   let keeper: Signer | null = null;
   if (vars.KEEPER !== undefined && vars.KEEPER.trim() !== "") {
     let v: unknown = null;
@@ -125,38 +157,72 @@ export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_S
     } catch {
       problems.push("KEEPER is not valid JSON");
     }
+    keysIn(v, seenKeys);
     if (v !== null) {
       const p = signerProblem("KEEPER", 0, v);
       if (p) problems.push(p.replace("KEEPER[0]", "KEEPER"));
       else keeper = signerOf(v as Signer);
     }
   }
+  const entries = (list: "REPORTERS" | "AGENTS") => {
+    const parts = listParts(vars, list);
+    const out: { part: string; i: number; x: unknown }[] = [];
+    for (const { name, value } of parts) {
+      if (typeof value !== "string") {
+        problems.push(`${name} must be text holding a JSON array`);
+        continue;
+      }
+      const xs = parseList(name, value, problems);
+      keysIn(xs, seenKeys);
+      for (const [i, x] of xs.entries()) out.push({ part: name, i, x });
+    }
+    const set = parts.some((p) => typeof p.value === "string" && p.value.trim() !== "");
+    return { out, set };
+  };
+  const reporterEntries = entries("REPORTERS");
   const reporters: Signer[] = [];
-  for (const [i, x] of parseList("REPORTERS", vars.REPORTERS, problems).entries()) {
-    const p = signerProblem("REPORTERS", i, x);
+  for (const { part, i, x } of reporterEntries.out) {
+    const p = signerProblem(part, i, x);
     if (p) problems.push(p);
+    else if (reporters.some((r) => r.account_id === (x as Signer).account_id)) problems.push(`${part}[${i}] (${(x as Signer).account_id}): reporter already listed; this entry is ignored`);
     else reporters.push(signerOf(x as Signer));
   }
+  const agentEntries = entries("AGENTS");
   const agents: AgentSpec[] = [];
-  for (const [i, x] of parseList("AGENTS", vars.AGENTS, problems).entries()) {
-    const p = signerProblem("AGENTS", i, x);
-    if (p) problems.push(p);
-    else if (!ROLES.has(String((x as AgentSpec).role))) problems.push(`AGENTS[${i}] (${(x as AgentSpec).account_id}): role must be buyer, seller, maker or noise`);
-    else agents.push(x as AgentSpec);
+  const slotsOf = (a: AgentSpec) => (a.market ? [a.market] : a.markets ? a.markets : ["*"]).map((m) => `${a.account_id} on ${m}`);
+  const taken = new Set<string>();
+  for (const { part, i, x } of agentEntries.out) {
+    const p = signerProblem(part, i, x);
+    if (p) {
+      problems.push(p);
+      continue;
+    }
+    const a = x as AgentSpec;
+    if (!ROLES.has(String(a.role))) {
+      problems.push(`${part}[${i}] (${a.account_id}): role must be buyer, seller, maker or noise`);
+      continue;
+    }
+    // An agent appears once per market it trades (the deploy tool writes one entry per agent
+    // and market). The same agent on the same market twice, in one part or two, is a mistake:
+    // the first entry is kept, the later one is named and ignored.
+    const dup = slotsOf(a).filter((s) => taken.has(s));
+    if (dup.length > 0) {
+      problems.push(`agent ${dup.join(", ")} appears more than once (${part}[${i}] ignored)`);
+      continue;
+    }
+    for (const s of slotsOf(a)) taken.add(s);
+    agents.push(a);
   }
-  // An agent appears once per market it trades (the deploy tool writes one entry per agent and
-  // market); any other repetition, or one account in two roles, is a mistake.
+  // One account in two roles is a mistake.
   const agentIds = [...new Set(agents.map((a) => a.account_id))];
   const ids = [...reporters.map((s) => s.account_id), ...agentIds, ...(keeper ? [keeper.account_id] : [])];
   for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) problems.push(`${id} appears more than once`);
-  const slots = agents.flatMap((a) => (a.market ? [a.market] : a.markets ? a.markets : ["*"]).map((m) => `${a.account_id} on ${m}`));
-  for (const slot of new Set(slots.filter((x, i) => slots.indexOf(x) !== i))) problems.push(`agent ${slot} appears more than once`);
   const swarmSecret = vars.SWARM_SECRET && vars.SWARM_SECRET.length > 0 ? vars.SWARM_SECRET : null;
   // Unset, not merely empty: a deployment that forgot a secret says so in /status.
-  if (vars.REPORTERS === undefined || vars.REPORTERS.trim() === "") problems.push("REPORTERS is not set: no price is reported");
-  if (vars.AGENTS === undefined || vars.AGENTS.trim() === "") problems.push("AGENTS is not set: no agent trades");
+  if (!reporterEntries.set) problems.push("REPORTERS is not set: no price is reported");
+  if (!agentEntries.set) problems.push("AGENTS is not set: no agent trades");
   if (agents.length > 0 && swarmSecret === null) problems.push("SWARM_SECRET is not set: the agents will not trade");
-  return { reporters, keeper, agents, swarmSecret, problems };
+  return { reporters, keeper, agents, swarmSecret, problems, otherKeys: seenKeys };
 }
 
 /** The agents package's strategy for one agent, with the simulation's defaults. */
@@ -175,9 +241,8 @@ export function strategyOf(a: AgentSpec): Strategy {
 }
 
 /** Replaces every secret in a value that is about to be stored or served. */
-export function redactor(secrets: Pick<Secrets, "reporters" | "agents" | "swarmSecret" | "keeper">): <T>(v: T) => T {
-  const needles = [...secrets.reporters, ...secrets.agents, ...(secrets.keeper ? [secrets.keeper] : [])]
-    .flatMap(keysOf)
+export function redactor(secrets: Pick<Secrets, "reporters" | "agents" | "swarmSecret" | "keeper" | "otherKeys">): <T>(v: T) => T {
+  const needles = [...new Set([...secrets.reporters, ...secrets.agents, ...(secrets.keeper ? [secrets.keeper] : [])].flatMap(keysOf).concat(secrets.otherKeys ?? []))]
     .flatMap((k) => [k, k.slice("ed25519:".length)])
     .concat(secrets.swarmSecret ?? [])
     .filter((s) => s.length >= 8)

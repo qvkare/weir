@@ -220,7 +220,7 @@ All GET (and HEAD), with `Access-Control-Allow-Origin: *`. `deployments.json` is
 build time, so a new market means a new deploy. There is no KV path any more: one code path runs
 on the Free and the Paid plan.
 
-#### Deploy (nothing below has been run against a Cloudflare account)
+#### Deploy
 
 From the repository root, logged in to wrangler (`wrangler whoami` shows the account):
 
@@ -228,23 +228,32 @@ From the repository root, logged in to wrangler (`wrangler whoami` shows the acc
 pnpm --filter @weir/keeper test
 pnpm --filter @weir/keeper exec wrangler deploy --dry-run --outdir "$(mktemp -d)"
 pnpm --filter @weir/keeper exec wrangler deploy
-# Prints the URL, https://weir-keeper.<your-subdomain>.workers.dev. Within two minutes the cron
-# arms the alarm and the object ticks with no secrets: it reads the four markets and fetches the
-# index, and signs nothing. Check:
+# Prints the URL, https://weir-keeper.<your-subdomain>.workers.dev. Once the cron trigger first
+# fires (up to 15 minutes after a deploy; 11 minutes on 2026-11-12) it arms the alarm and the
+# object ticks with no secrets: it reads the four markets and fetches the index, and signs
+# nothing. Until then /health is 503 with last_tick null. Check:
 curl -s https://weir-keeper.<your-subdomain>.workers.dev/status   # config: REPORTERS and AGENTS "not set"
 curl -s https://weir-keeper.<your-subdomain>.workers.dev/health   # 200 once a tick has run
-# Then, and only once the Node loop is stopped (below), the four secrets from keeper/.env,
-# piped as JSON so no value is printed or written to a file:
-node --env-file=keeper/.env -e 'const o={};for(const k of ["REPORTERS","AGENTS","SWARM_SECRET","KEEPER"])if(process.env[k])o[k]=process.env[k];process.stdout.write(JSON.stringify(o))' \
-  | pnpm --filter @weir/keeper exec wrangler secret bulk
+# Then, and only once the Node loop is stopped (below), the secrets from keeper/.env, the agent
+# list split so no value is over 5,000 bytes, piped as JSON so no value is printed or written to
+# a file (stderr shows names and byte counts only):
+node --env-file=keeper/.env keeper/scripts/secrets.ts | pnpm --filter @weir/keeper exec wrangler secret bulk
 pnpm --filter @weir/keeper exec wrangler tail       # the tick lines, one a minute
 ```
 
 `wrangler secret bulk` reads JSON from standard input when given no file (`wrangler secret bulk
---help`, wrangler 4.158.0). Setting secrets makes a new version; the object restarts with it and
-its alarm is kept. To make the Worker sign nothing again without deleting it or its store:
-`echo '{"REPORTERS":null,"AGENTS":null,"SWARM_SECRET":null,"KEEPER":null}' | pnpm --filter
-@weir/keeper exec wrangler secret bulk` (a null deletes a secret).
+--help`, wrangler 4.158.0). Cloudflare refuses a secret over 5 KB, so `scripts/secrets.ts` writes
+the agents as `AGENTS_<MARKET>` (and `AGENTS_<MARKET>_2`, ... if one market is still too large),
+sets `AGENTS` to null so a stale whole list cannot sit beside the parts, and does the same for
+`REPORTERS` if it ever passes the limit. It refuses, with nothing on stdout, if any value is still
+too large, a value is not valid JSON, or the parts do not read back as the same lists. The keeper
+reads `AGENTS` and every `AGENTS_*` variable, sorted by name, as one list (`REPORTERS` likewise);
+a bad part is a configuration problem naming it, and the other parts still load; the same agent
+on the same market twice is named and counted once. A part left by an earlier split and not
+named by a later one stays until deleted (`wrangler secret list` shows it). Setting secrets makes
+a new version; the object restarts with it and its alarm is kept. To make the Worker sign nothing
+again without deleting it or its store, pipe a JSON object with every secret name from `wrangler
+secret list` set to null to the same `wrangler secret bulk` (a null deletes a secret).
 
 `BUDGET` stays 40 (a variable in `wrangler.jsonc`): the Free plan allows 50 subrequests per
 invocation, and whether a Durable Object alarm has the same cap is not stated.
@@ -271,6 +280,7 @@ secrets); "live" means the Node loop on testnet (above and `keeper/store/`, read
 | CPU per invocation: Worker 10 ms; object 30 s | Worker: one call to the object and at most two cache calls (not measured on Cloudflare). Object: the heaviest tick about 12 ms, a cold one about 35 ms (`scripts/bench.ts`, Node) | object about 800x |
 | Subrequests per invocation: 50 (Workers page; the Durable Objects page lists none, only 6 connections at once) | Worker: 3 at most. Object alarm: at most `BUDGET` = 40 | 10, if an alarm is held to 50 |
 | Wall time: alarm handler 15 min | 18 to 43 s live | ample |
+| Size of one variable or secret: 5 KB (Workers limits, "Variable size"; the API's refusal said "limit of 5.1 kB"); 64 variables per Worker | Live: `REPORTERS` 1,721 bytes, `AGENTS` 6,488 whole, 1,578 to 1,673 per market, `SWARM_SECRET` 64, `KEEPER` 567. `scripts/secrets.ts` keeps every value at or under 5,000 bytes | 4 agent parts + 3 others + `BUDGET` = 8 of 64 variables |
 
 **What happens at a limit.** Per the pricing page, once a free daily limit is exceeded,
 operations of that kind fail until 00:00 UTC. Rows written: every `put` fails; a sealed order is
@@ -298,15 +308,17 @@ they do).
 the configuration outside `keeper/`:
 
 ```sh
-D=$(mktemp -d); : > "$D/empty.env"
+D=$(mktemp -d)
 sed -e "s#\"main\": \"src/worker.ts\"#\"main\": \"$PWD/keeper/src/worker.ts\"#" -e '/\$schema/d' keeper/wrangler.jsonc > "$D/wrangler.jsonc"
 (cd "$D" && env -u REPORTERS -u AGENTS -u SWARM_SECRET -u KEEPER CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false \
   "$OLDPWD/keeper/node_modules/.bin/wrangler" dev --local --port 8799 --persist-to "$D/state" \
-  --env-file "$D/empty.env" --test-scheduled)
+  --test-scheduled)
 curl -s 'http://127.0.0.1:8799/__scheduled?cron=*+*+*+*+*'   # from a second shell: the watchdog, once
 ```
 
-`wrangler dev --local` (wrangler 4.158.0, workerd) run that way, so no
+`wrangler dev --local` (wrangler 4.158.0, workerd) run that way (and with `--env-file` an empty
+file, which turned out not to matter: in `wrangler dev` that flag did not bind its values at all;
+a later run with a fake part in a `.dev.vars` in the temporary directory did), so no
 secret was loaded (the bindings table listed `KEEPER_OBJECT` and `BUDGET` only), port 8799, from
 18:26 to 18:31 UTC, against the four testnet markets (read-only). One `GET /__scheduled` (the
 watchdog) armed the alarm; every tick after that came from the alarm, including after a code
@@ -336,8 +348,40 @@ CORS, `application/json` and the immutable header, its body's sha256 equal to it
 signing, the live loop's take 18 to 43 s. The rows in the log are workerd's own counts
 (`cursor.rowsRead`, `rowsWritten`).
 
-`wrangler deploy --dry-run --outdir <tmp>`: 154.39 KiB, 45.83 KiB gzipped (2026-11-12, the code as
+`wrangler deploy --dry-run --outdir <tmp>`: 158.46 KiB, 46.98 KiB gzipped (2026-11-12, with split secrets; the code as
 left here).
+
+#### First deploy and the first switch, 2026-11-12 (UTC)
+
+From the operator's run of the commit f424649 at https://weir-keeper.qvkare.workers.dev; sizes
+measured from `keeper/.env` as lengths only.
+
+| What | When | Result |
+|---|---|---|
+| `wrangler deploy`, no secrets | 18:38 | Deployed. No tick for about ten minutes: `/health` 503 with `last_tick: null` until the cron trigger first fired. Cron changes "may take several minutes (up to 15 minutes) to propagate" (`/workers/configuration/cron-triggers/`, read 2026-11-12) |
+| First tick, from the cron's arming of the alarm | 18:49:00 | 34/40 requests, 3 done, 0 failed, 1.8 s, 6 rows read, 16 written: the index for all three chips fetched from Cloudflare |
+| Ticks 18:49 to 18:55 | 7 ticks | All 0 failed. Idle ticks 0.2 s, 13 rows read, 1 to 2 written; index ticks 0.8 to 0.9 s, 14 read, 6 written. `/status`, `/health`, `/latest.json` answered |
+| Node loop stopped | 19:00:21 | After its 19:00 tick |
+| `wrangler secret bulk` with the four secrets as JSON on stdin | 19:00:26 | **Refused** by the API: "Text binding 'AGENTS' is too large, its size of 6.5 kB exceeds the limit of 5.1 kB. [code: 10054]". Nothing was set (`wrangler secret list` printed `[]`). `AGENTS` was 6,488 bytes; `REPORTERS` 1,721, `SWARM_SECRET` 64, `KEEPER` 567 |
+| Node loop started again | about 19:01 | The loop is the keeper again; the Worker holds no keys and signs nothing |
+
+Cost of the failed switch: about a minute with no keeper (19:00:21 to about 19:01:30), outside
+any reveal phase that ends then (the weekly reveals ended at 19:00 and the loop's 19:00 tick ran).
+Not checked on chain.
+
+What was done: the keeper now reads the agent list from `AGENTS` and every `AGENTS_*` secret
+(and `REPORTERS` from `REPORTERS_*` likewise), and `scripts/secrets.ts` writes the secrets for
+`wrangler secret bulk` with no value over 5,000 bytes (the deploy command above). Tested in
+`test/secrets.test.ts`: parts read in name order, a bad part named while the others load, a
+duplicate agent across parts named and counted once, the redactor covering keys from every part
+(also from entries dropped), the object reading parts from its whole environment on the model
+(every market's agents committed), and the script on fake keys sized like the real list: four
+parts of at most 5,000 bytes, `AGENTS` null, the same agents read back, nothing but names and
+sizes on stderr, and a refusal with nothing on stdout. In `wrangler dev --local` at 19:05 to
+19:06 a fake part (`AGENTS_H100_FAST`, one agent with a malformed key, in a `.dev.vars` in a
+temporary directory) was read from the runtime's `env`: `/status` listed that agent's key as
+unusable and no longer said `AGENTS is not set`, and the fake key appeared nowhere in `/status`.
+The switch has not been retried yet.
 
 #### Moving from the Node loop to the Worker
 
@@ -404,7 +448,9 @@ in `deployments.json`, the log or the routes.
 [{ "account_id": "reporter-a.example.testnet",
    "keys": { "weir-h100-fast.example.testnet": "ed25519:<key>", "weir-h200-weekly.example.testnet": "ed25519:<key>" } }]
 
-// AGENTS: one entry per agent and market, as the deploy tool writes them.
+// AGENTS: one entry per agent and market, as the deploy tool writes them. Also read from every
+// AGENTS_* variable (sorted by name), as scripts/secrets.ts splits it for Cloudflare's 5 KB limit;
+// REPORTERS likewise from REPORTERS_*. The Node loop reads AGENTS and REPORTERS only.
 // role is buyer | seller | maker | noise. Optional, with defaults:
 //   buyer:  need 40, premium_bps 500         seller: capacity 180, premium_bps 500
 //   maker:  spread_bps 600, share_bps 1000, max_size 40
@@ -477,7 +523,7 @@ sleep.
 ## Tests
 
 ```sh
-pnpm --filter @weir/keeper test        # node --test, offline, 34 tests
+pnpm --filter @weir/keeper test        # node --test, offline, 38 tests
 pnpm --filter @weir/keeper typecheck   # tsc --noEmit
 pnpm --filter @weir/keeper bench
 pnpm --filter @weir/keeper rows        # store reads and writes per tick, for the Free plan table
@@ -531,6 +577,10 @@ on each sized for its market as the agents package sizes them, the housekeeping 
   a 404 is not cached, `/status` always reaches the object; retention (15 days, every 6 hours,
   each chip's latest bundle kept, other keys untouched); sealed orders committed through one store
   revealed through a fresh one, nothing forfeited.
+- `secrets.test.ts`: `AGENTS_*` and `REPORTERS_*` parts (order, a bad part, a duplicate across
+  parts, the redactor over every part), the object reading parts from its environment on the
+  model, and `scripts/secrets.ts` (split under 5,000 bytes, `AGENTS` null, read back the same,
+  stderr without values, refusal with empty stdout).
 - `rpc.test.ts`: a 429 seen through one market's port spares the other markets' ports in the
   same tick and the next while the cooldown lasts, the first endpoint is used again once it ends,
   every attempt is charged and nothing else; with every endpoint refusing, the next call fails
@@ -650,8 +700,9 @@ requests each. Not proven:
 - the keeper changes of 2026-11-12 (shared cooldowns, the loop's minute, `config`) on testnet:
   they are tested on the model and a fake RPC only;
 - request counts under failover and `send_tx` polling with the new chain client;
-- anything on a Cloudflare account: the Worker and its Durable Object have run only in `wrangler
-  dev --local` (five alarm ticks without secrets, above) and in unit tests with fakes. Not shown:
+- a tick that signs on Cloudflare: the Worker and its Durable Object ran on the operator's
+  account without secrets from 18:49 (above); the first attempt to set the secrets was refused
+  for size. Not shown:
   the Worker's CPU time, the object's duration and whether it hibernates between ticks, rows
   read and written as billed, subrequest limits for an alarm, the alarm's and the cron
   trigger's timing, the Cache API on `workers.dev`, and a tick that signs;

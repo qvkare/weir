@@ -15,7 +15,7 @@
 // ticks at once, so the lease (write, wait 1 s, read back) would only cost a second and two
 // rows written per tick.
 import deployments from "../../deployments.json" with { type: "json" };
-import { readSecrets, type Deployments } from "./config.ts";
+import { readSecrets, type Deployments, type SecretVars } from "./config.ts";
 import { readLatest } from "./indexer.ts";
 import { DEFAULT_BUDGET, runTick, type KeeperEnv, type TickReport } from "./keeper.ts";
 import type { Chain, Fetch } from "./ports.ts";
@@ -48,13 +48,10 @@ export interface ObjectState {
   storage: ObjectStorage;
 }
 
-/** The Worker's secrets and variables, as the object sees them. */
-export interface KeeperVars {
-  REPORTERS?: string;
-  AGENTS?: string;
-  SWARM_SECRET?: string;
-  /** Optional housekeeping account. */
-  KEEPER?: string;
+/** The Worker's whole environment, as the object sees it: the runtime's `env`, passed to
+ * `readSecrets` as it is, so `AGENTS_*` and `REPORTERS_*` parts are read along with the four
+ * fixed names. */
+export interface KeeperVars extends SecretVars {
   BUDGET?: string;
 }
 
