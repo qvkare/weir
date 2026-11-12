@@ -5,12 +5,13 @@ import { fullBook } from "./fullbook.ts";
 import { gasMarkdown, gasTable } from "./gas.ts";
 import { lifecycle } from "./lifecycle.ts";
 import { swarm } from "./swarm.ts";
+import { voids } from "./voids.ts";
 import { Sandbox } from "./sandbox.ts";
 import { World } from "./world.ts";
 
 const only = new Set((process.env.WEIR_E2E_ONLY ?? "").split(",").filter(Boolean));
 const want = (name: string) => only.size === 0 || only.has(name);
-const OUT = new URL("../out/", import.meta.url).pathname;
+const OUT = process.env.WEIR_E2E_OUT ?? new URL("../out/", import.meta.url).pathname;
 
 const started = Date.now();
 const timings: Record<string, number> = {};
@@ -37,6 +38,7 @@ try {
   await run("lifecycle", () => lifecycle(w));
   // The reporters of the lifecycle serve the other deployments too.
   const reporters = await Promise.all(["rep-x", "rep-y", "rep-z"].map((n) => w.root.createAccount(n)));
+  await run("void", () => voids(w, reporters));
   await run("full-book", () => fullBook(w, reporters));
   await run("swarm", () => swarm(w, reporters, { second: process.env.WEIR_E2E_SECOND !== "0" }));
 } catch (e) {
@@ -58,13 +60,14 @@ function tagOf(r: { method: string; scenario: string; args: unknown; chain: { ev
     const decided = r.chain.events.filter((e) => /"event":"(print|no_print)"/.test(e)).length;
     return decided > 0 ? `deciding ${decided} pending bucket${decided > 1 ? "s" : ""}` : "nothing pending";
   }
+  if (r.method === "commit" && r.chain.events.some((e) => e.includes('"event":"evict"'))) return `evicting from a full round of ${r.scenario === "full-book" ? 128 : "?"}`;
   if (r.method === "report") {
     const decided = r.chain.events.filter((e) => /"event":"(print|no_print)"/.test(e)).length;
     return decided > 0 ? "deciding" : "not deciding";
   }
   if (r.method !== "clear") return null;
   const round = (r.args as { round: number }).round;
-  if (r.scenario === "full-book" && round === 0) return "64 commits, all filled";
+  if (r.scenario === "full-book" && round === 0) return "128 commits, all filled";
   if (r.scenario === "full-book") return "unrevealed commits only";
   return r.scenario.startsWith("swarm") ? "keeper books" : "lifecycle books";
 }
@@ -100,5 +103,5 @@ console.log(`\nchecks: ${record.checks.total - failed.length} passed, ${failed.l
 for (const f of failed) console.log(`  FAIL [${f.scenario}] ${f.name}: ${JSON.stringify(f.detail)?.slice(0, 600)}`);
 console.log(`parity: ${record.parity?.calls ?? 0} calls and ${record.parity?.views_compared ?? 0} views compared; ${record.parity?.differing_calls ?? 0} calls differ; differences by kind ${JSON.stringify(record.parity?.by_kind ?? {})}`);
 for (const d of w?.log.diffs ?? []) console.log(`  DIFF [${d.scenario}] ${d.kind} ${d.method} ${JSON.stringify(d.args).slice(0, 200)}\n     chain: ${JSON.stringify(d.chain)?.slice(0, 400)}\n     model: ${JSON.stringify(d.model)?.slice(0, 400)}`);
-console.log(`wall time ${(record.wall_ms / 1000).toFixed(1)} s; record in integration/out/run.json`);
+console.log(`wall time ${(record.wall_ms / 1000).toFixed(1)} s; record in ${OUT}run.json`);
 process.exitCode = fatal || failed.length > 0 || (record.parity?.diffs.length ?? 0) > 0 ? 1 : 0;

@@ -119,7 +119,7 @@ export async function lifecycle(w: World): Promise<LifecycleResult> {
 
   // Sections 5 and 6.4: Eve's guard, Bob's round lock limit.
   const FEE = BigInt(params.commit_fee);
-  w.eq("the fast preset burns 0.02 per commit", FEE, 20_000n);
+  w.eq("the fast preset burns 0.10 per commit", FEE, 100_000n);
   await p.eve.call("set_guard", { guard: 5_000 });
   w.eq("eve's guard is set", await view.get_account({ account_id: people.eve.accountId }), { balance: DEPOSIT.toString(), guard: 5_000, max_round_lock: null });
   await p.bob.call("set_guard", { max_round_lock: "2000000" });
@@ -268,16 +268,16 @@ export async function lifecycle(w: World): Promise<LifecycleResult> {
     return { result: r.chain.result, events: r.chain.events.map((e) => JSON.parse(e.slice(11)) as { event: string; data: { bucket?: number } }).map((e) => `${e.event}${e.data.bucket === bucket ? "" : `@${e.data.bucket}`}`) };
   };
   // B0: all three.
-  await w.sandbox.warpTo(B(0) + 1);
+  await w.sandbox.warpTo(B(0) + 1, { precise: true });
   w.eq("B0: two reports leave it open", [await report(0, B(0), 2_000_000), await report(1, B(0), 2_000_000)], [false, false]);
   w.eq("B0: the third reporter decides it", await report(2, B(0), 2_000_000), true);
   // B1: two that agree within max_spread_bps (1%), decided by finalize_print once the window closes.
-  await w.sandbox.warpTo(B(1) + 1);
+  await w.sandbox.warpTo(B(1) + 1, { precise: true });
   w.eq("B1: two agreeing reports", [await report(0, B(1), 2_000_000), await report(1, B(1), 2_020_000)], [false, false]);
   w.eq("B1 is pending", await view.get_pending_prints({}), [B(1)]);
   w.eq("B1 is open, without a price", await view.get_print({ bucket: B(1) }).then((x) => x && [x.state, x.price]), ["Open", null]);
   await w.rejects("finalize_print while the window is open is refused", () => p.bob.call("finalize_print", { bucket: B(1) }), /has not closed/);
-  await w.sandbox.warpTo(B(2) + 61);
+  await w.sandbox.warpTo(B(2) + 61, { precise: true });
   w.eq("B1: finalize_print after the window gives a print", await p.bob.call("finalize_print", { bucket: B(1) }), true);
   w.eq("B1: the mean of the two", await view.get_print({ bucket: B(1) }).then((x) => x && [x.state, x.price]), ["Final", 2_010_000]);
   await w.rejects("finalize_print twice is refused", () => p.bob.call("finalize_print", { bucket: B(1) }), /already decided/);
@@ -285,28 +285,30 @@ export async function lifecycle(w: World): Promise<LifecycleResult> {
   await w.rejects("a report for a bucket whose window has closed is refused", () => report(2, B(1), 2_000_000), /report window/);
   // B2: two that agree, decided by a later report.
   w.eq("B2: two agreeing reports", [await report(0, B(2), 2_100_000), await report(1, B(2), 2_100_000)], [false, false]);
-  await w.sandbox.warpTo(B(3) + 61);
+  await w.sandbox.warpTo(B(3) + 61, { precise: true });
   w.eq("B3's first report decides B2, events in order", await eventsOf(0, B(3), 2_000_000), { result: false, events: ["report", `print@${B(2)}`] });
   // B3: two that disagree by 10%: no print, through finalize_print.
   w.eq("B3: a second, far report", await report(1, B(3), 2_200_000), false);
-  await w.sandbox.warpTo(B(4) + 61);
+  await w.sandbox.warpTo(B(4) + 61, { precise: true });
   w.eq("B3: finalize_print decides it without a print", await p.bob.call("finalize_print", { bucket: B(3) }), false);
   w.eq("B3: NoPrint", await view.get_print({ bucket: B(3) }).then((x) => x && [x.state, x.price]), ["NoPrint", null]);
   // B4: one report, below quorum, decided as no print by a later report.
   w.eq("B4: a lone report", await report(0, B(4), 2_000_000), false);
-  await w.sandbox.warpTo(B(5) + 61);
+  await w.sandbox.warpTo(B(5) + 61, { precise: true });
   w.eq("B5's first report decides B4 without a print", await eventsOf(0, B(5), 2_300_000), { result: false, events: ["report", `no_print@${B(4)}`] });
   w.eq("B5: the median of three", [await report(1, B(5), 2_400_000), await report(2, B(5), 2_500_000)], [false, true]);
   w.eq("B5: price", (await view.get_print({ bucket: B(5) }))?.price, 2_400_000);
   for (const [i, price] of [[6, 2_300_000], [7, 2_200_000], [8, 2_100_000], [9, 2_000_000]] as const) {
-    await w.sandbox.warpTo(B(i) + 1);
+    await w.sandbox.warpTo(B(i) + 1, { precise: true });
     for (const k of [0, 1, 2]) await report(k, B(i), price);
   }
-  // B10 and B11: two agreeing reports each, left for settle to decide.
-  await w.sandbox.warpTo(B(10) + 1);
+  // B10 and B11: two agreeing reports each, left for settle to decide. A report decides up to
+  // four earlier buckets whose windows have closed, and only the previous bucket's window is
+  // still open at a report, so two is the most settle meets when every bucket is reported.
+  await w.sandbox.warpTo(B(10) + 1, { precise: true });
   await report(0, B(10), 1_900_000);
   await report(1, B(10), 1_900_000);
-  await w.sandbox.warpTo(B(11) + 1);
+  await w.sandbox.warpTo(B(11) + 1, { precise: true });
   await report(0, B(11), 1_950_000);
   await report(1, B(11), 1_970_000);
   w.eq("B10 and B11 are pending", await view.get_pending_prints({}), [B(10), B(11)]);
@@ -327,6 +329,7 @@ export async function lifecycle(w: World): Promise<LifecycleResult> {
   const settled = (await view.get_series({ series: 0 }))?.settlement;
   // 20_970_000 / 10 = 2_097_000; LONG pays 0.397, SHORT 0.203.
   w.eq("settlement", settled && { ...settled, settled_at: 0 }, { fixing: 2_097_000, long_payout: 397_000, short_payout: 203_000, prints: 10, void: false, settled_at: 0 });
+  w.eq("the series recorded what its auctions traded: 8 at 0.31 and 4 at 0.30", await view.get_series({ series: 0 }).then((x) => x && [x.traded_units, x.traded_value]), [12, "3680000"]);
   await w.booksBalance("after settlement", weir);
 
   // Section 8: positions still move after settlement.

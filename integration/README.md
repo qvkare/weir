@@ -1,6 +1,6 @@
 # @weir/integration
 
-The end-to-end test of Weir (specification 0.4) on a local NEAR sandbox node: the real `weir.wasm` and
+The end-to-end test of Weir (specification 0.6) on a local NEAR sandbox node: the real `weir.wasm` and
 `mock_usdc.wasm`, the TypeScript chain client (`ChainWeir`, `Token`), the trading agents and
 the keeper, with the engine's `ModelWeir` run alongside and compared call by call. Nothing
 here touches testnet or mainnet: no account, key or transaction leaves the machine.
@@ -15,22 +15,23 @@ The machine-readable record of a run goes to `out/run.json` (git-ignored).
 | Node | 22.18 or later (runs the `.ts` files directly) |
 | Rust, `cargo-near` | to build the wasm: `contracts/build.sh` (output in `contracts/target/near/`). A wasm older than its sources is refused, as the Rust sandbox tests do |
 | near-sandbox 2.14.0 | the binary the Rust `near-sandbox` crate (0.4) downloads the first time the contract's sandbox tests run, into `contracts/target/<profile>/build/near-sandbox-*/out/.near/near-sandbox-2.14.0/near-sandbox`. Found there automatically, or in `~/.near/near-sandbox-2.14.0/`, or wherever `NEAR_SANDBOX_BIN_PATH` points (the crate's own override). macOS arm64 and Linux only, as the crate |
-| Ports | 33031 (RPC) and 33032 (network) on 127.0.0.1 |
+| Ports | the first free pair from 33031 (RPC, then network) on 127.0.0.1, or `WEIR_SANDBOX_PORT`. Two runs can share a machine; `WEIR_E2E_OUT` sends the record elsewhere than `out/` |
 
 ```sh
 contracts/build.sh
 cargo test --manifest-path contracts/Cargo.toml -p weir --test sandbox   # once, downloads the sandbox binary
 pnpm --filter @weir/integration run e2e      # everything
 node integration/src/e2e.ts                  # the same, without pnpm
-WEIR_E2E_ONLY=lifecycle node integration/src/e2e.ts   # one scenario: lifecycle, full-book, swarm
-WEIR_E2E_SECOND=0 node integration/src/e2e.ts         # the keeper with the h100-fast market only
+WEIR_E2E_ONLY=lifecycle node integration/src/e2e.ts   # one scenario: lifecycle, void, full-book, swarm
+WEIR_E2E_SECOND=0 node integration/src/e2e.ts         # the keeper with h100-fast only (default: with h200-weekly too)
 WEIR_E2E_VERBOSE=1 node integration/src/e2e.ts        # prints every keeper tick
 pnpm --dir integration test                  # offline tests of the harness itself
 ```
 
-A full run takes about seven and a half minutes on an Apple-silicon laptop (lifecycle 100 s,
-full book 37 s, the keeper 320 s). It exits non-zero if any check fails or the contract and the
-model differ anywhere, refusal texts included. See `RESULTS.md` for the last run's outcome.
+A full run takes about nine minutes on an Apple-silicon laptop (lifecycle 121 s, void series
+32 s, full book 51 s, the keeper on two markets 343 s). It exits non-zero if any check fails or
+the contract and the model differ anywhere, refusal texts included. See `RESULTS.md` for the
+last run's outcome.
 
 ## How it works
 
@@ -58,12 +59,15 @@ model differ anywhere, refusal texts included. See `RESULTS.md` for the last run
   limit, a guard changed after commit; every way a bucket is decided: all three reporters,
   `finalize_print`, a later report, disagreement, below quorum, `settle`; `prune_result` and
   `prune_print` with the contract's storage read before and after; every refusal; the
-  function-call-key agent; minimal gas of the cross-contract calls), `src/fullbook.ts` (a round
-  at `max_commits`, eviction returning lock and fee, the fullest clear, the cap on sets reached
-  with real test money, nonces under concurrency, a void settlement), `src/swarm.ts` (the
-  keeper's `runTick` with its own `nearChain` for a whole `h100-fast` series: three reporters,
-  six agents, a housekeeping account, one bucket with a reporter missing; and, for the first
-  hour and a half, an `h200-weekly` market alongside).
+  function-call-key agent; minimal gas of the cross-contract calls), `src/voids.ts` (the
+  majority quorum; a void series that traded at several prices and in a wash round, paid half
+  the band; a void series of mints only), `src/fullbook.ts` (a round at 128 commits, eviction
+  returning lock and fee, the fullest clear, the cap on sets reached with real test money,
+  nonces under concurrency, a void settlement), `src/swarm.ts` (the keeper's `runTick` with its
+  own `nearChain` on `h100-fast` and `h200-weekly` together for three hours, with one
+  function-call key per contract for three shared reporters, each market's agents and a
+  housekeeping account; a reporter missing for one bucket; an agent given a key for the wrong
+  contract; storage sampled after every tick).
   `src/gas.ts` builds the gas table from every outcome.
 
 ## Workspace

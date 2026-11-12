@@ -70,6 +70,8 @@ const DEPOSITS: Record<string, bigint> = { buyer: 60n * DOLLAR, seller: 200n * D
 const fixtureBody = (sourceId: string, chip: ChipId): string =>
   readFileSync(new URL(sourceId === "verda" ? "verda.json" : sourceId === "vast" ? `v2/vast-${chip}.json` : `v2/${sourceId}.json`, FIXTURES), "utf8");
 
+let storageGrowth: Record<string, number> = {};
+
 export async function swarm(w: World, reporters: Signer[], opts: { second?: boolean } = {}): Promise<SwarmResult> {
   w.scenario = "swarm";
   const rpc = w.sandbox.rpc;
@@ -84,48 +86,61 @@ export async function swarm(w: World, reporters: Signer[], opts: { second?: bool
   const view = new ChainWeir({ rpc, contractId: weir });
   const open = auctionOpen(fast.tp, 0);
 
-  // The second market: weekly, its series 0 auction opening up to an hour before the fast one's.
-  const secondReporters = second ? await Promise.all(["h200-rep-a", "h200-rep-b", "h200-rep-c"].map((n) => w.root.createAccount(n))) : [];
+  // The second market: weekly, another chip, the same three reporters; its series 0 auction
+  // opens up to an hour before the fast one's.
   let second2: { id: string; twin: Twin; params: WireParams } | null = null;
   if (second) {
     const lead = MARKETS[SECOND].params.lead_secs;
     const t0w = Math.floor((open + lead) / 3600) * 3600;
-    const p2: WireParams = { ...MARKETS[SECOND].params, usdc: w.usdc.accountId, reporters: secondReporters.map((r) => r.accountId), t0: t0w };
+    const p2: WireParams = { ...MARKETS[SECOND].params, usdc: w.usdc.accountId, reporters: reporters.map((r) => r.accountId), t0: t0w };
     const { id } = await w.deployWeir("weir-h200-weekly", p2);
     const t = await w.twin(id);
     t.twin.scenario = "swarm-h200";
     second2 = { id, twin: t.twin, params: p2 };
   }
+  const contracts = [weir, ...(second2 ? [second2.id] : [])];
 
-  // Keys. Reporters: a REPORTER_KEY_METHODS key for their market. Agents: an account per market
-  // whose only key holds AGENT_KEY_METHODS. Housekeeping: one account, one KEEPER_KEY_METHODS
-  // key; a function-call key names one contract, so it is bound to the fast market's.
-  const reporterKeys = await Promise.all(reporters.map((r) => r.addKey({ receiverId: weir, methodNames: [...REPORTER_KEY_METHODS], allowance: NEAR })));
-  const secondReporterKeys = second2 ? await Promise.all(secondReporters.map((r) => r.addKey({ receiverId: second2!.id, methodNames: [...REPORTER_KEY_METHODS], allowance: NEAR }))) : [];
-  const housekeeper = await w.root.createAccount("housekeeper", { balance: 5n * NEAR, permission: { receiverId: weir, methodNames: [...KEEPER_KEY_METHODS], allowance: NEAR } });
+  // Keys, as a testnet deployment will hold them: one function-call key per contract for every
+  // signer. Reporters: REPORTER_KEY_METHODS on each contract. Agents: one market each, one key
+  // holding AGENT_KEY_METHODS. Housekeeping: KEEPER_KEY_METHODS on each contract.
+  const keysFor = async (signer: Signer, methods: readonly string[]) => {
+    const keys: Record<string, string> = {};
+    for (const c of contracts) keys[c] = (await signer.addKey({ receiverId: c, methodNames: [...methods], allowance: NEAR })).secret;
+    return keys;
+  };
+  const reporterKeys = await Promise.all(reporters.map(async (r) => ({ account_id: r.accountId, keys: await keysFor(r, REPORTER_KEY_METHODS) })));
+  const housekeeper = await w.root.createAccount("housekeeper", { balance: 5n * NEAR });
+  const housekeeperKeys = await keysFor(housekeeper, KEEPER_KEY_METHODS);
   await w.mint(w.root.near(), w.root.accountId, 10_000n * DOLLAR);
   const agents: AgentSpec[] = [];
-  const fund = async (twin: Twin, contract: string, specs: typeof FAST_AGENTS, market: string, prefix: string) => {
+  const fund = async (twin: Twin, contract: string, specs: typeof FAST_AGENTS, market: string, prefix: string, keyReceiver = contract) => {
     const rootPort = twin.port(w.root.near());
     for (const [i, a] of specs.entries()) {
       const id = `${prefix}${a.role}-${i}.${w.root.accountId}`;
-      const s = await w.root.createAccount(id, { balance: 5n * NEAR, permission: { receiverId: contract, methodNames: [...AGENT_KEY_METHODS], allowance: NEAR } });
+      const s = await w.root.createAccount(id, { balance: 5n * NEAR, permission: { receiverId: keyReceiver, methodNames: [...AGENT_KEY_METHODS], allowance: NEAR } });
       await rootPort.call("register", { account_id: id });
       await rootPort.call("deposit", { amount: DEPOSITS[a.role]!.toString(), msg: id });
-      agents.push({ ...a, account_id: id, secret_key: s.secret, markets: [market] } as AgentSpec);
+      agents.push({ ...a, account_id: id, keys: { [contract]: s.secret }, markets: [market] } as AgentSpec);
     }
   };
   await fund(fast.twin, weir, FAST_AGENTS, FAST, "");
-  if (second2) await fund(second2.twin, second2.id, SECOND_AGENTS, SECOND, "h200-");
+  // A deliberately wrong configuration: an agent of the second market whose key names the fast
+  // contract. Its first call must be refused, logged once with the fix, and not retried.
+  let misfit: string | null = null;
+  if (second2) {
+    await fund(second2.twin, second2.id, SECOND_AGENTS, SECOND, "h200-");
+    await fund(second2.twin, second2.id, [{ role: "noise" }], SECOND, "misfit-", weir);
+    misfit = agents.at(-1)!.account_id;
+  }
   const fastAgents = agents.filter((a) => a.markets?.includes(FAST));
   const totalDeposit = FAST_AGENTS.reduce((s, a) => s + DEPOSITS[a.role]!, 0n);
 
-  const secretsWith = (reps: Signer[]) =>
+  const secretsWith = (reps: typeof reporterKeys) =>
     readSecrets({
-      REPORTERS: JSON.stringify([...reps, ...secondReporterKeys].map((r) => ({ account_id: r.accountId, secret_key: r.secret }))),
+      REPORTERS: JSON.stringify(reps),
       AGENTS: JSON.stringify(agents),
       SWARM_SECRET: "integration-swarm-secret-0123456789abcdef",
-      KEEPER: JSON.stringify({ account_id: housekeeper.accountId, secret_key: housekeeper.secret }),
+      KEEPER: JSON.stringify({ account_id: housekeeper.accountId, keys: housekeeperKeys }),
     });
   const secrets = secretsWith(reporterKeys);
   // For one bucket the third reporter is missing: its bucket must be decided by finalize_print.
@@ -194,11 +209,13 @@ export async function swarm(w: World, reporters: Signer[], opts: { second?: bool
   // Three ticks per five-minute round (20, 110 and 200 s in) from the fast series 0's auction
   // opening until after its settlement, redemption and the first prunes two periods on.
   const missingBucket = open + 6 * 300;
-  // Long enough for the round its agents commit in to be over and cleared on its turn.
-  const secondUntil = open + 3 * 1800;
+  const secondUntil = Number.MAX_SAFE_INTEGER;
   const targets: number[] = [];
-  for (let slot = open; slot <= open + 2 * params.period_secs + 3 * 300; slot += 300) for (const off of [20, 110, 200]) targets.push(slot + off);
+  // Three periods: the last hour is the first in which pruning keeps pace (prints are prunable
+  // two periods after their bucket, results once their series is settled).
+  for (let slot = open; slot < open + 3 * params.period_secs; slot += 300) for (const off of [20, 110, 200]) targets.push(slot + off);
   const ticks: TickStat[] = [];
+  const storageSeries: Record<string, [number, number][]> = {};
   const failures: SwarmResult["failures"] = [];
   const reports: TickReport[] = [];
   const verbose = Boolean(process.env.WEIR_E2E_VERBOSE);
@@ -214,6 +231,7 @@ export async function swarm(w: World, reporters: Signer[], opts: { second?: bool
     const deployments = second2 && now < secondUntil ? both : fastOnly;
     const s = now >= missingBucket && now < missingBucket + 300 ? secretsMissing : secrets;
     const report = await runTick(env(deployments, s) as never, now);
+    for (const c of contracts) (storageSeries[c] ??= []).push([now, (await rpc.viewAccount(c)).storage_usage]);
     const wallMs = Date.now() - tickWallStart;
     reports.push(report);
     const byMarket: Record<string, number> = {};
@@ -275,23 +293,49 @@ export async function swarm(w: World, reporters: Signer[], opts: { second?: bool
   w.check("no keeper entry failed on the fast market", fastFailures.length === 0, fastFailures.slice(0, 20));
   await fast.twin.checkpoint("swarm end", { tp: fast.tp, series: [0, 1], accounts: fastAgents.map((a) => a.account_id), buckets: [missingBucket] });
 
-  // The second market, while it ran.
+  // Storage: the fast contract's, sampled after every tick. Results are pruned once a series is
+  // settled and prints two periods after their bucket.
+  const fastStorage = storageSeries[weir]!;
+  const at = (t: number) => fastStorage.find(([n]) => n >= t)?.[1] ?? fastStorage.at(-1)![1];
+  const lastHour = fastStorage.at(-1)![1] - at(fastStorage.at(-1)![0] - params.period_secs);
+  const firstHour = at(open + params.period_secs) - fastStorage[0]![1];
+  storageGrowth = { first_hour: firstHour, last_hour: lastHour, start: fastStorage[0]![1], end: fastStorage.at(-1)![1] };
+  w.check("fast: with pruning keeping pace, storage grows by less than 1% over the last hour", lastHour < fastStorage.at(-1)![1] / 100, storageGrowth);
+
+  // The second market, for the whole run.
   let secondSummary: Record<string, unknown> | null = null;
   if (second2) {
     const v2 = new ChainWeir({ rpc, contractId: second2.id });
-    const secondFailures = failures.filter((f) => f.market === SECOND);
-    const shared = ticks.filter((t) => t.now < secondUntil && (t.requests_by_market[SECOND] ?? 0) > 0 && (t.requests_by_market[FAST] ?? 0) > 0).length;
+    const secondFailures = failures.filter((f) => f.market === SECOND && !(misfit && f.text.includes(misfit)));
+    const shared = ticks.filter((t) => (t.requests_by_market[SECOND] ?? 0) > 0 && (t.requests_by_market[FAST] ?? 0) > 0).length;
     w.check("both markets spent from one tick's budget", shared > 0, shared);
     const p2 = await v2.get_prints({ from_bucket: 0, limit: 200 });
-    w.check("the second market got final prints of its own chip", p2.length >= 1, p2.map((x) => [x.bucket, x.price]));
+    w.check("the second market got final prints of its own chip", p2.length >= 2, p2.map((x) => [x.bucket, x.price]));
     const commits2 = second2.twin.log.calls.filter((c) => c.scenario === "swarm-h200" && c.method === "commit" && c.chain.ok);
-    const rounds2 = [...new Set(commits2.map((c) => JSON.parse(c.chain.events.find((e) => e.includes('"event":"commit"'))!.slice(11)).data.round as number))];
-    w.check("the second market's agents committed", commits2.length > 0, rounds2);
-    const r2 = await Promise.all(rounds2.map((r) => v2.get_round({ series: 0, round: r })));
-    const res2 = await Promise.all(rounds2.map((r) => v2.get_result({ series: 0, round: r })));
-    const keeperRefused = secondFailures.filter((f) => /housekeep|clear|finalize|InvalidAccessKey|ReceiverMismatch/.test(f.text));
-    secondSummary = { failures: secondFailures.slice(0, 10), failures_total: secondFailures.length, round0: r2, result0: res2, prints: p2.length, shared_ticks: shared };
-    w.check("the second market's housekeeping (one KEEPER key, bound to one contract) reached it", keeperRefused.length === 0, keeperRefused.slice(0, 3));
+    w.check("the second market's agents committed", commits2.length > 0, commits2.length);
+    const clears2 = reports.flatMap((r) => r.txs.filter((t) => t.market === SECOND && t.method === "clear"));
+    w.check("the second market's rounds were cleared, every time by the housekeeping account's own key", clears2.length >= 1 && clears2.every((t) => t.ok && t.signer === housekeeper.accountId), clears2);
+    const status2 = await v2.get_status({});
+    const s2 = await v2.get_series({ series: 0 });
+    const current = status2.live.find((l) => l.series === 0)?.round ?? Infinity;
+    w.eq("no round of the second market that is over waits to be cleared", (s2?.pending_rounds ?? []).filter((r) => r < current), []);
+    w.check("no keeper entry failed on the second market, besides the misconfigured agent", secondFailures.length === 0, secondFailures.slice(0, 5));
+    const totals2 = await v2.get_totals({});
+    const costs2 = reports.at(-1)?.markets[SECOND]?.costs as { fees: string; forfeits: string } | null | undefined;
+    w.eq("second market: the keeper's cost report equals burned", costs2 && BigInt(costs2.fees) + BigInt(costs2.forfeits), BigInt(totals2.burned));
+    w.check("second market: something was burned", BigInt(totals2.burned) > 0n, totals2);
+    await w.booksBalance("swarm, second market", second2.id);
+    // The misconfigured agent: what it sent and what the keeper said.
+    // The node refuses such a transaction before it exists, so it is not in `txs`; the keeper's
+    // fault entry is the record of each attempt, and the misfit's access key never moves.
+    const misLogs = reports.flatMap((r) => r.entries.filter((e) => e.text.includes(misfit!) && /refused its key/.test(e.text)).map((e) => ({ at: r.now, text: e.text })));
+    const misKeys = await rpc.call<{ keys: { access_key: { nonce: number } }[] }>("query", { request_type: "view_access_key_list", finality: "final", account_id: misfit! });
+    const spanHours = (ticks.at(-1)!.now - ticks[0]!.now) / 3600;
+    w.check("the wrong-receiver key was refused with ReceiverMismatch, and the fault says what to fix", misLogs.length >= 1 && misLogs.every((l) => /ReceiverMismatch/.test(l.text) && /Fix: /.test(l.text)), misLogs[0]);
+    const gaps = misLogs.slice(1).map((l, i) => l.at - misLogs[i]!.at);
+    w.check("one attempt and one logged fault, then nothing until the hour it is set aside has passed", gaps.every((g) => g >= 3600) && misLogs.length <= Math.ceil(spanHours), { attempts: misLogs.map((l) => l.at - open), gaps });
+    w.check("the misconfigured agent never got a transaction through", [...Object.values(twins)].every((t) => t.log.calls.every((c) => c.account !== misfit)), misKeys.keys.map((k) => k.access_key.nonce));
+    secondSummary = { prints: p2.length, commits: commits2.length, clears: clears2.length, shared_ticks: shared, totals: totals2, costs: costs2, misfit: { attempts: misLogs.map((l) => l.at - open), logs: misLogs.slice(0, 1) }, storage: storageSeries[second2.id]!.filter((_, i) => i % 12 === 0) };
   }
 
   const allowance: Record<string, string> = {};
@@ -316,6 +360,8 @@ export async function swarm(w: World, reporters: Signer[], opts: { second?: bool
       store_writes: store.writes,
       txs_by_method: countBy(reports.flatMap((r) => r.txs.map((t) => `${t.market}:${t.method}`))),
       second: secondSummary,
+      fast_storage: storageSeries[weir]!.filter((_, i) => i % 6 === 0),
+      storage_growth: storageGrowth,
     },
   };
 

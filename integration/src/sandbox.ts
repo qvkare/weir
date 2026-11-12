@@ -83,7 +83,7 @@ export class Sandbox {
   static async start(opts: SandboxOptions = {}): Promise<Sandbox> {
     const binary = findSandboxBinary();
     const version = spawnSync(binary, ["--version"], { encoding: "utf8" }).stdout.trim();
-    const port = opts.port ?? 33_031;
+    const port = opts.port ?? (process.env.WEIR_SANDBOX_PORT ? Number(process.env.WEIR_SANDBOX_PORT) : await freePortPair(33_031));
     const home = mkdtempSync(join(tmpdir(), "weir-sandbox-"));
     const init = spawnSync(binary, ["--home", home, "init", "--fast"], { encoding: "utf8" });
     if (init.status !== 0) throw new Error(`near-sandbox init failed: ${init.stderr}`);
@@ -158,18 +158,20 @@ export class Sandbox {
 
   /** Moves the clock to at least `target`, overshooting by at most about one fast-forwarded
    * block (`secsPerBlock`, 2 s by default). Gaps under two seconds are left to real blocks. */
-  async warpTo(target: number): Promise<number> {
+  async warpTo(target: number, opts: { precise?: boolean } = {}): Promise<number> {
     for (;;) {
       const now = await this.now();
       if (now >= target) return now;
       const gap = target - now;
-      if (gap <= 2) {
+      // Precise: fast-forward only 80% of the gap at a time, so a misjudged block length can
+      // never carry the clock past the target; real blocks cover the last few seconds.
+      const blocks = opts.precise ? Math.floor((gap * 0.8) / this.#secsPerBlock) : gap <= 2 ? 0 : Math.max(1, Math.ceil((gap - 1) / this.#secsPerBlock));
+      if (blocks < 1) {
         const before = await this.height();
         await sleep(Math.min(1000, gap * 1000));
         if ((await this.height()) === before) await this.assertAlive();
         continue;
       }
-      const blocks = Math.max(1, Math.ceil((gap - 1) / this.#secsPerBlock));
       const t = Date.now();
       await this.rpc.call("sandbox_fast_forward", { delta_height: blocks }, 120_000);
       this.fastForwardMs += Date.now() - t;
@@ -245,6 +247,19 @@ function registerCleanup(s: Sandbox): void {
     console.error(e);
     process.exit(1);
   });
+}
+
+/** The first port from `from` on where it and the next one are free (another run may hold 33031). */
+async function freePortPair(from: number): Promise<number> {
+  const { createServer } = await import("node:net");
+  const free = (port: number) =>
+    new Promise<boolean>((resolve) => {
+      const srv = createServer();
+      srv.once("error", () => resolve(false));
+      srv.listen(port, "127.0.0.1", () => srv.close(() => resolve(true)));
+    });
+  for (let p = from; p < from + 200; p += 2) if ((await free(p)) && (await free(p + 1))) return p;
+  throw new Error(`no free port pair from ${from}`);
 }
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

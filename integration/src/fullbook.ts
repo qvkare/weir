@@ -22,10 +22,11 @@ export interface ConcurrencyReport {
 export async function fullBook(w: World, reporters: Signer[]): Promise<{ contract: string; clear_full_tgas: number; concurrency: ConcurrencyReport }> {
   w.scenario = "full-book";
   const rpc = w.sandbox.rpc;
-  const N = 64;
+  // The most the contract allows: the fast preset with max_commits 128 (it holds 64).
+  const N = 128;
   const now0 = await w.sandbox.now();
   const t0 = onGrid(now0 + 3900 + 240, 300);
-  const params = w.fastParams(reporters.map((r) => r.accountId), t0);
+  const params = w.fastParams(reporters.map((r) => r.accountId), t0, { max_commits: N });
   const { id: weir } = await w.deployWeir("weir-full", params);
   const { twin, tp } = await w.twin(weir);
   twin.scenario = "full-book";
@@ -49,7 +50,7 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
     }),
   );
   const ports = traders.map((t) => twin.port(t.near()));
-  w.eq("64 traders funded", (await Promise.all(traders.map((t) => view.get_account({ account_id: t.accountId })))).every((a) => a?.balance === (20n * DOLLAR).toString()), true);
+  w.eq(`${N} traders funded`, (await Promise.all(traders.map((t) => view.get_account({ account_id: t.accountId })))).every((a) => a?.balance === (20n * DOLLAR).toString()), true);
 
   // A print, then the first round's commit phase with plenty of time left.
   const open = auctionOpen(tp, 0);
@@ -64,7 +65,7 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   const hash = (t: Signer, r: number, side: Side, size: number, price: number) => commitHash({ series: 0, round: r, accountId: t.accountId, side, size, price, salt: SALT });
   // Every lock is 3.10: 10 x 0.31 for LONG, 10 x (0.60 - 0.29) for SHORT.
   const records = await twin.batch(ports.map((p, i) => () => p.send("commit", { series: 0, hash: hash(traders[i]!, round, order(i).side, 10, order(i).price), lock: "3100000" })));
-  w.eq("64 commits landed", records.filter((r) => r.chain.ok).length, N);
+  w.eq(`${N} commits landed`, records.filter((r) => r.chain.ok).length, N);
   const seqOf = new Map(records.map((r) => [r.account, r.chain.result as number]));
   w.eq("seqs are 0..63, each once", [...seqOf.values()].sort((a, b) => a - b), Array.from({ length: N }, (_, i) => i));
 
@@ -84,7 +85,7 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   w.eq("a larger lock evicts the latest of the smallest", evictRecord.chain.events.map((e) => JSON.parse(e.slice(11)).event), ["evict", "commit"]);
   w.eq("the evict event returns lock and fee", JSON.parse(evictRecord.chain.events[0]!.slice(11)).data.fee, FEE.toString());
   w.eq("the evicted account has its lock and its fee back", (await view.get_account({ account_id: evicted }))?.balance, (20n * DOLLAR).toString());
-  w.eq("the round still holds 64 commits", (await view.get_round({ series: 0, round }))?.commits.length, N);
+  w.eq(`the round still holds ${N} commits`, (await view.get_round({ series: 0, round }))?.commits.length, N);
   await twin.checkpoint("full book committed", { tp, series: [0], accounts: traders.map((t) => t.accountId) });
 
   // Every remaining commit is revealed.
@@ -97,20 +98,20 @@ export async function fullBook(w: World, reporters: Signer[]): Promise<{ contrac
   }
   toReveal.push(() => evictor.send("reveal", { series: 0, round, seq: evictRecord.chain.result as number, side: evictOrder.side, size: 10, price: evictOrder.price, salt: SALT }));
   const reveals = await twin.batch(toReveal);
-  w.eq("64 reveals landed", reveals.filter((r) => r.chain.ok).length, N);
+  w.eq(`${N} reveals landed`, reveals.filter((r) => r.chain.ok).length, N);
   const evictedReveal = await ports[evictedIndex]!.refused("reveal", { series: 0, round, seq: lastSeq, side: evictOrder.side, size: 10, price: evictOrder.price, salt: SALT });
   w.check("the evicted commit cannot be revealed", /not found|does not own/.test(evictedReveal.chain.error ?? ""), evictedReveal.chain.error);
 
-  // The fullest clear there can be: 64 commits from 64 accounts, every one revealed and filled.
+  // The fullest clear there can be: 128 commits from 128 accounts, every one revealed and filled.
   await w.sandbox.warpTo(roundStart(tp, 0, round + 1) + 1);
   const clear = await ports[2]!.send("clear", { series: 0, round });
   twin.replay(clear);
   const result = await view.get_result({ series: 0, round });
-  w.eq("full book: volume 320 and 64 fills", result && [result.volume, result.fills.length, result.fills.every((f) => f.filled === 10)], [320, 64, true]);
+  w.eq(`full book: volume ${N * 5} and ${N} fills`, result && [result.volume, result.fills.length, result.fills.every((f) => f.filled === 10)], [N * 5, N, true]);
   const clearTgas = (clear.chain.gas_burnt ?? 0) / 1e12;
   w.check("full book: clear fits in 300 Tgas with room", clear.chain.ok && clearTgas < 150, { tgas: clearTgas });
-  w.eq("full book: the 64 fees are burned, nothing forfeited", result && [result.fees, result.forfeited], [(64n * FEE).toString(), "0"]);
-  w.eq("burned after the full clear", (await view.get_totals({})).burned, (64n * FEE).toString());
+  w.eq(`full book: the ${N} fees are burned, nothing forfeited`, result && [result.fees, result.forfeited], [(BigInt(N) * FEE).toString(), "0"]);
+  w.eq("burned after the full clear", (await view.get_totals({})).burned, (BigInt(N) * FEE).toString());
   await w.booksBalance("after the full clear", weir);
   await twin.checkpoint("full book cleared", { tp, series: [0], accounts: traders.map((t) => t.accountId) });
 
