@@ -12,9 +12,7 @@ Weir was built by Qvkare ([qvkare.com](https://qvkare.com), [GitHub](https://git
 - Mirror Search: 1st place, Bless Network Genesis Hackathon ([announcement](https://x.com/theblessnetwork/status/1935370517336440866)).
 - Copil: 2nd place, Chainlink Chromion Hackathon ([recording](https://www.youtube.com/live/xuGBbwtmjFc)).
 
-How it was made. AI coding agents were the tools: they wrote most of the code and much of the text, under the author's direction and to a written specification ([`docs/SPEC.md`](docs/SPEC.md)). The direction and the standard are the author's: what to build, how it must be checked, and when it is done. The history shows what it can: every commit is under his account, and each change of rules is its own versioned commit to the specification (`git log -- docs/SPEC.md`). The working rules are in [`AGENTS.md`](AGENTS.md): the contract and the engine are written separately from the specification and compared on shared vectors and on a local node, and every claim in this README names the command or file that shows it. A separate AI reviewer wrote the review record, [`docs/AUDIT.md`](docs/AUDIT.md).
-
-The author's statement: he read and checked the contracts himself, by hand. It is the author checking his own project, not an independent audit. The separate review record in `docs/AUDIT.md` is by an AI reviewer and has not been signed off by a person.
+AI was used as a tool in developing this project. The author's statement: he checked the contracts himself, by hand; that is his own check, not an independent audit.
 
 The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
 
@@ -278,7 +276,7 @@ Built for the NEAR Hackathon (deadline 2026-11-14). Everything here was built in
 - **Unstoppable DeFi**: fully paid positions, no liquidation, no owner, no upgrade method, settlement anyone can call.
 - **AI Security & Defense**: agent keys bounded by the protocol and by two limits the agent cannot change, and an AI review whose findings are kept as tests.
 
-Who built it, and how AI coding agents were used: [Who built this](#who-built-this).
+Who built it: [Who built this](#who-built-this).
 
 ## License
 
