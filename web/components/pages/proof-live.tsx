@@ -68,7 +68,7 @@ export function ProofLive({ cfg, market, rows, initial, recorded, recordedNote, 
       <section className="section" id="sandbox" aria-labelledby="sandbox-h">
         <div className="section-head">
           <h2 id="sandbox-h">Contract against the engine</h2>
-          <span className="note">integration/RESULTS.md</span>
+          <span className="note">Run by the authors on a local test node</span>
         </div>
         {sandbox}
       </section>
@@ -76,7 +76,7 @@ export function ProofLive({ cfg, market, rows, initial, recorded, recordedNote, 
       <section className="section" id="solvency" aria-labelledby="solvency-h">
         <div className="section-head">
           <h2 id="solvency-h">Solvency, {MARKET_INFO[market].name} market</h2>
-          <span className="note">get_totals against the contract&rsquo;s USDC balance</span>
+          <span className="note">What the contract owes, against the dollars it holds</span>
         </div>
         <Solvency market={market} d={d} />
       </section>
@@ -86,7 +86,7 @@ export function ProofLive({ cfg, market, rows, initial, recorded, recordedNote, 
           <h2 id="verifier-h">Bundle verifier</h2>
           <span className="note">SHA-256 by SubtleCrypto in this browser</span>
         </div>
-        {d.kind === "none" ? <NotDeployed market={market} what="print to check" /> : !params ? <RpcError read={d.params ?? { ok: false, error: "not read", lastGood: null }} href="/proof#verifier" model={d.kind === "model"} /> : null}
+        {d.kind === "none" ? <NotDeployed market={market} what="print to check" /> : !params ? <RpcError read={d.params ?? { ok: false, error: "not read", lastGood: null }} href="/auction/prints#verifier" model={d.kind === "model"} /> : null}
         {recordedNote}
         {verifyNow ? (
           <div style={{ marginTop: 12 }}>
@@ -100,8 +100,8 @@ export function ProofLive({ cfg, market, rows, initial, recorded, recordedNote, 
   );
 }
 
-function Contracts({ d, explorer }: { d: ProofData; explorer: string | null }) {
-  if (d.contracts.length === 0) return <Empty>No market is deployed yet, so there are no contracts to list. deployments.json has an empty markets list.</Empty>;
+export function Contracts({ d, explorer }: { d: ProofData; explorer: string | null }) {
+  if (d.contracts.length === 0) return <Empty>No market is deployed yet, so there are no contracts to list.</Empty>;
   const data = d.contracts;
   return (
     <div className="table-wrap">
@@ -151,7 +151,7 @@ function Contracts({ d, explorer }: { d: ProofData; explorer: string | null }) {
   );
 }
 
-function Solvency({ market, d }: { market: MarketId; d: ProofData }) {
+export function Solvency({ market, d }: { market: MarketId; d: ProofData }) {
   if (d.kind === "none") return <NotDeployed market={market} what="balance" />;
   const params = d.params ? valueOf(d.params) : null;
   const totalsR = d.totals;
@@ -191,7 +191,7 @@ function Solvency({ market, d }: { market: MarketId; d: ProofData }) {
               <td className="num">{fmtUsd(sum)}</td>
             </tr>
             <tr>
-              <th scope="row">{model ? "USDC deposited (model ledger)" : `USDC held (ft_balance_of on ${params.usdc})`}</th>
+              <th scope="row">{model ? "USDC deposited (model ledger)" : `USDC held by the contract (read from the token ${params.usdc})`}</th>
               <td className="num">{bal === null ? <span className="bad">read failed</span> : fmtUsd(bal)}</td>
             </tr>
             <tr>

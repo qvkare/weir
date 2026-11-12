@@ -38,7 +38,7 @@ export async function HowPage({ market }: { market: MarketId }) {
   const params = live ?? exampleParams();
   // Worked examples in round dollars, put on the tick grid.
   const snap = (micro: number) => Math.max(params.tick, Math.round(micro / params.tick) * params.tick);
-  const paramsNote = live ? `${MARKET_INFO[market].name} market parameters, read from get_params${core.src.kind === "model" ? " of the model" : ""}.` : "Example parameters (the fast model's), because no market is deployed yet.";
+  const paramsNote = live ? `${MARKET_INFO[market].name} market parameters, read from the contract${core.src.kind === "model" ? " (the model)" : ""} when this page was published.` : "Example parameters (the fast model's), because no market is deployed yet.";
   const f = funding();
   const intents = buildData().modules.intents;
 
@@ -119,7 +119,7 @@ export async function HowPage({ market }: { market: MarketId }) {
               summary={`Series ${times.series}: auctions from ${fmtUtc(times.auctionOpen)} to the cutoff at ${fmtUtc(times.auctionClose)}, in rounds of ${fmtSpan(params.commit_secs)} commit and ${fmtSpan(params.reveal_secs)} reveal; delivery from ${fmtUtc(times.deliveryStart)} to ${fmtUtc(times.deliveryEnd)}; settlement from ${fmtUtc(times.settleAt)}.`}
             />
             <p className="tiny muted how-dates">
-              {live ? `The series in auction when the site was built (${fmtUtc(now)}). ` : ""}Series {times.series}: auctions {fmtUtc(times.auctionOpen)} to {fmtUtc(times.auctionClose)} · delivery {fmtUtc(times.deliveryStart)} to {fmtUtc(times.deliveryEnd)} · settles from {fmtUtc(times.settleAt)}
+              {live ? `The series in auction when this page was published (${fmtUtc(now)}). ` : ""}Series {times.series}: auctions {fmtUtc(times.auctionOpen)} to {fmtUtc(times.auctionClose)} · delivery {fmtUtc(times.deliveryStart)} to {fmtUtc(times.deliveryEnd)} · settles from {fmtUtc(times.settleAt)}
             </p>
           </div>
         </section>
@@ -231,7 +231,7 @@ export async function HowPage({ market }: { market: MarketId }) {
         <section className="section" id="hedge" aria-labelledby="hedge-h">
           <div className="section-head">
             <h2 id="hedge-h">Payoff and hedge size</h2>
-            <span className="note">Per GPU-hour, at settlement · the band of the open series as read when the site was built ({fmtUtc(core.now)})</span>
+            <span className="note">Per GPU-hour, at settlement · the band of the open series when this page was published ({fmtUtc(core.now)})</span>
           </div>
           <PayoffBlock d={hedge} wall />
         </section>
@@ -246,7 +246,7 @@ export async function HowPage({ market }: { market: MarketId }) {
               {f.tag === "recorded" ? (
                 <>One such transfer is on record: <span className="mono">{shortHash(f.tx.hash, 6, 4)}</span>.</>
               ) : (
-                <>Status: quotes only. No cross-chain transfer into Weir is on record in <code>evidence/</code> yet, so this path is described, not shown working.</>
+                <>Status: quotes only. No cross-chain transfer into Weir is on record yet, so this path is described, not shown working.</>
               )}
             </p>
           </div>
@@ -276,7 +276,7 @@ export async function HowPage({ market }: { market: MarketId }) {
         <section className="section" id="trust" aria-labelledby="trust-h">
           <h2 id="trust-h">Trust</h2>
           <ul className="limits">
-            <li><span>The index is what the reporters say it is, and a majority of them acting together can set the fixing. Today all three are run by one operator, who can set any price, and nothing on chain checks a report against its published data. With all of them present, a print is the median, which a minority cannot move. With one of three absent, either of the other two can leave a bucket without a print; doing that selectively shifts the fixing by the difference between the average of all buckets and the average of the ones it lets through, as long as {fmtInt(params.min_prints)} remain. Doing it more often makes the series void, which pays both sides half the band. A reporter who also trades can profit from that when auction prices have moved away from the centre of the band, by holding the side that cost less than half and then causing the void. Reporters cannot take funds. The remedy is more reporters run by independent parties, which this deployment does not have. Every report carries the hash of its data, so anyone can recompute it on <Link href="/proof#verifier">Proof</Link>.</span><code>reporters</code></li>
+            <li><span>The index is what the reporters say it is, and a majority of them acting together can set the fixing. Today all three are run by one operator, who can set any price, and nothing on chain checks a report against its published data. With all of them present, a print is the median, which a minority cannot move. With one of three absent, either of the other two can leave a bucket without a print; doing that selectively shifts the fixing by the difference between the average of all buckets and the average of the ones it lets through, as long as {fmtInt(params.min_prints)} remain. Doing it more often makes the series void, which pays both sides half the band. A reporter who also trades can profit from that when auction prices have moved away from the centre of the band, by holding the side that cost less than half and then causing the void. Reporters cannot take funds. The remedy is more reporters run by independent parties, which this deployment does not have. Every report carries the hash of its data, so anyone can recompute it on <Link href="/auction/prints#verifier">Proof</Link>.</span><code>reporters</code></li>
             <li><span>A late revealer has seen the earlier reveals and can still choose not to reveal. That costs {fmtBps(params.forfeit_bps)} of its lock and the {fmtUsd(params.commit_fee)} fee, and it can change who else is filled.</span><code>last look</code></li>
             <li><span>A determined bidder can fill all {fmtInt(params.max_commits)} slots of a round; at {fmtUsd(params.commit_fee)} a commit that costs {fmtUsd(BigInt(params.max_commits) * BigInt(params.commit_fee))} a round. A price on blocking, not a ban.</span><code>max_commits, commit_fee</code></li>
             <li><span>The contract trusts the USDC token contract named in its parameters{live ? `: ${live.usdc}` : ""}.</span><code>usdc</code></li>

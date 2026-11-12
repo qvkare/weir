@@ -13,9 +13,9 @@ export default function SpecPage() {
         <header className="page-head">
           <span className="eyebrow">Specification{specVersion ? ` · version ${specVersion}` : ""}</span>
           <h1>The rules, as written</h1>
-          <p className="sub">docs/SPEC.md, the source of truth. The contract and the engine are written from it independently and must agree on every number; where code and this text differ, the code is wrong.</p>
+          <p className="sub">The specification, the source of truth. The contract and the engine are written from it independently and must agree on every number; where code and this text differ, the code is wrong.</p>
         </header>
-        {spec ? <MarkdownDoc text={spec} /> : <Empty>The specification was not found at build time.</Empty>}
+        {spec ? <MarkdownDoc text={spec} /> : <Empty>The specification is not available in this version of the page.</Empty>}
       </div>
     </main>
   );

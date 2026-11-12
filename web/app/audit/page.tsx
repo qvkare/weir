@@ -12,13 +12,13 @@ export default function AuditPage() {
     <main id="main">
       <div className="wrap">
         <header className="page-head">
-          <span className="eyebrow">Review record · docs/AUDIT.md</span>
+          <span className="eyebrow">Review record</span>
           <h1>What the review found</h1>
           <p className="sub">
-            The reviewer&rsquo;s own record, as written: an AI reviewer that did not write the contract, in four passes, against specifications 0.3, 0.4, 0.5 and 0.6. It is not an audit by a security firm. The findings are summarised on <Link href="/proof#audited">Proof</Link>; the rules they refer to are in the <Link href="/spec">specification</Link>.
+            The reviewer&rsquo;s own record, as written: an AI reviewer that did not write the contract, in four passes, against specifications 0.3, 0.4, 0.5 and 0.6. It is not an audit by a security firm. The findings are summarised on <Link href="/proof/review">Proof</Link>; the rules they refer to are in the <Link href="/spec">specification</Link>.
           </p>
         </header>
-        {audit ? <MarkdownDoc text={audit} tocLabel="Parts of the record" /> : <Empty>The review record was not found at build time.</Empty>}
+        {audit ? <MarkdownDoc text={audit} tocLabel="Parts of the record" /> : <Empty>The review record is not available in this version of the page.</Empty>}
       </div>
     </main>
   );

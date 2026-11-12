@@ -19,6 +19,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readBuildData } from "../lib/build-data.ts";
 import { route } from "../worker/route.ts";
+import { APP_VIEWS } from "../lib/app-views.ts";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
 // The model's clock is pinned (lib/model.ts, modelNow), so the checks do not depend on the minute
@@ -130,21 +131,24 @@ async function api(base: string, path: string, status: number): Promise<Record<s
 if (!process.argv.includes("--no-build")) build(true);
 
 const PAGES: [string, string[]][] = [
-  ["/", ["GPU hours,", "priced today.", "See the live round", "How it works", "Markets · last index print, $/GPU-h", "Clearings", "Long price, $/GPU-h", "Cleared, UTC", "drawn as ridgelines", "Over 69 delivery weeks", "Three chips, a market each.", "H200", "A100 80 GB", "Check it yourself.", "All three price reporters are run by one operator today, who can set any price.", "The index is computed from the public price lists of", "Vast.ai", "RunPod", "Akash", "Lium", "Verda", "Shadeform", "no relationship with Weir is implied", "Sealed bids, one price,", "Bids arrive sealed", "One price clears the round", "worked example", "The life of a round", "Agents on this market", "Sources around the median", "A print, checked here", "Last events on chain", "What the review found,", "not customers, and not an audit firm", "Built by Qvkare.", "Blocks & pixel maxi", "Linea MCP", "Mirror Search", "Copil", "1st place, Linea Dev Cook-Off.", "2nd place, Chainlink Chromion Hackathon.", "an independent project that shares no code with this one", "Using it", "test dollars; no real money moves.", "Every limit", "What you are trusting", "Model figures, computed when the site was built", "Model data, not the chain"]],
+  ["/", ["GPU hours,", "priced today.", "See the live round", "How it works", "Markets · last index print, $/GPU-h", "Clearings", "Long price, $/GPU-h", "Cleared, UTC", "drawn as ridgelines", "Over 69 delivery weeks", "Three chips, a market each.", "H200", "A100 80 GB", "Check it yourself.", "All three price reporters are run by one operator today, who can set any price.", "The index is computed from the public price lists of", "Vast.ai", "RunPod", "Akash", "Lium", "Verda", "Shadeform", "no relationship with Weir is implied", "Sealed bids, one price,", "Bids arrive sealed", "One price clears the round", "worked example", "The life of a round", "Agents on this market", "Sources around the median", "A print, checked here", "Last events on chain", "What the review found,", "not customers, and not an audit firm", "Built by Qvkare.", "Blocks & pixel maxi", "Linea MCP", "Mirror Search", "Copil", "1st place, Linea Dev Cook-Off.", "2nd place, Chainlink Chromion Hackathon.", "Using it", "test dollars; no real money moves.", "Every limit", "What you are trusting", "Model figures, computed when this page was published", "Model data, not the chain"]],
   ["/?m=fast", ["H100 hourly · series", "Model data, not the chain"]],
   ["/?m=h100-fast", ["H100 hourly · series", "Hourly demo"]],
   ["/?m=h200-weekly", ["H200 weekly · series", "Weekly auction"]],
   ["/?m=a100-80-weekly", ["A100 80 GB weekly · series"]],
   // The range is applied in the browser; the static page carries the links and the default range.
-  ["/proof?m=h200-weekly&range=30d", ["Index, last 7 d", "30 d", "The index and its sources"]],
-  ["/proof?m=fast&range=6h", ["Index, last 6 h", "1 h", "24 h"]],
-  ["/auction", ["Sealed book", "Bid with an agent", "Recent rounds", "Series and phase clock"]],
-  ["/auction?m=fast", ["Sealed book", "Recent rounds"]],
+  ["/auction/prints?m=h200-weekly&range=30d", ["Index, last 7 d", "30 d", "The index and its sources", "Index prints", "Median", "Hashes"]],
+  ["/auction/prints?m=fast&range=6h", ["Index, last 6 h", "1 h", "24 h"]],
+  ["/auction", ["Round in progress", "Sealed book", "Clearings", "Bid with an agent", "Series and phase clock", "Commit fees held"]],
+  ["/auction/book", ["Sealed book", "Sides, sizes and prices appear as each commit is revealed"]],
+  ["/auction/clearings", ["Clearings", "Long price, $/GPU-h", "Forward, $/GPU-h", "Cleared, UTC"]],
+  ["/auction?m=fast", ["H100 hourly", "Round in progress"]],
   ["/simulate", ["Simulation. Nothing here touches the chain.", "Skip to clearing", "Run 10 rounds"]],
   ["/simulate?m=fast", ["H100 hourly (demo) market"]],
   ["/simulate?m=a100-80-weekly", ["A100 80 GB weekly market"]],
-  ["/auction?m=h200-weekly", ["Sealed book", "Recent rounds", "Commit fees held"]],
-  ["/proof?m=a100-80-weekly", ["Solvency, A100 80 GB weekly market", "evidence/bundles/a100-80/"]],
+  ["/auction?m=h200-weekly", ["H200 weekly", "Commit fees held"]],
+  ["/proof/solvency?m=a100-80-weekly", ["Solvency, A100 80 GB weekly market", "What the contract owes"]],
+  ["/auction/prints?m=a100-80-weekly", ["Recorded sample"]],
   ["/spec", ["The rules, as written", "Settlement"]],
   ["/audit", ["What the review found", "in four passes", "not an audit by a security firm", "Fourth pass (spec 0.6)", "Verdict"]],
   ["/simulate?m=h100-fast", ["Silent reporters (void series)", "cancelled at the centre of the band"]],
@@ -152,7 +156,10 @@ const PAGES: [string, string[]][] = [
   ["/how?motion=reduce", ["One round, as work", "One price for all", "Who is in the room", "Payoff and hedge size"]],
   ["/backtest", ["What a hedge would have done", "The rule", "Average stayed inside the band in", "What this does not show"]],
   ["/how", ["cancelled at the centre of the band", "who also trades", "How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
-  ["/proof", ["What you are trusting today", "Residual risks before real money", "All three are run by one operator, who can set any price", "Nothing on chain checks a report against its published data", "about 0.029 $ a unit", "up to 0.299 $ a unit", "A round can be blocked for 6.40 $", "Both are off by default", "remove protections", "settlement turns void", "No mainnet history and no upgrade path", "Contract against the engine", "264 of 264 checks passed", "1,315 state changes, 2,315 views and 61 refusals", "not on a public network", "Audited", "Four passes", "4 passes, against specifications 0.3, 0.4, 0.5 and 0.6", "Closed by a rule", "Open, stated as limits in the specification", "A fix that was itself found faulty", "That fix was faulty", "$6.40 a round", "6.40 $ a round at the 0.10 $ commit fee", "0.299 $ a unit, 49.8% of the band", "About 0.029 $ a unit", "limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee", "audit4_a_non_reporter_cannot_move_the_void_payout", "not fit for real dollars until", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "NEAR testnet", "The index and its sources"]],
+  ["/proof/review", ["What you are trusting today", "Residual risks before real money", "All three are run by one operator, who can set any price", "Nothing on chain checks a report against its published data", "about 0.029 $ a unit", "up to 0.299 $ a unit", "A round can be blocked for 6.40 $", "Both are off by default", "remove protections", "settlement turns void", "No mainnet history and no upgrade path", "Contract against the engine", "264 of 264 checks passed", "1,315 state changes, 2,315 views and 61 refusals", "not on a public network", "4 passes, against specifications 0.3, 0.4, 0.5 and 0.6", "Closed by a rule", "Open, stated as limits in the specification", "A fix that was itself found faulty", "That fix was faulty", "$6.40 a round", "6.40 $ a round at the 0.10 $ commit fee", "0.299 $ a unit, 49.8% of the band", "About 0.029 $ a unit", "limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee", "audit4_a_non_reporter_cannot_move_the_void_payout", "not fit for real dollars until", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "NEAR testnet", "All three price reporters are run by one operator today, who can set any price."]],
+  ["/proof", ["Contracts", "Keys and code hash", "Parameters, H100 weekly market", "max_spread_bps", "commit_fee", "NEAR testnet"]],
+  ["/proof/solvency", ["Solvency, H100 weekly market", "Burned", "What the contract owes, against the dollars it holds"]],
+  ["/proof/record", ["transactions in the deployment record", "Accounts created", "Keys added", "The key rotation"]],
   ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book", "max_round_lock", "Three things bound an agent"]],
 ];
 
@@ -168,6 +175,10 @@ try {
   check(front.includes('src="/maker/qvkare.png"'), "/: the portrait is not served from this site");
   for (const m of front.matchAll(/<a [^>]*href="(https:\/\/[^"]+)"[^>]*>/g)) check(/target="_blank"/.test(m[0]) && /rel="noopener"/.test(m[0]), `/: outside link ${m[1]} does not open in a new tab with rel=noopener`);
   check(!/written by AI|built by AI/i.test(text(front)), "/: the page calls the project written or built by AI");
+  // Levee is named in the README, which the hackathon's rule asks for; not on the site.
+  for (const [p, body] of seen) check(!/Levee/.test(text(body)), `${p}: names Levee`);
+  // Visitor wording: no repository paths or build jargon in what a visitor reads.
+  for (const [p, body] of seen) if (p !== "/audit" && p !== "/spec") for (const bad of ["evidence/", "backtest/results", "deployments.json", "docs/AUDIT.md", "docs/SPEC.md", "integration/RESULTS.md", "at build time", "when this site was built", "when the site was built", "from the build"]) check(!text(body).includes(bad), `${p}: shows "${bad}"`);
   check(text(front).split("AI was used as a tool in developing this project.").length === 2, "/: the line on how AI was used is not there exactly once");
   // Fail open: the built HTML shows the hero and the whole statement, with nothing hidden inline.
   const built = readFileSync(join(out, "index.html"), "utf8");
@@ -176,7 +187,7 @@ try {
   check(!/style="[^"]*(?<![-\w])opacity:\s*0(?![.\d])/.test(built), "index.html: an element starts at opacity 0 inline");
   check(!/style="[^"]*(?<![-\w])opacity:\s*0?\.\d/.test(built), "index.html: an element starts part-transparent inline");
   check(text(built).includes("Over 69 delivery weeks, the weekly average price of an H100 hour"), "index.html: the statement is not whole in the HTML");
-  for (const h of ["/proof#contracts", "/proof#verifier", "/audit", "/how#limits", "/backtest"]) check(front.includes(`href="${h}"`), `/: no link to ${h}`);
+  for (const h of ["/proof", "/auction/prints#verifier", "/audit", "/how#limits", "/backtest"]) check(front.includes(`href="${h}"`), `/: no link to ${h}`);
   // No internal link points at an anchor that its page does not have.
   const anchors = new Set<string>();
   for (const body of seen.values()) for (const m of body.matchAll(/href="(\/[^"#]*)#([a-zA-Z][\w-]*)"/g)) anchors.add(`${m[1]}#${m[2]}`);
@@ -187,13 +198,28 @@ try {
   }
   check(anchors.size > 5, `only ${anchors.size} anchored links found`);
   // ?m= is a redirect to the market's own page; the other parameters ride along.
-  for (const [from, to] of [["/proof?m=h200-weekly", "/m/h200-weekly/proof"], ["/?m=fast&range=6h", "/m/h100-fast?range=6h"], ["/auction?m=weekly", "/auction"], ["/m/h100-weekly/how", "/how"]]) {
+  for (const [from, to] of [["/proof?m=h200-weekly", "/m/h200-weekly/proof"], ["/?m=fast&range=6h", "/m/h100-fast?range=6h"], ["/auction?m=weekly", "/auction"], ["/m/h100-weekly/how", "/how"], ["/proof/review?m=h200-weekly", "/m/h200-weekly/proof/review"], ["/auction/clearings?m=fast&series=1&round=2", "/m/h100-fast/auction/clearings?series=1&round=2"]]) {
     const r = await fetch(server.base + from!, { redirect: "manual" });
     check(r.status === 302 && r.headers.get("location") === to, `${from}: ${r.status} to ${r.headers.get("location")}, expected 302 to ${to}`);
   }
   // Every market's pages exist as files, and each names its market.
+  const SHORT: Record<string, string> = { "h100-fast": "H100 hourly", "h200-weekly": "H200 weekly", "a100-80-weekly": "A100 80 GB weekly" };
+  for (const v of APP_VIEWS) await page(server.base, v.path, ["H100 weekly", v.label]);
+  // Each item of the homepage window's sidebar opens a page that shows that view, marked as the one on screen.
+  const aside = /<aside[^>]*aria-label="Markets and views"[\s\S]*?<\/aside>/.exec(seen.get("/")!)?.[0] ?? "";
+  const hrefs = [...aside.matchAll(/<a [^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map((x) => [x[1]!, text(x[2]!).trim()] as const);
+  check(hrefs.length >= 9, `/: the window's sidebar has ${hrefs.length} links`);
+  for (const [href, label] of hrefs) {
+    const view = APP_VIEWS.find((v) => label.endsWith(v.label) || label.startsWith(v.label));
+    const r = await fetch(server.base + href);
+    const body = await r.text();
+    check(r.ok, `window link ${href}: status ${r.status}`);
+    if (view) check(new RegExp(`aria-current="page"[^>]*>[\\s\\S]{0,600}?${view.label}<`).test(body), `window link ${href}: the page does not show ${view.label} as the current view`);
+  }
   for (const [m, name] of [["h100-fast", "H100 hourly (demo)"], ["h200-weekly", "H200 weekly"], ["a100-80-weekly", "A100 80 GB weekly"]]) {
-    for (const p of ["", "/auction", "/agents", "/proof", "/how", "/simulate"]) await page(server.base, `/m/${m}${p}`, p === "/agents" || p === "" ? [] : [name!]);
+    for (const p of ["", "/how", "/simulate"]) await page(server.base, `/m/${m}${p}`, p === "" ? [] : [name!]);
+    // Every view of the application, for this market: its own page, its own market in the title row.
+    for (const v of APP_VIEWS) await page(server.base, `/m/${m}${v.path}`, [SHORT[m!]!, v.label]);
   }
   for (const m of ["h100-weekly", "h100-fast", "h200-weekly", "a100-80-weekly", "weekly", "fast"]) {
     const s = await api(server.base, `/api/status?m=${m}`, 200);
@@ -205,7 +231,7 @@ try {
       const r = await api(server.base, `/api/round?m=${m}&series=${lc.series}&round=${lc.last_clearing!.round}`, 200);
       check(r.state === "cleared", `/api/round ${m}: state ${String(r.state)}`);
       // The static page shows the round in progress; the browser reads the round asked for.
-      await page(server.base, `/auction?m=${m}&series=${lc.series}&round=${lc.last_clearing!.round}`, ["Sealed book", "Recent rounds"]);
+      await page(server.base, `/auction?m=${m}&series=${lc.series}&round=${lc.last_clearing!.round}`, ["Round in progress"]);
     } else check(false, `/api/status?m=${m}: no last clearing to request`);
   }
   await api(server.base, "/api/status?m=nope", 400);
@@ -243,7 +269,7 @@ if (!process.argv.includes("--no-build")) {
     console.log(`model mode at the edge of the hour on ${server.base}`);
     const home = await page(server.base, "/m/h100-fast", ["Clearings", "Committing", "Cleared"]);
     check(/Series \d+ and \d+/.test(text(home)), "/m/h100-fast at :56: the grid is not filled from the series before");
-    await page(server.base, "/m/h100-fast/auction", ["Round 0", "No round of series", "has cleared yet", "Series and phase clock"]);
+    await page(server.base, "/m/h100-fast/auction", ["Round 0 of series", "No round of series", "has cleared yet", "Series and phase clock"]);
     for (const p of ["/", "/m/h100-fast/proof", "/m/h100-fast/how"]) await page(server.base, p, []);
   } finally {
     server.server.close();

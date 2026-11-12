@@ -1,5 +1,3 @@
-import { MarketSwitch } from "@/components/site-nav.tsx";
-import { liveMarkets } from "@/lib/build.ts";
 import { CopyBlock } from "@/components/copy-block.tsx";
 import { CheckIcon, CrossIcon } from "@/components/icons.tsx";
 import { AgentsBook } from "./agents-book.tsx";
@@ -11,7 +9,8 @@ import { serverReader } from "@/lib/source.ts";
 
 const METHODS = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"];
 
-export async function AgentsPage({ market }: { market: MarketId }) {
+/** The agents view's guide: who can do what, the key, the commit hash, a loop, and the book. */
+export async function AgentsGuide({ market }: { market: MarketId }) {
   const d = deployments();
   const cfg = siteCfg();
   const initial = await loadAgents(serverReader(market));
@@ -77,14 +76,11 @@ for (;;) {
 }`;
 
   return (
-    <main id="main">
-      <div className="wrap">
-        <header className="page-head">
-          <span className="eyebrow">Agents · {MARKET_INFO[market].name} market</span>
-          <MarketSwitch markets={liveMarkets()} />
-          <h1>A key that bids and stops there</h1>
-          <p className="sub">A function-call key can commit, reveal, clear and redeem. Withdrawing needs 1 yoctoNEAR, which that key cannot attach.</p>
-        </header>
+    <div className="px-4 pb-8 md:px-6">
+        <div className="pt-6">
+          <h2 className="font-display m-0 text-2xl text-foreground">A key that bids and stops there</h2>
+          <p className="m-0 mt-2 max-w-2xl text-base text-muted-foreground">A function-call key can commit, reveal, clear and redeem. Withdrawing needs 1 yoctoNEAR, which that key cannot attach.</p>
+        </div>
 
         <section className="section" aria-labelledby="who-h">
           <h2 id="who-h">Who can do what</h2>
@@ -137,8 +133,7 @@ for (;;) {
           </div>
           <AgentsBook cfg={cfg} initial={initial} market={market} />
         </section>
-      </div>
-    </main>
+    </div>
   );
 }
 

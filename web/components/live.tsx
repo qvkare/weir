@@ -101,7 +101,7 @@ export function LiveBar({ st, mode, builtAt, polls, retry, className }: { st: Li
   if (mode === "model") {
     return (
       <p className={cls("live-bar")} role="status">
-        <span className="live-dot model" aria-hidden="true" /> Model figures, computed when the site was built ({fmtUtc(builtAt)}). They do not change in the browser.
+        <span className="live-dot model" aria-hidden="true" /> Model figures, computed when this page was published ({fmtUtc(builtAt)}). They do not change in the browser.
       </p>
     );
   }
@@ -111,7 +111,7 @@ export function LiveBar({ st, mode, builtAt, polls, retry, className }: { st: Li
       <div className={cls("live-bar error")} role="alert">
         <span className="live-dot bad" aria-hidden="true" />
         <span>
-          Could not read the chain just now: {st.error}. {st.from === "live" ? `Showing figures read at ${hms(st.at)} UTC.` : `Showing figures from the build (${fmtUtc(Math.floor(st.at / 1000))}).`}
+          Could not read the chain just now: {st.error}. {st.from === "live" ? `Showing figures read at ${hms(st.at)} UTC.` : `Showing figures as of ${fmtUtc(Math.floor(st.at / 1000))}, when this page was published.`}
         </span>
         <button type="button" className="button ghost live-retry" onClick={retry} disabled={st.busy}>
           {st.busy ? "Reading…" : "Try again"}
@@ -122,7 +122,7 @@ export function LiveBar({ st, mode, builtAt, polls, retry, className }: { st: Li
   if (st.from === "build") {
     return (
       <p className={cls("live-bar")} role="status">
-        <span className="live-dot stale" aria-hidden="true" /> Figures from the build ({fmtUtc(Math.floor(st.at / 1000))}), not live. {st.busy ? "Reading NEAR testnet now…" : null}
+        <span className="live-dot stale" aria-hidden="true" /> Figures as of {fmtUtc(Math.floor(st.at / 1000))}, when this page was published; not live. {st.busy ? "Reading NEAR testnet now…" : null}
       </p>
     );
   }

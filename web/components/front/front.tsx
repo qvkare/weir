@@ -44,7 +44,7 @@ export interface FrontProps {
 }
 
 /** Anchors the homepage used to have, and where their content lives now. */
-const MOVED: Record<string, string> = { round: "/how#round", room: "/how#room", hedge: "/how#hedge", series: "/auction#series", clearing: "/auction", index: "/proof#index", sources: "/proof#sources", hardware: "#markets" };
+const MOVED: Record<string, string> = { round: "/how#round", room: "/how#room", hedge: "/how#hedge", series: "/auction#series", clearing: "/auction", index: "/auction/prints#index", sources: "/auction/prints#sources", hardware: "#markets" };
 
 export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, passes, backdrop, backdropNote, closeBackdrop, agents, findings }: FrontProps) {
   const market = page;
@@ -152,7 +152,7 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
           })}
         </div>
         <p className="m-0 mt-6 text-sm text-muted-foreground">
-          {live ? `Read from NEAR ${cfg.network} at ${fmtUtcTime(Math.floor(st.at / 1000), true)}.` : `As of the build, ${fmtUtc(cfg.builtAt)}.`}
+          {live ? `Read from NEAR ${cfg.network} at ${fmtUtcTime(Math.floor(st.at / 1000), true)}.` : `As of ${fmtUtc(cfg.builtAt)}, when this page was published.`}
         </p>
       </Section>
 
@@ -160,30 +160,34 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
 
       <Section id="check" lead="Check it yourself." rest="The live figures come from contracts anyone can read.">
         <div className="grid gap-4 md:grid-cols-3">
-          <Check href="/proof#contracts" title={`Contracts on NEAR ${cfg.network}`}>
+          <Check href="/proof" title={`Contracts on NEAR ${cfg.network}`}>
             Their keys, code and parameters, read in your browser.
           </Check>
           <Check href="/audit" title={`A review in ${passes} passes`}>
             By an AI reviewer, not an audit firm. Every finding and its status.
           </Check>
-          <Check href="/proof#verifier" title="A print, re-hashed here">
+          <Check href="/auction/prints#verifier" title="A print, re-hashed here">
             Fetch the data behind an index print and hash it in this browser.
           </Check>
         </div>
-        <p id="limits" className="m-0 mt-10 max-w-3xl rounded-2xl bg-card p-6 text-base text-foreground ring-1 ring-border">
+        <p id="limits" className="m-0 mt-10 max-w-none rounded-2xl bg-card p-6 text-base text-foreground ring-1 ring-border">
           All three price reporters are run by one operator today, who can set any price. This is NEAR {cfg.network} with test dollars; no real money moves.{" "}
           <Link href="/how#limits" className="text-foreground underline underline-offset-4">
             Every limit
           </Link>
         </p>
-        <div className="mt-14 max-w-3xl">
+        <div className="mt-16 grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+          <div>
+            <h3 className="font-display m-0 text-2xl text-foreground">Questions</h3>
+            <p className="m-0 mt-3 max-w-sm text-base text-muted-foreground">What people ask first: what they are trusting, and how to use it. Each answer links to where it is shown.</p>
+          </div>
           <GroupedFaq
             groups={[
               {
                 title: "What you are trusting",
                 items: [
-                  { question: "Who sets the index?", answer: <>Three named reporters post a price each hour; the print is their median. One operator runs all three today, and nothing on chain checks a report against its data. <Link href="/proof#verifier">Re-hash one</Link>.</> },
-                  { question: "Can my position be liquidated?", answer: <>No. A LONG and a SHORT together are backed by the whole band, locked when they open. The payout stops at the band&rsquo;s edges, and nothing is called for later. <Link href="/proof#solvency">Solvency, read live</Link>.</> },
+                  { question: "Who sets the index?", answer: <>Three named reporters post a price each hour; the print is their median. One operator runs all three today, and nothing on chain checks a report against its data. <Link href="/auction/prints#verifier">Re-hash one</Link>.</> },
+                  { question: "Can my position be liquidated?", answer: <>No. A LONG and a SHORT together are backed by the whole band, locked when they open. The payout stops at the band&rsquo;s edges, and nothing is called for later. <Link href="/proof/solvency">Solvency, read live</Link>.</> },
                   { question: "Is any of this real money?", answer: <>No. Every contract is on NEAR {cfg.network}, with a test dollar anyone can mint.</> },
                 ],
               },
@@ -192,7 +196,7 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
                 items: [
                   { question: "What is traded?", answer: <>A week-ahead position on the price of one GPU-hour: LONG for those who buy compute, SHORT for those who own GPUs. It settles in dollars on the index; no GPU time changes hands on Weir.</> },
                   { question: "How does an agent bid?", answer: <>With a NEAR function-call key that can commit, reveal, clear and redeem, and cannot withdraw. <Link href={withMarket("/agents", market)}>Setting one up</Link>.</> },
-                  { question: "Where do the index prices come from?", answer: <>Six public price lists, read on a fixed schedule by three reporters; each print is the median of their reports. <Link href="/proof#sources">The last print&rsquo;s sources</Link>.</> },
+                  { question: "Where do the index prices come from?", answer: <>Six public price lists, read on a fixed schedule by three reporters; each print is the median of their reports. <Link href="/auction/prints#sources">The last print&rsquo;s sources</Link>.</> },
                 ],
               },
             ]}

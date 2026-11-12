@@ -77,7 +77,7 @@ export function BundleVerifier({ prints, bundlesBase, recorded, tick, model }: P
         </button>
       </p>
       {model ? <p className="small flag">In model mode the reports carry model hashes with no files behind them, so only the medians are checked against the prints. The recorded sample below is a real bundle.</p> : null}
-      {!bundlesBase && !model ? <p className="small flag">No bundle host is configured (bundles_base in deployments.json), so report hashes cannot be fetched yet. Unverified.</p> : null}
+      {!bundlesBase && !model ? <p className="small flag">No bundle host is set for this deployment, so report hashes cannot be fetched yet. Unverified.</p> : null}
       {groups.map((g, i) => (
         <div className="table-wrap" key={`${runId}-${i}`}>
           <table>

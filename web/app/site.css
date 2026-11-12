@@ -13,6 +13,8 @@
 
 @source "../components/front";
 @source "../components/ui";
+@source "../components/pages/agents-page.tsx";
+@source "../components/pages/app-page.tsx";
 
 /* Fonts: Tailwind's font-sans and font-mono read --font-sans and --font-mono, which next/font sets
    on <html> (Geist, Geist Mono), so they are not redefined here. Dark mode needs no variant: the
@@ -150,4 +152,11 @@
   --ridge-0: color-mix(in srgb, #4a3a35 70%, var(--background));
   --ridge-1: color-mix(in srgb, #2a2422 75%, var(--background));
   --ridge-2: color-mix(in srgb, #141213 85%, var(--background));
+}
+
+/* The review view's status filter (components/front/app/views.tsx): hides the other tables. */
+[data-filter="open"] [data-findings]:not([data-findings="open"]),
+[data-filter="stated"] [data-findings]:not([data-findings="stated"]),
+[data-filter="closed"] [data-findings]:not([data-findings="closed"]) {
+  display: none;
 }

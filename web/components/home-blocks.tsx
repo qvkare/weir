@@ -63,7 +63,7 @@ export function HeroIndex({ d }: HomeView) {
           last ? (
             <>
               Final print for the bucket from {fmtUtcTime(last.bucket)}, {fmtDuration(core.now - last.bucket)} old
-              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href={`${withMarket("/proof", d.market)}#sources`}>Sources</a>
+              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href={`${withMarket("/auction/prints", d.market)}#sources`}>Sources</a>
             </>
           ) : (
             "No print has become final yet."
@@ -138,12 +138,12 @@ function SourcesTable({ loaded, hostedError, reporterOfBundle, tick }: { loaded:
         <caption>
           {recorded ? (
             <>
-              <span className="flag">Recorded sample</span>, bucket {fmtUtc(b.bucket)}, from <code>{loaded.origin.kind === "recorded" ? loaded.origin.file : ""}</code>. It is not the data behind the print above
+              <span className="flag">Recorded sample</span>, bucket {fmtUtc(b.bucket)}, from a file recorded with the project, not a print on chain. It is not the data behind the print above
               {hostedError ? ` (the bundle host failed: ${hostedError})` : ""}.
             </>
           ) : (
             <>
-              Sources in {reporterOfBundle ? shortAccount(reporterOfBundle) : "the first reporter"}&rsquo;s bundle for {fmtUtc(b.bucket)}. Re-hashed on <Link href="/proof#verifier">Proof</Link>.
+              Sources in {reporterOfBundle ? shortAccount(reporterOfBundle) : "the first reporter"}&rsquo;s bundle for {fmtUtc(b.bucket)}. Re-hashed in <Link href="/auction/prints#verifier">Index prints</Link>.
             </>
           )}
         </caption>
@@ -224,7 +224,7 @@ export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; on
       {RANGES[market].map((x) => (
         <a
           key={x.id}
-          href={`${withMarket("/proof", market, `range=${x.id}`)}#index`}
+          href={`${withMarket("/auction/prints", market, `range=${x.id}`)}#index`}
           aria-current={x.id === r.id ? "true" : undefined}
           onClick={
             onRange
@@ -254,7 +254,7 @@ export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; on
       {nav}
     </div>
   );
-  const problem = coreProblem(core, market, withMarket("/proof", market), "index history");
+  const problem = coreProblem(core, market, withMarket("/auction/prints", market), "index history");
   if (problem || !params) return (
     <>
       {head}
@@ -479,7 +479,7 @@ export function Facts({ d, fundingTag }: HomeView & { fundingTag: "recorded" | "
           A LONG and a SHORT together are backed by exactly the band
           {opened && params ? `, ${fmtPrice(opened.band, params.tick)} in series ${opened.series}` : ""}, locked when the position opens. Nothing is liquidated.
         </p>
-        <Link className="small" href="/proof#solvency">
+        <Link className="small" href="/proof/solvency">
           Solvency, read live
         </Link>
       </div>

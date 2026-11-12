@@ -425,9 +425,9 @@ export function ReviewWall({ passes, total }: { passes: number; total: number })
         }
         sentence={`An AI reviewer's findings from ${passes} passes over the contract: not customers, and not an audit firm. Open ones first.`}
       />
-      <p className="m-0 mb-8 max-w-3xl rounded-2xl bg-card p-6 text-base text-foreground ring-1 ring-border">
+      <p className="m-0 mb-8 max-w-none rounded-2xl bg-card p-6 text-base text-foreground ring-1 ring-border">
         All three price reporters are run by one operator today, who can set any price. Nothing on chain checks a report against its data.{" "}
-        <Link href="/proof#audited" className="text-foreground underline underline-offset-4">
+        <Link href="/proof/review" className="text-foreground underline underline-offset-4">
           What you are trusting
         </Link>
       </p>
@@ -445,7 +445,7 @@ export function ReviewWall({ passes, total }: { passes: number; total: number })
         ))}
       </div>
       <p className="m-0 mt-6 text-sm text-muted-foreground">
-        {WALL.length} of {total} findings, quoted from the record (<Link href="/audit">docs/AUDIT.md</Link>). The rest, with the tests that keep them, are on <Link href="/proof#audited">Proof</Link>.
+        {WALL.length} of {total} findings, quoted from the <Link href="/audit">review record</Link>. The rest, with the tests that keep them, are on <Link href="/proof/review">Proof</Link>.
       </p>
     </Shell>
   );
@@ -503,13 +503,6 @@ export function BuiltBy() {
         </ul>
       </div>
       <p className="m-0 mt-10 max-w-none text-sm text-muted-foreground">AI was used as a tool in developing this project.</p>
-      <p className="m-0 mt-2 max-w-none text-sm text-muted-foreground">
-        The same author also entered{" "}
-        <a href="https://github.com/qvkare/levee" {...ext} className="text-foreground underline underline-offset-4">
-          Levee
-        </a>
-        , an independent project that shares no code with this one.
-      </p>
     </Shell>
   );
 }

@@ -15,7 +15,7 @@
     "binding": "ASSETS",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/", "/auction", "/agents", "/proof", "/how", "/simulate", "/api/*", "/m/h100-weekly", "/m/h100-weekly/*", "/m/weekly", "/m/weekly/*", "/m/fast", "/m/fast/*"]
+    "run_worker_first": ["/", "/auction", "/auction/book", "/auction/clearings", "/auction/prints", "/agents", "/proof", "/proof/solvency", "/proof/review", "/proof/record", "/how", "/simulate", "/api/*", "/m/h100-weekly", "/m/h100-weekly/*", "/m/weekly", "/m/weekly/*", "/m/fast", "/m/fast/*"]
   },
   "workers_dev": true,
   "preview_urls": false

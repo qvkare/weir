@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { AgentsPage } from "@/components/pages/agents-page.tsx";
+import { AppPage } from "@/components/pages/app-page.tsx";
+import { viewById } from "@/lib/app-views.ts";
 import { marketParams, type MarketPageProps } from "@/lib/market-routes.ts";
 
-export const metadata: Metadata = { title: "Agents", description: "Give an agent a NEAR function-call key that can commit, reveal, clear and redeem on Weir, and cannot withdraw. The commit string, a minimal loop, and the agents on the book." };
+export const metadata: Metadata = { title: "Agents", description: viewById("agents").description };
 export const dynamicParams = false;
 export const generateStaticParams = marketParams;
 
 export default async function Page({ params }: MarketPageProps) {
-  return <AgentsPage market={(await params).market} />;
+  return <AppPage viewId="agents" market={(await params).market} />;
 }

@@ -102,7 +102,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <SharedDefs />
         {model ? (
           <div className="ribbon" role="note">
-            <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script when the site was built.
+            <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script when this page was published.
           </div>
         ) : null}
         <Navbar />

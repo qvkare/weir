@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BacktestChart } from "@/components/backtest-chart.tsx";
 import { buildData } from "@/lib/build.ts";
 import { caveatsFromMarkdown, coverage, readBacktest, type BacktestWeek } from "@/lib/backtest.ts";
-import { fmtBps, fmtInt } from "@/lib/format.ts";
+import { fmtBps, fmtInt, fmtUtc } from "@/lib/format.ts";
 
 export const dynamic = "force-static";
 export const metadata: Metadata = { title: "Backtest", description: "Hedged against unhedged H100 cost over real price history, week by week, with band coverage and what the backtest does not show." };
@@ -32,7 +32,7 @@ export default function BacktestPage() {
           <section className="section">
             <div className="state error" role="alert">
               <p>
-                <b>Backtest file missing.</b> {raw.siteMissing ? "backtest/results/site.json was not in the repository when this site was built." : `backtest/results/site.json was read but held no usable week${bt ? ` (${bt.dropped} rows without every figure were left out)` : ""}.`} Nothing is drawn rather than an empty chart.
+                <b>Backtest results missing.</b> {raw.siteMissing ? "The backtest's results were not available when this page was published." : `The backtest's results held no usable week${bt ? ` (${bt.dropped} rows without every figure were left out)` : ""}.`} Nothing is drawn rather than an empty chart.
               </p>
             </div>
           </section>
@@ -236,10 +236,10 @@ export default function BacktestPage() {
               ))}
             </ul>
           ) : (
-            <p className="muted">backtest/results/summary.md was not found, so its caveats cannot be shown. The clearing prices above are modelled.</p>
+            <p className="muted">The backtest's own list of caveats was not available when this page was published. The clearing prices above are modelled.</p>
           )}
           <p className="tiny muted" style={{ marginTop: 16 }}>
-            Source: backtest/results/site.json, summary.json and summary.md, produced by the backtest package and read when this site was built. {bt.dropped ? `${bt.dropped} rows without every figure were left out.` : ""}
+            Figures from Weir&rsquo;s backtest of its own index on public provider prices, as of {fmtUtc(buildData().builtAt)}, when this page was published; the rule is above. {bt.dropped ? `${bt.dropped} rows without every figure were left out.` : ""}
           </p>
         </section>
       </div>
