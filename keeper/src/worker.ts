@@ -1,21 +1,28 @@
-// Cloudflare Worker adapter: the cron trigger runs one tick, and `fetch` serves the GET routes.
-// Bindings: `STORE` (a KV namespace). Secrets: `REPORTERS`, `AGENTS`, `SWARM_SECRET`, optional `KEEPER`.
-// Optional variable: `BUDGET` (outbound requests per tick, default 40).
-import deployments from "../../deployments.json" with { type: "json" };
-import type { Deployments } from "./config.ts";
-import { readSecrets } from "./config.ts";
-import { DEFAULT_BUDGET, runTick } from "./keeper.ts";
-import { handle } from "./routes.ts";
-import type { KeeperStore } from "./store.ts";
+// Cloudflare Worker: a thin front for the keeper's Durable Object (durable.ts), which holds the
+// store and runs the tick on its own alarm. The Worker's handlers do almost no work of their
+// own, so they stay far under the free plan's 10 ms of CPU:
+//   scheduled  the cron watchdog: asks the object to arm its alarm if none is armed;
+//   fetch      the public GET routes, passed to the object; bundles and /latest.json go
+//              through the Cache API first, so repeated reads need not wake the object.
+// Binding: `KEEPER_OBJECT` (the Durable Object namespace, class `KeeperObject`).
+// Secrets: `REPORTERS`, `AGENTS`, `SWARM_SECRET`, optional `KEEPER`. Variable: `BUDGET`.
+import { ENSURE_PATH, KeeperObject, OBJECT_NAME, type KeeperVars } from "./durable.ts";
+import { answerWithoutStore } from "./routes.ts";
 
-export interface Env {
-  STORE: KeeperStore;
-  REPORTERS?: string;
-  AGENTS?: string;
-  SWARM_SECRET?: string;
-  /** Optional housekeeping account, `{ account_id, secret_key }`. */
-  KEEPER?: string;
-  BUDGET?: string;
+export { KeeperObject };
+
+/** What the Worker uses of a Durable Object namespace binding and its stub. */
+export interface ObjectNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
+
+export interface Env extends KeeperVars {
+  KEEPER_OBJECT: ObjectNamespace;
+}
+
+export interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
 }
 
 interface ScheduledController {
@@ -23,37 +30,48 @@ interface ScheduledController {
   readonly cron: string;
 }
 
-interface ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void;
+/** What the Worker uses of `caches.default`. Absent outside Cloudflare (Node tests can install one). */
+export interface CacheLike {
+  match(request: Request): Promise<Response | undefined>;
+  put(request: Request, response: Response): Promise<void>;
 }
 
-/** One tick, as the cron trigger runs it. Exported for tests. */
-export function tickOnce(env: Env, now: number, extra: { deployments?: Deployments } = {}) {
-  return runTick(
-    {
-      deployments: extra.deployments ?? (deployments as Deployments),
-      store: env.STORE,
-      secrets: readSecrets(env),
-      fetch: (url, init) => fetch(url, init),
-      budget: env.BUDGET ? Number(env.BUDGET) : DEFAULT_BUDGET,
-    },
-    now,
-  );
-}
+const defaultCache = (): CacheLike | null => (globalThis as { caches?: { default?: CacheLike } }).caches?.default ?? null;
 
-/** The Worker's handlers over a given market list. The deployed Worker is `makeWorker` over
- * the bundled `deployments.json`; tests pass their own list, so they do not depend on what
- * the repository's file lists. */
-export function makeWorker(markets: Deployments) {
-  return {
-    async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-      ctx.waitUntil(tickOnce(env, Math.floor(controller.scheduledTime / 1000), { deployments: markets }));
-    },
+const keeper = (env: Env) => env.KEEPER_OBJECT.get(env.KEEPER_OBJECT.idFromName(OBJECT_NAME));
 
-    fetch(request: Request, env: Env): Promise<Response> {
-      return handle(request, env.STORE);
-    },
-  };
-}
+/** Responses that may be cached at Cloudflare's edge: content-addressed bundles (immutable) and
+ * /latest.json (30 s), as their own Cache-Control headers say. /status and /health are not. */
+const cacheable = (request: Request): boolean => {
+  if (request.method.toUpperCase() !== "GET") return false;
+  const path = new URL(request.url).pathname;
+  return path.startsWith("/bundles/") || path === "/latest.json";
+};
 
-export default makeWorker(deployments as Deployments);
+const worker = {
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const res = await keeper(env).fetch(new Request(`https://keeper.internal${ENSURE_PATH}`, { method: "POST" }));
+    if (!res.ok) console.error(`watchdog: the keeper object answered ${res.status}`);
+    else await res.body?.cancel();
+  },
+
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+    // OPTIONS, other methods and unknown paths (the watchdog's path among them) never reach the object.
+    const early = answerWithoutStore(request);
+    if (early) return early;
+    const cache = cacheable(request) ? defaultCache() : null;
+    if (cache) {
+      const hit = await cache.match(request);
+      if (hit) return hit;
+    }
+    const res = await keeper(env).fetch(request);
+    if (cache && res.status === 200) {
+      const put = cache.put(request, res.clone());
+      if (ctx) ctx.waitUntil(put);
+      else await put;
+    }
+    return res;
+  },
+};
+
+export default worker;

@@ -1,17 +1,16 @@
-// The Worker's routes and its cron handler, with an in-memory KV and recognisable fake keys.
+// The Worker's routes through the keeper's Durable Object (on fake storage), the object's
+// alarm with bad keys and the network down, and recognisable fake keys.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { sha256Hex } from "@weir/index";
 import { readSecrets } from "../src/config.ts";
 import { handle } from "../src/routes.ts";
+import { KeeperObject } from "../src/durable.ts";
 import { KEYS, MemoryStore } from "../src/store.ts";
-import worker, { makeWorker, tickOnce, type Env } from "../src/worker.ts";
+import worker, { type Env } from "../src/worker.ts";
+import { Clock, fakeObject, workerEnv } from "./fakes.ts";
 import { deploymentsFor, fakeKey, IDS, KEEPER_ACCOUNT, REPORTERS, secretVars, START, SWARM_SECRET, world } from "./harness.ts";
-
-/** The cron path over the test's own four markets, never over the repository's
- * `deployments.json`, whose list changes with every deployment. */
-const cron = makeWorker(deploymentsFor(IDS));
 
 interface StatusBody {
   config: { market?: string; text: string }[];
@@ -28,15 +27,19 @@ function assertNoSecret(text: string, where: string): void {
   for (const s of SECRETS) assert.ok(!text.includes(s), `${where} contains a secret (${s.slice(0, 16)}...)`);
 }
 
+/** Fifteen minutes of ticks on the model, written to the object's SQL store; the object's
+ * clock stands at the last tick. */
 async function ranWorld() {
   const w = world();
-  for (let t = START; t <= START + 15 * 60; t += 60) await w.at(t);
-  return { w, env: { STORE: w.store, ...secretVars() } as Env };
+  const clock = new Clock((START + 15 * 60) * 1000);
+  const o = fakeObject(secretVars(), { clock, deployments: deploymentsFor(IDS) });
+  for (let t = START; t <= START + 15 * 60; t += 60) await w.at(t, { store: o.object.store });
+  return { w, clock, ...o, store: o.object.store, env: workerEnv(o.object, secretVars()).env };
 }
 
 test("GET /bundles/<hash>.json: the stored canonical bundle, immutable, its sha256 is its name", async () => {
-  const { w, env } = await ranWorld();
-  const latest = (JSON.parse((await w.store.get(KEYS.latest))!) as Record<string, { hash: string }>).h200!;
+  const { store, env } = await ranWorld();
+  const latest = (JSON.parse((await store.get(KEYS.latest))!) as Record<string, { hash: string }>).h200!;
   const res = await get(`/bundles/${latest.hash}.json`, env);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("cache-control"), "public, max-age=31536000, immutable");
@@ -55,11 +58,11 @@ test("GET /bundles/<hash>.json: the stored canonical bundle, immutable, its sha2
 });
 
 test("GET /latest.json, /status, /health, unknown paths, OPTIONS and other methods", async () => {
-  const { w, env } = await ranWorld();
+  const { w, store, env, clock } = await ranWorld();
   const latest = await get("/latest.json", env);
   assert.equal(latest.status, 200);
   assert.equal(latest.headers.get("cache-control"), "public, max-age=30");
-  const stored = JSON.parse((await w.store.get(KEYS.latest))!) as Record<string, { hash: string }>;
+  const stored = JSON.parse((await store.get(KEYS.latest))!) as Record<string, { hash: string }>;
   const body = (await latest.json()) as { chip: string; hash: string; bundle: { index: number; chip: string } };
   assert.deepEqual([body.chip, body.hash, body.bundle.index, body.bundle.chip], ["h100", stored.h100!.hash, 2_900_000, "h100"]);
   for (const [chip, index] of [["h200", 4_250_000], ["a100-80", 1_590_000]] as const) {
@@ -80,11 +83,14 @@ test("GET /latest.json, /status, /health, unknown paths, OPTIONS and other metho
   assert.equal(s.markets["h100-fast"]?.contract, "weir-h100-fast.test");
   assert.ok(BigInt((s.markets["h100-fast"] as unknown as { costs: { fees: string } }).costs.fees) > 0n, "fees shown");
 
-  // The model's clock is in January 2026, so against the real clock the keeper looks stale.
-  assert.equal((await get("/health", env)).status, 503);
-  const fresh = await handle(new Request(`${BASE}/health`), w.store, START + 15 * 60 + 30);
+  // /health against the object's clock: fresh 30 s after the last tick, stale after 300 s.
+  clock.ms = (START + 15 * 60 + 30) * 1000;
+  const fresh = await get("/health", env);
   assert.equal(fresh.status, 200);
   assert.deepEqual(await fresh.json(), { ok: true, last_tick: START + 15 * 60, age_secs: 30 });
+  clock.ms = (START + 15 * 60 + 301) * 1000;
+  assert.equal((await get("/health", env)).status, 503);
+  assert.equal((await handle(new Request(`${BASE}/health`), w.store, START + 15 * 60 + 30)).status, 503, "the world's own store was not used");
   assert.equal((await handle(new Request(`${BASE}/health`), new MemoryStore())).status, 503);
 
   assert.equal((await get("/nope", env)).status, 404);
@@ -100,15 +106,15 @@ test("GET /latest.json, /status, /health, unknown paths, OPTIONS and other metho
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
 
-  const empty = { STORE: new MemoryStore() } as Env;
+  const empty = workerEnv(fakeObject({}, { clock: new Clock(Date.now()) }).object).env;
   assert.equal((await get("/latest.json", empty)).status, 404);
   assert.equal((await get("/status", empty)).status, 200);
 });
 
 test("no secret ever reaches /status or the store, even when keys are bad and the network is down", async () => {
   // 1. A normal run on the model with the fake keys configured.
-  const { w, env } = await ranWorld();
-  // 2. The real cron path: bad keys (they are not base58 keys), malformed JSON in one secret, every request failing.
+  const { store, storage, env, clock } = await ranWorld();
+  // 2. The real alarm path: bad keys (they are not base58 keys), malformed JSON in one secret, every request failing.
   const realFetch = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = (async () => {
@@ -116,19 +122,23 @@ test("no secret ever reaches /status or the store, even when keys are bad and th
     return new Response("down", { status: 503 });
   }) as typeof fetch;
   try {
-    const bad: Env = { ...env, AGENTS: `${env.AGENTS!.slice(0, 120)}` };
-    const promises: Promise<unknown>[] = [];
-    await cron.scheduled({ scheduledTime: (START + 3600) * 1000, cron: "* * * * *" }, bad, { waitUntil: (p) => promises.push(p) });
-    await Promise.all(promises);
+    // The object restarted with new secrets (as a `wrangler secret` change does), on the same storage.
+    const bad = new KeeperObject({ storage }, { ...secretVars(), AGENTS: `${secretVars().AGENTS.slice(0, 120)}` }, { deployments: deploymentsFor(IDS), nowMs: clock.now });
+    clock.ms = (START + 3600) * 1000;
+    const lease = await store.get(KEYS.lease); // written by the world's own ticks, which take the lease
+    await bad.alarm();
+    assert.equal(bad.last?.now, START + 3600);
     const afterCron = await (await get("/status", env)).text();
     assertNoSecret(afterCron, "/status after the cron run");
     const s1 = JSON.parse(afterCron) as StatusBody;
     assert.ok(s1.config.some((c) => c.text === "AGENTS is not valid JSON" && c.market === undefined), "the malformed secret is a configuration problem");
     assert.ok(s1.config.some((c) => c.market === "h100-fast" && /keeper\.test \(keeper\) not used on h100-fast/.test(c.text)), "a key that does not parse is one too");
-    // That run holds the lease for 55 s of real time; this test does not wait for it.
-    await env.STORE.delete(KEYS.lease);
+    assert.equal(await store.get(KEYS.lease), lease, "the object takes no lease");
     // The secret mended: that problem no longer holds and leaves `config`, the bad keys stay.
-    const report = await tickOnce(env, START + 3660, { deployments: deploymentsFor(IDS) });
+    const mended = new KeeperObject({ storage }, secretVars(), { deployments: deploymentsFor(IDS), nowMs: clock.now });
+    clock.ms = (START + 3660) * 1000;
+    await mended.alarm();
+    const report = mended.last!;
     assert.ok(report.budget.used <= 40);
     assert.ok(report.entries.some((e) => e.action === "config" && e.status === "failed"), "bad keys are reported");
     assert.ok(report.entries.some((e) => /market not run this tick/.test(e.text)), "the unreachable chain is reported");
@@ -143,7 +153,7 @@ test("no secret ever reaches /status or the store, even when keys are bad and th
   assert.ok(!s2.config.some((c) => /AGENTS is not valid JSON/.test(c.text)), "a problem that no longer holds is not shown");
   assert.equal(s2.config.filter((c) => /\(agent\) not used on/.test(c.text)).length, 32, "eight agents on four markets, each key unreadable");
   assertNoSecret(status, "/status");
-  for (const [key, value] of w.store.map) assertNoSecret(value, `store key ${key}`);
+  for (const { key } of store.sizes()) assertNoSecret((await store.get(key))!, `store key ${key}`);
   for (const path of ["/latest.json", "/health"]) assertNoSecret(await (await get(path, env)).text(), path);
 });
 
@@ -175,4 +185,16 @@ test("a configuration problem stays in /status for as long as it holds, however 
   // Mended, both are gone at the next tick.
   await w.at(START + 6 * 60, { secrets: readSecrets(vars) });
   assert.deepEqual((await status()).config, []);
+});
+
+test("with no secrets set, /status lists them as configuration problems and nothing is signed", async () => {
+  assert.deepEqual(readSecrets({}).problems, ["REPORTERS is not set: no price is reported", "AGENTS is not set: no agent trades"]);
+  const w = world({ markets: ["h100-fast"] });
+  const clock = new Clock(START * 1000);
+  const { object, fire } = fakeObject({}, { clock, deployments: w.deployments, chain: w.chain, fetch: w.sources.fetch });
+  w.setTime(START);
+  await fire();
+  assert.equal(object.last!.txs.length, 0);
+  const s = (await (await get("/status", workerEnv(object).env)).json()) as StatusBody;
+  assert.deepEqual(s.config.map((c) => c.text), ["REPORTERS is not set: no price is reported", "AGENTS is not set: no agent trades"]);
 });

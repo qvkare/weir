@@ -1,4 +1,4 @@
-// The Node loop's directory store, under the same ticks as the Worker's KV.
+// The Node loop's directory store, under the same ticks as the Worker's Durable Object.
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

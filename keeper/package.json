@@ -11,6 +11,7 @@
     "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p .",
     "bench": "node --disable-warning=ExperimentalWarning scripts/bench.ts",
+    "rows": "node --disable-warning=ExperimentalWarning scripts/rows.ts",
     "once": "node --disable-warning=ExperimentalWarning src/node.ts --once",
     "loop": "node --disable-warning=ExperimentalWarning src/node.ts --loop --port 8787",
     "dry-run": "wrangler deploy --dry-run --outdir dist"

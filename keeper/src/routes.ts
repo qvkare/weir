@@ -27,10 +27,25 @@ const json = (status: number, value: unknown, cache = "no-store"): Response =>
 
 const BUNDLE = /^\/bundles\/([0-9a-f]{64})\.json$/;
 
-export async function handle(request: Request, store: KeeperStore, now: number = Date.now() / 1000): Promise<Response> {
+/** The answer to a request that needs no store: a CORS preflight, a method other than GET and
+ * HEAD, or a path that is none of the routes. Null for a request the store must answer. The
+ * Worker uses it to answer those without waking the Durable Object. */
+export function answerWithoutStore(request: Request): Response | null {
   const method = request.method.toUpperCase();
   if (method === "OPTIONS") return reply(204, null);
   if (method !== "GET" && method !== "HEAD") return reply(405, "only GET\n", { allow: "GET, HEAD, OPTIONS", "content-type": "text/plain" });
+  const path = new URL(request.url).pathname;
+  if (!BUNDLE.test(path) && path !== "/latest.json" && path !== "/status" && path !== "/health") {
+    const res = json(404, { error: "not found" });
+    return method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+  }
+  return null;
+}
+
+export async function handle(request: Request, store: KeeperStore, now: number = Date.now() / 1000): Promise<Response> {
+  const early = answerWithoutStore(request);
+  if (early) return early;
+  const method = request.method.toUpperCase();
   const url = new URL(request.url);
   const res = await route(url.pathname, url.searchParams, store, now);
   return method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;

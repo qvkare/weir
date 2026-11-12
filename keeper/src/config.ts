@@ -152,6 +152,9 @@ export function readSecrets(vars: { REPORTERS?: string; AGENTS?: string; SWARM_S
   const slots = agents.flatMap((a) => (a.market ? [a.market] : a.markets ? a.markets : ["*"]).map((m) => `${a.account_id} on ${m}`));
   for (const slot of new Set(slots.filter((x, i) => slots.indexOf(x) !== i))) problems.push(`agent ${slot} appears more than once`);
   const swarmSecret = vars.SWARM_SECRET && vars.SWARM_SECRET.length > 0 ? vars.SWARM_SECRET : null;
+  // Unset, not merely empty: a deployment that forgot a secret says so in /status.
+  if (vars.REPORTERS === undefined || vars.REPORTERS.trim() === "") problems.push("REPORTERS is not set: no price is reported");
+  if (vars.AGENTS === undefined || vars.AGENTS.trim() === "") problems.push("AGENTS is not set: no agent trades");
   if (agents.length > 0 && swarmSecret === null) problems.push("SWARM_SECRET is not set: the agents will not trade");
   return { reporters, keeper, agents, swarmSecret, problems };
 }

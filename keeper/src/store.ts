@@ -1,5 +1,5 @@
-// The keeper's only state: a string key-value store. A Cloudflare KV namespace fits as is;
-// the Node loop uses a directory; tests use memory.
+// The keeper's only state: a string key-value store. The Durable Object keeps it in a SQL
+// table (sqlstore.ts); the Node loop uses a directory; tests use memory.
 import type { OrderStore } from "@weir/agents";
 
 export interface KeeperStore {

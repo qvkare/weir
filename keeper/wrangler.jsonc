@@ -1,5 +1,7 @@
-// The Weir keeper: every minute it posts the index on chain and runs the trading agents.
-// Deploy with `pnpm --filter @weir/keeper exec wrangler deploy` (needs `wrangler login`; see README).
+// The Weir keeper: one SQLite-backed Durable Object holds the store and ticks every minute on
+// its own alarm; the cron trigger only checks that the alarm is armed. Fits the Workers Free
+// plan (see README, "Option 1"). Deploy with `pnpm --filter @weir/keeper exec wrangler deploy`
+// after `wrangler login`.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "weir-keeper",
@@ -7,12 +9,15 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
+  // The watchdog: arms the object's alarm when none is armed. The ticks come from the alarm.
   "triggers": { "crons": ["* * * * *"] },
-  "kv_namespaces": [
-    // PLACEHOLDER: replace with the id printed by `pnpm --filter @weir/keeper exec wrangler kv namespace create STORE`.
-    { "binding": "STORE", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
-  ],
-  // Secrets, set with `wrangler secret put <NAME>`, never in this file: REPORTERS, AGENTS, SWARM_SECRET, and optionally KEEPER.
+  "durable_objects": {
+    "bindings": [{ "name": "KEEPER_OBJECT", "class_name": "KeeperObject" }]
+  },
+  // SQLite-backed: the only kind of Durable Object on the Free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["KeeperObject"] }],
+  // Secrets, set with `wrangler secret bulk` or `wrangler secret put <NAME>`, never in this file:
+  // REPORTERS, AGENTS, SWARM_SECRET, and optionally KEEPER.
   "vars": { "BUDGET": "40" },
   "observability": { "enabled": true }
 }

@@ -7,7 +7,8 @@ the trading agents, clears rounds, settles series, redeems the agents' positions
 what the contract no longer needs to store.
 
 It is one platform-neutral function, `runTick(env, now)` in `src/keeper.ts`, with two thin
-adapters: a Cloudflare Worker (`src/worker.ts`) and a Node loop (`src/node.ts`). It imports
+adapters: a Cloudflare Worker with one Durable Object (`src/worker.ts`, `src/durable.ts`) and a
+Node loop (`src/node.ts`). It imports
 `@weir/index`, `@weir/agents`, `@weir/chain` and `@weir/engine` and copies none of their code.
 
 **One operator.** Every reporter configured here is run by this one keeper, from the same
@@ -65,11 +66,15 @@ served in, and what was left undone. The last 200 entries are kept in the store.
 
 **Safe to repeat and to miss.** Every decision is read from chain state. Sealed orders are
 written to the store before they are committed. A missed reveal window is logged as a forfeit
-when the round is cleared, and the keeper carries on. A run first takes a lease in the store
-(write, wait 1 s on the Worker and 0.2 s in the Node loop, read back); a second run that finds
-it held does nothing. On Cloudflare KV, which is eventually consistent, the lease is best
-effort; without it the contract still refuses a second report and a second reveal (tested), but
-two runs could in principle both commit for the same agent and round. Refusals are recognised
+when the round is cleared, and the keeper carries on. In the Node loop a run first takes a
+lease in the store (write, wait 0.2 s, read back); a second run on the same directory that
+finds it held does nothing. The Durable Object runs without the lease: its store is its own,
+and it never runs two ticks at once (Option 1 below). Without a lease the contract still
+refuses a second report and a second reveal (tested), but two keepers on two stores could both
+commit for the same agent and round: never run the loop and the Worker together. An order
+missing from the store is rebuilt at reveal time from its commit and `SWARM_SECRET` (the agents
+package's `rebuildOrder`; `test/durable.test.ts` reveals through a fresh store orders committed
+through another, with nothing forfeited). Refusals are recognised
 by the engine's `ERR` texts (SPEC section 16): `ERR.ALREADY_REVEALED`, `ERR.CLEARED` and
 `ERR.SETTLED` from another caller count as "done by another caller first";
 `ERR.DUPLICATE_REPORT`, `ERR.DECIDED`, `ERR.NO_REPORTS`, `ERR.NO_POSITION` and
@@ -157,32 +162,222 @@ nothing beyond `AGENT_KEY_METHODS`. It needs no registration and no USDC, only N
 
 ## Run it
 
-### Option 1: Cloudflare Worker
+### Option 1: Cloudflare Worker and one Durable Object (fits the Free plan)
 
-```sh
-pnpm --filter @weir/keeper exec wrangler login
-pnpm --filter @weir/keeper exec wrangler kv namespace create STORE
-# put the printed id in wrangler.jsonc in place of REPLACE_WITH_KV_NAMESPACE_ID
-pnpm --filter @weir/keeper exec wrangler secret put REPORTERS
-pnpm --filter @weir/keeper exec wrangler secret put AGENTS
-pnpm --filter @weir/keeper exec wrangler secret put SWARM_SECRET
-pnpm --filter @weir/keeper exec wrangler secret put KEEPER        # optional
-pnpm --filter @weir/keeper exec wrangler deploy
-```
+The keeper's state lives in one SQLite-backed Durable Object, `KeeperObject` (`src/durable.ts`),
+one instance under the fixed name `keeper`. Its storage is the keeper store: one SQL table,
+`kv (key, value, at)`, `at` being when the value was written (`src/sqlstore.ts`). The object's
+alarm runs `runTick` once a minute. The Worker (`src/worker.ts`) only passes calls on.
 
-None of these have been run. The cron trigger is `* * * * *`. `deployments.json` is bundled
-into the Worker at build time, so a new market means a new deploy. Routes, all GET (and HEAD),
-with `Access-Control-Allow-Origin: *`:
+**The minute.** Each alarm first arms the next one, for the start of the next minute, and then
+runs the minute it woke in. So:
+- a tick that throws or stalls leaves the next minute armed (nothing it does comes first);
+- a late alarm runs the current minute once; the minutes missed are not replayed (the Node
+  loop's rule);
+- two ticks never overlap: Cloudflare runs at most one `alarm()` per object at a time (the alarms
+  page, below), the object refuses a second tick while one runs, and it records the minute each
+  tick starts (`object/started`), so an alarm delivered twice (alarms are at-least-once) does not
+  run that minute again. A tick longer than a minute makes the next one start late, in the minute
+  it then wakes in;
+- an alarm firing up to 1 s early counts as the minute it was set for.
+
+**The watchdog.** The cron trigger (`* * * * *`) asks the object to arm its alarm only when
+none is armed: after the first deploy, or if a `setAlarm` failed. It costs one Worker request and
+one object request a minute, and no store write when the alarm is armed. An alarm-only design
+would have no way to start or restart itself; a cron-only design would make a Worker wait 18 to
+43 s on the object every minute, which the Free plan's documentation neither allows nor forbids.
+
+**The lease is off in the object.** The lease exists because two runs over one KV namespace
+could overlap. The object's store is private to it and the object never runs two ticks at once,
+so the lease would only cost its 1 s confirmation wait (1,440 s of billed duration a day) and two
+rows written a tick. What the lease guarded against across keepers, it never could: the Node loop
+and the Worker have separate stores, so nothing but the operator keeps them from running together.
+
+**Retention.** Every 6 hours, after a tick, values under `bundles/` and `orders/` written more than
+15 days ago are deleted, except each chip's latest bundle. 15 days: a print may be pruned from the
+contract two periods after its bucket (two weeks on the weekly markets), plus a day. A print that
+is not pruned stays readable on chain longer than its bundle; with the housekeeping account
+configured the keeper prunes them. A sealed order is needed for at most one round (an hour on the
+weekly markets). Without the rule the store would grow about 6.3 MiB a day without end.
+`test/durable.test.ts` checks the rule.
+
+**The routes.** The same four routes as before, served from the object's store. The Worker
+answers OPTIONS, other methods and unknown paths itself (the watchdog's path among them: it is
+never forwarded), and looks in the Cache API before asking the object for `/bundles/<hash>.json`
+(cached as its `immutable` header says) and `/latest.json` (30 s). `/status` and `/health` always
+reach the object. The Cache API is per data centre, and its documentation names custom domains
+as having working cache operations; on a `workers.dev` address it may do nothing, and then every
+bundle read is one object request (browsers still cache it for a year from its header).
 
 | Route | Answer |
 |---|---|
-| `/bundles/<hash>.json` | The canonical bundle of any chip; its sha256 is `<hash>`, the `bundle` argument of the reports. `Cache-Control: public, max-age=31536000, immutable`. 404 if unknown. |
+| `/bundles/<hash>.json` | The canonical bundle of any chip; its sha256 is `<hash>`, the `bundle` argument of the reports. `Cache-Control: public, max-age=31536000, immutable`. 404 if unknown (not cached). |
 | `/latest.json?chip=h100` | `{ chip, hash, bundle }` of that chip's latest bundle with an index (`chip` defaults to `h100`; 404 for an unknown chip or none yet). `max-age=30`. |
-| `/status` | Last tick, the operator note, configuration problems that hold (`config`), the budget used per step, the order markets were served in (`order`, `acting`), what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), refused keys (`key_faults`), RPC endpoints cooling down (`rpc_cooling`), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
+| `/status` | Last tick, the operator note, configuration problems that hold (`config`, including a secret that is not set), the budget used per step, the order markets were served in (`order`, `acting`), what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), refused keys (`key_faults`), RPC endpoints cooling down (`rpc_cooling`), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
 | `/health` | 200 if the last tick is at most 5 minutes old, else 503. |
 
-`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 146.1 KiB, 43.1 KiB gzipped
-(2026-11-12, with the chain client of that day).
+All GET (and HEAD), with `Access-Control-Allow-Origin: *`. `deployments.json` is bundled at
+build time, so a new market means a new deploy. There is no KV path any more: one code path runs
+on the Free and the Paid plan.
+
+#### Deploy (nothing below has been run against a Cloudflare account)
+
+From the repository root, logged in to wrangler (`wrangler whoami` shows the account):
+
+```sh
+pnpm --filter @weir/keeper test
+pnpm --filter @weir/keeper exec wrangler deploy --dry-run --outdir "$(mktemp -d)"
+pnpm --filter @weir/keeper exec wrangler deploy
+# Prints the URL, https://weir-keeper.<your-subdomain>.workers.dev. Within two minutes the cron
+# arms the alarm and the object ticks with no secrets: it reads the four markets and fetches the
+# index, and signs nothing. Check:
+curl -s https://weir-keeper.<your-subdomain>.workers.dev/status   # config: REPORTERS and AGENTS "not set"
+curl -s https://weir-keeper.<your-subdomain>.workers.dev/health   # 200 once a tick has run
+# Then, and only once the Node loop is stopped (below), the four secrets from keeper/.env,
+# piped as JSON so no value is printed or written to a file:
+node --env-file=keeper/.env -e 'const o={};for(const k of ["REPORTERS","AGENTS","SWARM_SECRET","KEEPER"])if(process.env[k])o[k]=process.env[k];process.stdout.write(JSON.stringify(o))' \
+  | pnpm --filter @weir/keeper exec wrangler secret bulk
+pnpm --filter @weir/keeper exec wrangler tail       # the tick lines, one a minute
+```
+
+`wrangler secret bulk` reads JSON from standard input when given no file (`wrangler secret bulk
+--help`, wrangler 4.158.0). Setting secrets makes a new version; the object restarts with it and
+its alarm is kept. To make the Worker sign nothing again without deleting it or its store:
+`echo '{"REPORTERS":null,"AGENTS":null,"SWARM_SECRET":null,"KEEPER":null}' | pnpm --filter
+@weir/keeper exec wrangler secret bulk` (a null deletes a secret).
+
+`BUDGET` stays 40 (a variable in `wrangler.jsonc`): the Free plan allows 50 subrequests per
+invocation, and whether a Durable Object alarm has the same cap is not stated.
+
+#### Free plan arithmetic
+
+Limits read on 2026-11-12 from developers.cloudflare.com: Workers limits (`/workers/platform/limits/`,
+last updated 2026-10-29), Durable Objects pricing (`/durable-objects/platform/pricing/`, 2026-10-18),
+Durable Objects limits (`/durable-objects/platform/limits/`, 2026-11-07), alarms
+(`/durable-objects/api/alarms/`, 2026-04-21), Cache API (`/workers/runtime-apis/cache/`, 2026-10-29).
+Use per day unless said. "Model" means measured with
+`node keeper/scripts/rows.ts` (`test/harness.ts`: four markets, three hours, eight agents each, the
+object's SQL store on node:sqlite, lease off); "local" means the `wrangler dev` run below (no
+secrets); "live" means the Node loop on testnet (above and `keeper/store/`, read 2026-11-12).
+
+| Limit (Free) | Keeper's use | Margin |
+|---|---|---|
+| Worker requests: 100,000 | 1,440 cron calls, plus public reads | about 98,500 for readers |
+| Durable Object requests: 100,000 (alarm invocations count on Paid; the Free column does not itemise them, counted here) | 1,440 alarms + 1,440 watchdog calls = 2,880, plus every read of `/status` and `/health`, every HEAD, and each bundle read the cache misses | about 97,000 for readers. One browser polling `/status` every 10 s uses 8,640 |
+| Duration: 13,000 GB-s, billed at 128 MB per object whatever it uses | Optimistic, the object billed only while a tick runs: 18 to 43 s a tick (live wall time) x 1,440 x 0.125 GB = 3,240 to 7,740 GB-s. Pessimistic, it never hibernates: 86,400 s x 0.125 GB = 10,800 GB-s, the most one object can use | 40% to 75% left optimistic; **17% left pessimistic** |
+| SQLite rows read: 5,000,000 | Model: 17.6 store reads a tick (26 at most) + 2 by the object = about 28,000 (40,000 if every tick were the busiest). Retention: about 4 x 44,000 rows scanned (15 days of bundles and orders) = 176,000. Local: 13 a tick without secrets | about 95% left |
+| SQLite rows written: 100,000 | Model: 5.7 store writes a tick (17 at most) + 1 started mark + 1 `setAlarm` = about 11,100 (27,400 if every tick were the busiest). Retention deletes what a day adds: about 900 bundles and 2,100 orders. Local: 1 to 2 a tick, 6 to 16 on index ticks | 70% to 86% left |
+| Stored data: 5 GB per account; per object 1 GB on Free in the limits page's FAQ, 10 GB in the same page's table | Live: bundles 7 KiB mean, 3 every 5 minutes = 5.9 MiB a day; model: orders 0.4 MiB a day; status 47 to 56 KiB. With the 15-day rule: about 95 MiB at most (value bytes; SQLite's own overhead on Cloudflare not measured). Without it 1 GB would be reached in about 160 days | about 10x under 1 GB |
+| CPU per invocation: Worker 10 ms; object 30 s | Worker: one call to the object and at most two cache calls (not measured on Cloudflare). Object: the heaviest tick about 12 ms, a cold one about 35 ms (`scripts/bench.ts`, Node) | object about 800x |
+| Subrequests per invocation: 50 (Workers page; the Durable Objects page lists none, only 6 connections at once) | Worker: 3 at most. Object alarm: at most `BUDGET` = 40 | 10, if an alarm is held to 50 |
+| Wall time: alarm handler 15 min | 18 to 43 s live | ample |
+
+**What happens at a limit.** Per the pricing page, once a free daily limit is exceeded,
+operations of that kind fail until 00:00 UTC. Rows written: every `put` fails; a sealed order is
+stored before it is committed, so no commit is sent that could not be revealed, and a missing
+order is rebuilt from `SWARM_SECRET` anyway; reports, reveals and clears still go out, but
+progress marks and `/status` stop updating. Requests or duration: the alarm stops running and no
+tick runs until midnight UTC; `/health` turns 503 after 5 minutes; reveals due in that time are
+forfeited (1% of their lock) and buckets go unreported. The thin margin is duration: if the
+object never hibernates between ticks, 17% is left, and nothing else the keeper does adds to it,
+because one object cannot be billed for more than the 86,400 s of a day. Requests have the most
+room but are the one limit outsiders can spend: heavy polling of `/status` would stop the keeper
+for the rest of the UTC day. Whether an object hibernates between ticks (pending timers in the
+RPC client could hold it) has not been measured.
+
+**Not confirmed in the documentation:** a subrequest cap for alarms; whether a Worker on the Free
+plan may await a 40 s call to an object (not needed: the watchdog returns at once); how rows are
+counted for an upsert into a `WITHOUT ROWID` table (assumed one); whether the Cache API works on
+`workers.dev`; whether alarm invocations count against the Free plan's 100,000 requests (assumed
+they do).
+
+#### Tested locally, 2026-11-12
+
+**Careful:** `wrangler dev` run in `keeper/` loads `keeper/.env` as local secrets when there is no
+`.dev.vars`, and the keeper would then sign with the real keys. Run it as below, from a copy of
+the configuration outside `keeper/`:
+
+```sh
+D=$(mktemp -d); : > "$D/empty.env"
+sed -e "s#\"main\": \"src/worker.ts\"#\"main\": \"$PWD/keeper/src/worker.ts\"#" -e '/\$schema/d' keeper/wrangler.jsonc > "$D/wrangler.jsonc"
+(cd "$D" && env -u REPORTERS -u AGENTS -u SWARM_SECRET -u KEEPER CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false \
+  "$OLDPWD/keeper/node_modules/.bin/wrangler" dev --local --port 8799 --persist-to "$D/state" \
+  --env-file "$D/empty.env" --test-scheduled)
+curl -s 'http://127.0.0.1:8799/__scheduled?cron=*+*+*+*+*'   # from a second shell: the watchdog, once
+```
+
+`wrangler dev --local` (wrangler 4.158.0, workerd) run that way, so no
+secret was loaded (the bindings table listed `KEEPER_OBJECT` and `BUDGET` only), port 8799, from
+18:26 to 18:31 UTC, against the four testnet markets (read-only). One `GET /__scheduled` (the
+watchdog) armed the alarm; every tick after that came from the alarm, including after a code
+reload at 18:29. The log:
+
+```
+[wrangler:info] GET /status 200 OK (14ms)
+[wrangler:info] GET /health 503 Service Unavailable (3ms)
+[wrangler:info] GET /__scheduled 200 OK (3ms)
+[wrangler:info] POST /_internal/ensure 405 Method Not Allowed (3ms)
+tick 2026-11-12T18:27:00.000Z: 35/40 requests, 3 done, 0 failed, 0 transactions, 4.2 s, 6 rows read, 16 rows written
+tick 2026-11-12T18:28:00.000Z: 5/40 requests, 0 done, 0 failed, 0 transactions, 0.5 s, 13 rows read, 2 rows written
+tick 2026-11-12T18:29:00.000Z: 4/40 requests, 0 done, 0 failed, 0 transactions, 0.4 s, 13 rows read, 1 rows written
+⎔ Reloading local server...
+tick 2026-11-12T18:30:00.000Z: 12/40 requests, 3 done, 0 failed, 0 transactions, 3.0 s, 14 rows read, 6 rows written
+  - keeper/config skipped: REPORTERS is not set: no price is reported
+  - keeper/config skipped: AGENTS is not set: no agent trades
+tick 2026-11-12T18:31:00.000Z: 5/40 requests, 0 done, 0 failed, 0 transactions, 0.5 s, 13 rows read, 2 rows written
+```
+
+The three "done" are the index fetches (h100 2,845,000 micro-USD at 18:27, every chip formed an
+index). The first ticks show `config: []` because the code then did not list unset secrets; the
+reload brought the change that does. At 18:31, `/status` answered `config` with the two lines
+above and `age_secs` 1; `/health` 200 `{"ok":true,"age_secs":1}`; `/bundles/<hash>.json` 200 with
+CORS, `application/json` and the immutable header, its body's sha256 equal to its name; OPTIONS
+204, POST 405, `GET /_internal/ensure` 404. The ticks with no index fetch took 0.4 to 0.5 s; with
+signing, the live loop's take 18 to 43 s. The rows in the log are workerd's own counts
+(`cursor.rowsRead`, `rowsWritten`).
+
+`wrangler deploy --dry-run --outdir <tmp>`: 154.39 KiB, 45.83 KiB gzipped (2026-11-12, the code as
+left here).
+
+#### Moving from the Node loop to the Worker
+
+Two keepers must never run at once: each would commit for the same agents, with no lease
+between them. The stores are separate, so:
+- **Sealed orders**: an order the loop committed and did not reveal is not in the object's store.
+  At reveal the swarm rebuilds it from the commit, as long as `SWARM_SECRET` is the same: the salt is
+  HMAC(`SWARM_SECRET`, series, round, agent, n) and the lock fixes size and price (`rebuildOrder` in
+  `agents/src/swarm.ts`; `test/durable.test.ts`, "moving stores", revealed every such order on the
+  model with nothing forfeited). Only if that failed would those orders forfeit 1% of their lock.
+- **Bundles** the loop stored are not in the object: `/bundles/<hash>.json` on the Worker answers
+  404 for prints reported before the switch. Keep `keeper/store/` (or publish its `bundles%2F*`
+  files elsewhere) until those prints are pruned.
+- **Marks and costs** start again: the cost figures count from the Worker's first tick, and buckets
+  the loop reported but had not pruned are not pruned by the Worker (they stay in the contract's
+  storage).
+
+When: rounds of both kinds end on the hour (hourly market: 3 min commit, 2 min reveal, every 5
+minutes; weekly: 45 min commit, 15 min reveal). Stop the loop just after its tick for minute :00
+has printed its line (about :00:20 to :00:45): the weekly rounds that ended at :00 are revealed,
+no weekly market has its turn at :00 (they act at minutes 1, 2 and 3 mod 5), and the hourly
+round that opened at :00 usually gets no order in its first minute (the first night's log). Then
+run the `wrangler secret bulk` line; the Worker's tick at :01 is the first to sign.
+
+1. Deploy as above, without secrets, a few minutes before the hour; check `/status` and `/health`.
+2. After the loop's :00 tick line, stop the loop (its process id is in `keeper/store/loop.pid`).
+   Check that `keeper/store/loop.log` gets no tick line after that.
+3. Set the secrets (above). `wrangler tail` should show a tick at :01 with transactions.
+4. At :05, after the hourly round of :00 is cleared, and again after :00 of the next hour for the
+   weekly rounds: `/status` should show no failed entry; any reveal of a loop's order says
+   `(rebuilt: not in store)`; the `costs` line says `lost $0.00 in forfeits`; `get_totals().burned`
+   grew by the commit fees only.
+
+A one-off carry-over of bundles, marks and costs (not built): a script that reads those keys from
+`keeper/store/` into a JSON file (sealed orders left out: their salts are secret until revealed,
+and they are rebuilt anyway), and a write route in the object accepted only with a fifth secret,
+an import token compared in constant time, taking only `bundles/` (each checked: its sha256 must
+equal its name), `marks/` and `costs/` keys, before the first signed tick. Removing the token
+afterwards closes it. About 80 lines and a test; not done because nothing is lost without it but
+the old bundles' URL and the prune list.
 
 ### Option 2: Node loop
 
@@ -266,21 +461,26 @@ the model:
 All of it was commit fees: there were no forfeits. In every run the keeper's cost report
 (fees plus forfeits) equalled the contract's `burned`.
 
-**Store writes: 8.0 per tick, about 11,600 a day** (status and log, lease, sealed orders,
-progress marks, the cost record, and every five minutes three bundles, the latest map and the
-attempt).
+**Store writes: 8.0 per tick, about 11,600 a day** with the lease (status and log, lease,
+sealed orders, progress marks, the cost record, and every five minutes three bundles, the latest
+map and the attempt); 5.7 a tick without it, as in the Durable Object (`node
+keeper/scripts/rows.ts`).
 
-**Recommendation: the Node loop, or the Workers Paid plan.** Not the free plan: its 10 ms CPU
-limit is exceeded by every index tick of the four markets and by any cold start, and its KV
-allows 1,000 writes a day against about 11,600 needed. (Both limits as Cloudflare publishes
-them; neither was tried against an account.)
+**Recommendation: Option 1, the Worker with its Durable Object, on the Free plan.** The KV
+Worker did not fit the Free plan (10 ms of CPU against about 12 ms for an index tick, and 1,000
+KV writes a day against about 11,600). In the Durable Object the tick runs under a 30 s CPU limit
+and the store's writes are SQLite rows, 100,000 a day; the table under Option 1 gives the
+margins, the thinnest being duration (17% if the object never hibernates). Nothing of this has
+run on a Cloudflare account yet. The Node loop stays the fallback, on a machine that does not
+sleep.
 
 ## Tests
 
 ```sh
-pnpm --filter @weir/keeper test        # node --test, offline, 24 tests
+pnpm --filter @weir/keeper test        # node --test, offline, 34 tests
 pnpm --filter @weir/keeper typecheck   # tsc --noEmit
 pnpm --filter @weir/keeper bench
+pnpm --filter @weir/keeper rows        # store reads and writes per tick, for the Free plan table
 ```
 
 All on `ModelWeir` with an in-memory store, a fake clock and a fake fetch serving the index
@@ -310,13 +510,27 @@ on each sized for its market as the agents package sizes them, the housekeeping 
   - **Two overlapping runs:** with the lease, one works and one stands aside, with the same
     events as a single run. Without the lease, the only failures are the contract's refusals of
     the second copies.
-- `worker.test.ts`: the routes (status codes, CORS, cache headers, `?chip=` for each chip, 404
-  for an unknown chip or hash), the cron handler (`makeWorker` over the test's own four markets,
-  never the repository's `deployments.json`) with bad keys and the network down, no secret
-  anywhere in `/status`, `/latest.json`, `/health` or the store (recognisable fake keys,
-  including the housekeeping account's, plus malformed JSON in a secret), `config` listing the
-  malformed secret while it holds and not after, a problem kept in `config` through ticks that
-  push it out of the last 50 log entries, and `src/` free of Node imports except `node.ts`.
+- `worker.test.ts`: the routes through the Worker and the object (status codes, CORS, cache
+  headers, `?chip=` for each chip, 404 for an unknown chip or hash, `/health` against the
+  object's clock), the object's alarm (over the test's own four markets, never the repository's
+  `deployments.json`) with bad keys and the network down, no secret anywhere in `/status`,
+  `/latest.json`, `/health` or the store (recognisable fake keys, including the housekeeping
+  account's, plus malformed JSON in a secret), `config` listing the malformed secret while it
+  holds and not after, a problem kept in `config` through ticks that push it out of the last 50
+  log entries, unset secrets listed in `config` with nothing signed, and `src/` free of Node
+  imports except `node.ts`.
+- `durable.test.ts`, with fakes for the object's storage (`test/fakes.ts`: SQL on node:sqlite,
+  one alarm, a namespace binding, `caches.default`): an alarm arms the next minute and then runs
+  the minute it woke in (and one firing up to 1 s early counts as its minute); a call while a tick
+  runs starts no second tick and the minute it overlapped is skipped; a tick that throws leaves the
+  next minute armed, and a failed `setAlarm` is mended by the watchdog; a late wake runs the current
+  minute once and a repeated delivery does not run it again; the cron watchdog arms a missing alarm
+  and leaves an armed one alone, its path never reaches the object from outside, and only the name
+  `keeper` is used; real ticks on the model through the alarm, with no lease written, read back
+  through the Worker's routes; a bundle read three times costs one object request with the cache,
+  a 404 is not cached, `/status` always reaches the object; retention (15 days, every 6 hours,
+  each chip's latest bundle kept, other keys untouched); sealed orders committed through one store
+  revealed through a fresh one, nothing forfeited.
 - `rpc.test.ts`: a 429 seen through one market's port spares the other markets' ports in the
   same tick and the next while the cooldown lasts, the first endpoint is used again once it ends,
   every attempt is charged and nothing else; with every endpoint refusing, the next call fails
@@ -340,7 +554,10 @@ on each sized for its market as the agents package sizes them, the housekeeping 
   offers, so anyone can recompute an index, but not check the hashes against the bodies.
 - **A retry within the five-minute window** when the index fetch fails, and any source retry.
 - **Registration, funding, guards, round lock limits and withdrawals** of agents.
-- **A strict lock.** The lease is best effort on KV; Durable Objects would give a real one.
+- **A guard between the Node loop and the Worker.** Their stores are separate; nothing but the
+  operator keeps both from running at once (Option 1, "Moving from the Node loop").
+- **A carry-over of the loop's bundles, marks and costs** to the object (described under
+  Option 1; sealed orders need none).
 - **Alerts.** `/health` returns 503 when stale, but nothing pages anyone.
 - **Cost figures for rounds cleared by someone else** (only the market-wide burned total has
   them), and for anything before the keeper's first tick.
@@ -397,7 +614,9 @@ and 21 more view calls through dRPC at about 07:35 UTC:
 A keeper on a laptop is not a host. The first night showed the keeper's own logic recovering
 from what it met while the machine was awake (the RPC refusals, a missed minute), and the
 markets left without prints, reveals or clears while it slept. An always-on host (the Cloudflare
-Worker on the paid plan, or any machine that does not sleep) has not been set up.
+Worker on the paid plan, or any machine that does not sleep) has not been set up. (Later on
+2026-11-12: the Worker was rebuilt on a Durable Object to fit the Free plan, Option 1; not
+deployed yet.)
 
 **What was done.**
 - `chain/`: provider refusals are now endpoint failures with their own text, retried on the
@@ -431,6 +650,9 @@ requests each. Not proven:
 - the keeper changes of 2026-11-12 (shared cooldowns, the loop's minute, `config`) on testnet:
   they are tested on the model and a fake RPC only;
 - request counts under failover and `send_tx` polling with the new chain client;
-- real Worker CPU time and cold starts, KV consistency for the lease, KV and subrequest limits
-  as enforced, the cron trigger's timing;
+- anything on a Cloudflare account: the Worker and its Durable Object have run only in `wrangler
+  dev --local` (five alarm ticks without secrets, above) and in unit tests with fakes. Not shown:
+  the Worker's CPU time, the object's duration and whether it hibernates between ticks, rows
+  read and written as billed, subrequest limits for an alarm, the alarm's and the cron
+  trigger's timing, the Cache API on `workers.dev`, and a tick that signs;
 - live source responses beyond the saved ones.
