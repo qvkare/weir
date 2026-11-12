@@ -83,7 +83,7 @@ Served by the Worker (`lib/api-handlers.ts`), reading the chain from Cloudflare 
 
 Errors are `{ "error": { "code", "message" } }` with 400, 404 (`not_deployed`, `no_round`), 502 or 503.
 
-## Deploy to Cloudflare Workers, free plan (not run here)
+## Deploy to Cloudflare Workers, free plan
 
 ```sh
 cd web
@@ -93,7 +93,8 @@ WEIR_SITE_URL=https://weir.qvkare.workers.dev pnpm run preview  # next build && 
 ```
 
 The build reads the four markets from the chain once (dRPC first). The Worker is named `weir`,
-`workers_dev` is on, preview URLs are off and there is no custom domain. `wrangler deploy
+`workers_dev` is on, preview URLs are off and there is no custom domain. Deployed with the first
+line above on 12 Nov 2026 at 20:14 UTC: https://weir.qvkare.workers.dev. `wrangler deploy
 --dry-run` on 12 Nov 2026: Worker 22.67 KiB, 8.23 KiB gzipped; 245 asset files, 17 MB. Before
 (OpenNext, every page rendered per request): 7079.72 KiB, 1577.73 KiB gzipped. A model build
 (`WEIR_MODEL=1`) deploys the same way and shows model figures as of the build.
