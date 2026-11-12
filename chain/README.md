@@ -13,7 +13,7 @@ Workers. A test checks that no file but the CLI imports a Node built-in.
 | File | What it is |
 |---|---|
 | `src/tx.ts` | Base58, base64, `KeyPair` from a NEAR secret key `ed25519:<base58>` (64-byte or 32-byte form), the borsh encoding of a transaction of function-call actions, and `signTransaction` (ed25519 over `sha256(borsh(tx))`). `AnyTransaction` may also carry the account-setup actions (create account, deploy contract, transfer, add a full-access or function-call key), which the integration test uses to set up the sandbox; nothing in `src/` sends them. |
-| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL` (polling `tx` if the node times out). Fails over between URLs on network errors, per-call timeouts, HTTP 429/5xx and node `INTERNAL_ERROR`/`TIMEOUT_ERROR`; any other JSON-RPC error is an answer and is thrown at once. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and on `InvalidNonce` retries up to three times (`NONCE_RETRIES`) with a fresh nonce, starting above the `ak_nonce` the refusal names. |
+| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL`. Failover, cooldowns and rate-limit waits are described under "RPC endpoints" below. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and on `InvalidNonce` retries up to three times (`NONCE_RETRIES`) with a fresh nonce, starting above the `ak_nonce` the refusal names. |
 | `src/weir.ts` | `WeirPort`, typed by `@weir/engine`'s wire types (`ViewMethods`, `ChangeMethods`), never redefined here. `ChainWeir` (over `near.ts`) and `ModelWeir` (over an engine `Market` through `callView`/`callChange`, settable clock, plus a synchronous `sync` face). A failed chain call throws `CallFailed`, whose message is the contract's bare panic text, the same text `ModelWeir` throws. `paramsFromWire` turns `get_params` JSON into engine `Params`. Function-call key method lists: `AGENT_KEY_METHODS` (SPEC section 15: `commit, reveal, clear, mint, merge, settle, redeem`), `KEEPER_KEY_METHODS` (those plus `finalize_print`, `prune_print`, `prune_result`) and `REPORTER_KEY_METHODS` (`report`, `finalize_print`). The port covers spec 0.4: `set_guard(guard?, max_round_lock?)`, `finalize_print`, `prune_print`, `get_pending_prints`, and the 0.4 shapes (totals with `burned`, print `state`, commit `fee`, result `fees`). |
 | `src/token.ts` | `Token`: `storage_deposit`, `ft_balance_of`, `storage_balance_of`, `ft_transfer_call` into Weir (the optional beneficiary goes in `msg`, SPEC section 5) and the test token's open `mint(account_id, amount)`. |
 | `src/intents.ts` | NEAR Intents 1Click client, quotes only: `POST /v0/quote` with `dry: true` (it refuses anything else) and `GET /v0/tokens`. USDC asset ids for Base, Arbitrum, Ethereum, Solana and NEAR. |
@@ -62,6 +62,77 @@ at 10; 3.25x at 15). `settle` gets 15: deciding two pending buckets burnt 3.12 T
 settle that decides many pending buckets of a delivery window, is not measured. Unused gas is refunded, and a key's
 allowance is charged about the gas burnt.
 
+## RPC endpoints
+
+The testnet endpoints in use are `https://test.rpc.fastnear.com` and
+`https://near-testnet.drpc.org` (root `deployments.json`). `rpc.testnet.near.org` is
+deprecated and answers every call with HTTP 429, so it is not listed.
+
+**Finding, 2026-11-12, about 01:00 UTC.** On live testnet the keeper logged
+`report: RPC error: null`, `commit: RPC error: null` and `reveal: RPC error: null` (20 failed
+entries in 14 ticks), and agents forfeited orders they could not reveal. Two provider
+refusals that are not in NEAR's error shape were measured with curl:
+
+- fastnear, over its free limit (a second tool on the same IP was also calling it), HTTP 429:
+  `{"jsonrpc": "2.0", "error": {"code": -429, "message": "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com"}, "id": "1"}`
+- dRPC, for a method it does not serve (`broadcast_tx_commit`), HTTP 400:
+  `{"id":2,"jsonrpc":"2.0","error":{"message":"method is not available","code":-32601}}`
+
+The client built the message from `cause.name` and `data`, which these bodies do not have,
+so the text became `RPC error: null`. It also treated any JSON-RPC error body as the node's
+final answer, so a provider's refusal stopped the call instead of moving to the next
+endpoint. Which refusal the keeper actually received is not known: its log only kept "null".
+
+Error shapes seen live the same morning (`chain/test/failover.test.ts` replays them):
+
+| Request | fastnear | dRPC |
+|---|---|---|
+| `tx` with an unknown hash | 200, `HANDLER_ERROR` / `UNKNOWN_TRANSACTION` | 200, the same |
+| `query` of an unknown account | 200, `HANDLER_ERROR` / `UNKNOWN_ACCOUNT` | 200, the same |
+| malformed `send_tx` | **400**, `REQUEST_VALIDATION_ERROR` / `PARSE_ERROR` | 200, the same |
+| unknown method | 400, `REQUEST_VALIDATION_ERROR` / `METHOD_NOT_FOUND` | 400, `{"message":"method is not available","code":-32601}` |
+| over the rate limit | 429, the body above | not seen |
+
+What the client does now (`NearRpc.call`):
+
+- **Answer or outage.** An error with NEAR's shape (`name` or `cause.name`) is the node's
+  answer, whatever the HTTP status (fastnear sends some with 400), and is thrown as
+  `RpcError` without trying another endpoint; `INTERNAL_ERROR` and `TIMEOUT_ERROR` are the
+  exceptions. Everything else is that endpoint failing (`EndpointError`) and the next one is
+  tried: no response, a timeout, HTTP 429 or 5xx, any other 4xx, an error body not in NEAR's
+  shape (also with HTTP 200), or a 2xx without a result.
+- **Messages.** An endpoint failure names the host, the HTTP status, and the provider's
+  `message` and `code`, e.g. `test.rpc.fastnear.com answered HTTP 429: Rate limits exceeded.
+  ... (code -429)`. When every endpoint fails, `RpcUnavailable` lists each one.
+- **Cooldown.** An endpoint that refused or faulted goes to the back of the line for 10 s
+  (`cooldownMs`), or for its `retry-after` when that is positive (at most 60 s); one that was
+  only slow does not. Endpoints are otherwise tried in the order given, so the first one is
+  used again once its cooldown ends. The cooldowns live in an `EndpointHealth`; clients that
+  share one (`new NearRpc({ ..., health })`) steer each other.
+- **Rate-limit wait.** When every endpoint refused a call for rate (HTTP 429 or code -429),
+  the call waits once, for the shortest `retry-after` (1 s if none), and tries them all once
+  more, but only if that wait is at most 2 s (`maxRateWaitMs`). Otherwise, and on later calls
+  while all endpoints are still refusing, it fails at once without sending a request. The 2 s
+  bound is the authors' choice, not a measurement: the keeper ticks once a minute with up to
+  about 40 requests, and the shortest reveal window is 120 s (fast preset), so one call may
+  pause briefly, but a tick cannot be stretched by a pause per request.
+- **Every attempt is a request through the `fetch` passed in**, so a caller that meters its
+  requests (the keeper's budget) is charged for each one; a call that fails at once during a
+  cooldown sends nothing.
+
+`sendTx` and a transaction that may already have landed: the same signed bytes are one
+transaction with one hash, so sending them again can only end in that transaction's
+outcome. If an endpoint fails after the request may have reached a node (no response, a
+timeout, a 5xx, a node `TIMEOUT_ERROR` or `INTERNAL_ERROR`), the next endpoint gets the same
+bytes. If every endpoint fails that way, the client polls `tx` for the hash; if no endpoint
+knows it, it resends the same bytes once and keeps polling. `InvalidNonce` from one endpoint
+after another may have delivered the transaction is checked with `tx` first: found, it is our
+own transaction and its outcome is returned; unknown, the refusal stands and `NearAccount`
+re-signs with a fresh nonce. An answer saying the transaction is "already known" or a
+"duplicate" is read as pending and polled. A send refused everywhere for rate (429) was not
+delivered and is thrown without polling. The duplicate wording is matched by pattern; no
+provider was seen sending it.
+
 ## Dependencies
 
 | Package | Version | Kind | Why |
@@ -96,6 +167,17 @@ WEIR_LIVE=1 pnpm --filter @weir/chain test   # adds one read-only call to NEAR t
 - `tx_actions.test.ts`: 200 random transactions mixing the setup actions with function calls
   (random keys, code, deposits, allowances, method lists) encoded and signed byte-identically
   to `@near-js`; out-of-range values refused.
+- `failover.test.ts`: the provider refusals above, byte for byte: fastnear's 429 fails over
+  to dRPC, cools down and is used again after the cooldown; the error text names each host,
+  status, message and code and never says null; dRPC's 400 fails over; a 200 with an error
+  not in NEAR's shape, or without a result, fails over; a NEAR-shaped error on HTTP 400 is an
+  answer and is not retried; both endpoints rate-limited, one 1 s wait and one retry; both
+  rate-limited for 30 s, no wait and later calls fail without a request; and `sendTx` when the
+  first endpoint hangs (same bytes to the next), when every endpoint may have delivered (polled
+  to one outcome), when nobody knows the hash (one resend), `InvalidNonce` after a possible
+  delivery (our own transaction), a real `InvalidNonce`, "already known", and a send refused
+  for rate everywhere (thrown, not polled); two clients sharing an `EndpointHealth` share a
+  cooldown.
 - `token.test.ts`, `intents.test.ts` (against real 1Click responses saved in
   `test/fixtures/` on 2026-11-11), `portable.test.ts`, `live.test.ts`.
 

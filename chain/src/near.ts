@@ -1,7 +1,7 @@
 // A minimal NEAR JSON-RPC client: views, account and access-key queries, the latest block
 // hash, and signed function calls sent with `send_tx` and waited on until final. It fails
-// over between RPC URLs with a per-call timeout and uses only `fetch`, so it runs in Node,
-// browsers and Cloudflare Workers.
+// over between RPC URLs with a per-call timeout, passes over endpoints that refused recently,
+// and uses only `fetch`, so it runs in Node, browsers and Cloudflare Workers.
 import {
   base58Decode,
   base58Encode,
@@ -13,29 +13,89 @@ import {
   type KeyPair,
 } from "./tx.ts";
 
-/** The subset of `fetch` the client uses, so tests can pass a fake transport. */
+/** The subset of `fetch` the client uses, so tests can pass a fake transport. Every attempt
+ * goes through it, so a caller that meters requests sees each one. */
 export type FetchLike = (
   url: string,
   init: { method: "POST"; headers: Record<string, string>; body: string; signal: AbortSignal },
-) => Promise<{ status: number; text(): Promise<string> }>;
+) => Promise<{ status: number; text(): Promise<string>; headers?: { get(name: string): string | null } }>;
 
 export interface RpcOptions {
   urls: readonly string[];
   /** Per request, per URL. Default 10 s. */
   timeoutMs?: number;
   fetch?: FetchLike;
+  /** How long an endpoint that failed is passed over, unless it said how long (retry-after). Default 10 s. */
+  cooldownMs?: number;
+  /** The longest the client waits, once per call, when every endpoint refused it for rate. Default 2 s. */
+  maxRateWaitMs?: number;
+  /** Per request for `send_tx` and `tx`, which wait for finality. Default the larger of 30 s and `timeoutMs`. */
+  sendTimeoutMs?: number;
+  /** Which endpoints are cooling down. Pass one `EndpointHealth` to several `NearRpc`s (one
+   * per account, say) so a refusal seen by one steers them all. Default: this client's own. */
+  health?: EndpointHealth;
+  /** Clock and sleep, for tests. */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
-/** A JSON-RPC error the node returned. These are answers, not outages, so they are not retried elsewhere. */
+/** A JSON-RPC error in NEAR's shape (`name` and `cause.name`): the node's answer, such as an
+ * unknown account, a contract panic or an invalid nonce. Not retried on another endpoint. */
 export class RpcError extends Error {
   override readonly name = "RpcError";
   readonly code: string;
   readonly data: unknown;
+  /** Endpoints that failed before this answer came, for `sendTx` to judge whether its
+   * transaction may already have been delivered. */
+  after: EndpointError[] = [];
 
   constructor(message: string, code: string, data: unknown) {
     super(message);
     this.code = code;
     this.data = data;
+  }
+}
+
+/** One endpoint failing one request: unreachable, too slow, rate-limiting, or answering with
+ * something that is not a NEAR JSON-RPC reply. The next endpoint is tried. */
+export class EndpointError extends Error {
+  override readonly name = "EndpointError";
+  readonly url: string;
+  /** HTTP status, or null when no response came. */
+  readonly status: number | null;
+  readonly rateLimited: boolean;
+  /** From `retry-after`, when the endpoint gave a positive one. */
+  readonly retryAfterMs: number | null;
+  /** True when the request may have reached a node before failing (a timeout, a dropped
+   * connection, a 5xx, a node TIMEOUT or INTERNAL error): a sent transaction may have landed. */
+  readonly maybeDelivered: boolean;
+  /** A timeout (ours, or the node's TIMEOUT_ERROR): slow, not refusing, so no cooldown. */
+  readonly timeout: boolean;
+
+  constructor(message: string, o: { url: string; status: number | null; rateLimited?: boolean; retryAfterMs?: number | null; maybeDelivered: boolean; timeout?: boolean }) {
+    super(message);
+    this.url = o.url;
+    this.status = o.status;
+    this.rateLimited = o.rateLimited ?? false;
+    this.retryAfterMs = o.retryAfterMs ?? null;
+    this.maybeDelivered = o.maybeDelivered;
+    this.timeout = o.timeout ?? false;
+  }
+}
+
+/** Endpoints passed over after a refusal or a fault: until when, and whether for rate. */
+export class EndpointHealth {
+  readonly cooling = new Map<string, { until: number; rate: boolean }>();
+}
+
+/** Every endpoint failed a call. The message lists what each one said. */
+export class RpcUnavailable extends Error {
+  override readonly name = "RpcUnavailable";
+  readonly attempts: EndpointError[];
+
+  constructor(method: string, attempts: EndpointError[], note = "") {
+    super(`every RPC endpoint failed for ${method}${note}: ${attempts.map((a) => a.message).join("; ") || "no attempt made"}`);
+    this.attempts = attempts;
   }
 }
 
@@ -71,50 +131,107 @@ export interface TxOutcome {
 }
 
 const RETRY_CODES = new Set(["INTERNAL_ERROR", "TIMEOUT_ERROR"]);
+/** Cap on a cooldown taken from `retry-after`. */
+const MAX_COOLDOWN_MS = 60_000;
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
 
 export class NearRpc {
   readonly urls: readonly string[];
   readonly timeoutMs: number;
+  readonly sendTimeoutMs: number;
   readonly #fetch: FetchLike;
-  #preferred = 0;
+  readonly #cooldownMs: number;
+  readonly #maxRateWaitMs: number;
+  readonly #now: () => number;
+  readonly #sleep: (ms: number) => Promise<void>;
+  /** Endpoint -> until when it goes to the back of the line, and whether it refused for rate. */
+  readonly #cooling: Map<string, { until: number; rate: boolean }>;
   #id = 0;
 
   constructor(opts: RpcOptions) {
     if (opts.urls.length === 0) throw new Error("at least one RPC URL is needed");
     this.urls = [...opts.urls];
     this.timeoutMs = opts.timeoutMs ?? 10_000;
+    this.sendTimeoutMs = opts.sendTimeoutMs ?? Math.max(this.timeoutMs, 30_000);
     this.#fetch = opts.fetch ?? ((url, init) => fetch(url, init));
+    this.#cooldownMs = opts.cooldownMs ?? 10_000;
+    this.#maxRateWaitMs = opts.maxRateWaitMs ?? 2_000;
+    this.#now = opts.now ?? (() => Date.now());
+    this.#sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.#cooling = (opts.health ?? new EndpointHealth()).cooling;
   }
 
-  /** One JSON-RPC call. Tries each URL in turn, starting with the last one that answered,
-   * on network errors, timeouts, HTTP 429 and 5xx, and node-side INTERNAL or TIMEOUT errors. */
+  /** One JSON-RPC call. Endpoints are tried in the order given, skipping to the end any that
+   * failed recently (a cooldown, `retry-after` when given). A NEAR-shaped error is the node's
+   * answer and is thrown at once, except INTERNAL and TIMEOUT errors. Anything else, a network
+   * error, a timeout, HTTP 429 or 5xx, or an error body not in NEAR's shape, is that endpoint
+   * failing, and the next one is tried. An endpoint that refused or faulted (not one that was
+   * merely slow) goes to the back of the line for `cooldownMs`, or its `retry-after`. If every
+   * endpoint refused for rate, the call waits once (at most `maxRateWaitMs`) and tries them all
+   * again, or, when the refusals last longer than that, fails at once without a request. */
   async call<T>(method: string, params: unknown, timeoutMs = this.timeoutMs): Promise<T> {
     const body = JSON.stringify({ jsonrpc: "2.0", id: ++this.#id, method, params });
-    let last: unknown = null;
-    for (let i = 0; i < this.urls.length; i++) {
-      const index = (this.#preferred + i) % this.urls.length;
-      try {
-        const reply = await this.#post(this.urls[index]!, body, timeoutMs);
-        if (reply.error) {
-          const cause = reply.error.cause?.name ?? reply.error.name ?? "UNKNOWN";
-          const err = new RpcError(rpcMessage(reply.error), cause, reply.error.data);
-          if (!RETRY_CODES.has(cause) && !RETRY_CODES.has(reply.error.name ?? "")) throw err;
-          last = err;
-          continue;
-        }
-        this.#preferred = index;
-        return reply.result as T;
-      } catch (e) {
-        if (e instanceof RpcError && !RETRY_CODES.has(e.code)) throw e;
-        last = e;
+    const failures: EndpointError[] = [];
+    const now = this.#now();
+    const until = (url: string) => this.#cooling.get(url)?.until ?? 0;
+    const order = [...this.urls].sort((a, b) => Math.max(until(a), now) - Math.max(until(b), now));
+    const soonest = until(order[0]!);
+    const allRefusing = this.urls.every((u) => until(u) > now && this.#cooling.get(u)!.rate);
+    if (allRefusing) {
+      // Every endpoint refused for rate a moment ago. Wait if that ends soon, otherwise fail
+      // without paying for another refused request.
+      if (soonest - now > this.#maxRateWaitMs) {
+        throw new RpcUnavailable(method, [], ` (every endpoint is cooling down after refusals for ${Math.ceil((soonest - now) / 1000)} s more)`);
       }
+      await this.#sleep(soonest - now);
     }
-    throw last instanceof Error ? last : new Error(`every RPC URL failed for ${method}`);
+    let waited = allRefusing;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const url of order) {
+        try {
+          const value = await this.#attempt(url, body, timeoutMs);
+          this.#cooling.delete(url);
+          return value as T;
+        } catch (e) {
+          if (e instanceof RpcError) {
+            e.after = [...failures];
+            throw e;
+          }
+          const failure = e instanceof EndpointError ? e : new EndpointError(`${hostOf(url)}: ${String(e)}`, { url, status: null, maybeDelivered: true });
+          failures.push(failure);
+          // A refusal or a fault puts the endpoint aside for a while; a slow answer does not.
+          if (!failure.timeout) {
+            const pause = failure.rateLimited ? Math.min(failure.retryAfterMs ?? this.#cooldownMs, MAX_COOLDOWN_MS) : this.#cooldownMs;
+            this.#cooling.set(url, { until: this.#now() + pause, rate: failure.rateLimited });
+          }
+        }
+      }
+      const thisPass = failures.slice(-order.length);
+      if (pass > 0 || waited || !thisPass.every((f) => f.rateLimited)) break;
+      const wait = Math.min(...thisPass.map((f) => f.retryAfterMs ?? 1_000));
+      if (wait > this.#maxRateWaitMs) break;
+      await this.#sleep(wait);
+      waited = true;
+    }
+    throw new RpcUnavailable(method, failures);
   }
 
-  async #post(url: string, body: string, timeoutMs: number): Promise<{ result?: unknown; error?: JsonRpcError }> {
+  /** One request to one endpoint: its result, a thrown `RpcError` (the node's answer) or a
+   * thrown `EndpointError` (the endpoint failing). */
+  async #attempt(url: string, body: string, timeoutMs: number): Promise<unknown> {
+    const host = hostOf(url);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let status: number;
+    let text: string;
+    let retryAfter: string | null = null;
     try {
       const res = await this.#fetch(url, {
         method: "POST",
@@ -122,14 +239,43 @@ export class NearRpc {
         body,
         signal: controller.signal,
       });
-      if (res.status === 429 || res.status >= 500) throw new Error(`${url} answered HTTP ${res.status}`);
-      return JSON.parse(await res.text()) as { result?: unknown; error?: JsonRpcError };
+      status = res.status;
+      retryAfter = res.headers?.get("retry-after") ?? null;
+      text = await res.text();
     } catch (e) {
-      if (controller.signal.aborted) throw new Error(`${url} timed out after ${timeoutMs} ms`);
-      throw e;
+      const message = controller.signal.aborted ? `${host} timed out after ${timeoutMs} ms` : `${host}: ${e instanceof Error ? e.message : String(e)}`;
+      throw new EndpointError(message, { url, status: null, maybeDelivered: true, timeout: controller.signal.aborted });
     } finally {
       clearTimeout(timer);
     }
+    let json: { result?: unknown; error?: JsonRpcError } | null = null;
+    try {
+      json = JSON.parse(text) as { result?: unknown; error?: JsonRpcError };
+    } catch {
+      json = null;
+    }
+    const err = json?.error;
+    if (err && (err.name || err.cause?.name)) {
+      const code = err.cause?.name ?? err.name!;
+      const answer = new RpcError(nearMessage(err), code, err.data ?? err.cause?.info ?? null);
+      if (!RETRY_CODES.has(code) && !RETRY_CODES.has(err.name ?? "")) throw answer;
+      throw new EndpointError(`${host}: ${answer.message}`, { url, status, maybeDelivered: true, timeout: code === "TIMEOUT_ERROR" });
+    }
+    if (status >= 200 && status < 300 && json && !err && "result" in json) return json.result;
+    const seconds = Number(retryAfter);
+    const retryAfterMs = retryAfter !== null && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+    const said = err
+      ? `: ${err.message ?? JSON.stringify(err)}${err.code !== undefined ? ` (code ${err.code})` : ""}`
+      : json
+        ? ": no result in the reply"
+        : `: ${text.slice(0, 200) || "empty body"}`;
+    throw new EndpointError(`${host} answered HTTP ${status}${said}`, {
+      url,
+      status,
+      rateLimited: status === 429 || err?.code === -429,
+      retryAfterMs,
+      maybeDelivered: status >= 500,
+    });
   }
 
   /** Calls a view method with JSON arguments and parses its JSON result. */
@@ -165,23 +311,56 @@ export class NearRpc {
     return block.header.hash;
   }
 
-  /** Sends a signed transaction and waits until its outcome is final. If the node gives up
-   * waiting, polls `tx` for the same hash, which is safe: a transaction lands at most once.
-   * Waiting calls get at least 30 s, since a node itself waits about 10 s before giving up. */
+  /** Sends a signed transaction and waits until its outcome is final. The same signed bytes
+   * may reach several endpoints (failover, a resend); they are one transaction with one hash
+   * and land at most once, so whatever happens it ends in that transaction's one outcome:
+   *
+   * - an endpoint fails before answering (a timeout, a dropped connection, a 5xx, a node
+   *   TIMEOUT or INTERNAL error): the next endpoint gets the same bytes;
+   * - every endpoint fails and at least one may have delivered it: poll `tx` for the hash; if no
+   *   endpoint knows it, resend the same bytes once, then keep polling;
+   * - an endpoint answers `InvalidNonce` after another may have delivered it: that nonce may
+   *   be our own transaction, landed; poll `tx`, and only if it is unknown is the refusal real;
+   * - an answer that says the transaction is already known or a duplicate: it is pending,
+   *   so poll `tx`;
+   * - every endpoint refused for rate or answered in a way that rules delivery out: thrown.
+   * Waiting calls get `sendTimeoutMs` (default at least 30 s), since a node itself waits about
+   * 10 s before giving up. */
   async sendTx(signed: Uint8Array, txHash: string, senderId: string, polls = 6): Promise<TxOutcome> {
-    const wait = Math.max(this.timeoutMs, 30_000);
+    const wait = this.sendTimeoutMs;
+    const send = async () => decodeOutcome(await this.call<RawOutcome>("send_tx", { signed_tx_base64: base64Encode(signed), wait_until: "FINAL" }, wait), txHash);
+    let refusal: RpcError | null = null;
     try {
-      const raw = await this.call<RawOutcome>("send_tx", { signed_tx_base64: base64Encode(signed), wait_until: "FINAL" }, wait);
-      return decodeOutcome(raw, txHash);
+      return await send();
     } catch (e) {
-      if (!timedOut(e)) throw e;
+      if (e instanceof RpcError) {
+        if (DUPLICATE.test(e.message)) {
+          // Pending: poll below.
+        } else if (/InvalidNonce/.test(e.message) && e.after.some((f) => f.maybeDelivered)) {
+          refusal = e;
+        } else {
+          throw e;
+        }
+      } else if (!(e instanceof RpcUnavailable && e.attempts.some((f) => f.maybeDelivered))) {
+        throw e;
+      }
       let last: unknown = e;
+      let resent = false;
       for (let i = 0; i < polls; i++) {
         try {
-          const raw = await this.call<RawOutcome>("tx", { tx_hash: txHash, sender_account_id: senderId, wait_until: "FINAL" }, wait);
-          return decodeOutcome(raw, txHash);
+          return decodeOutcome(await this.call<RawOutcome>("tx", { tx_hash: txHash, sender_account_id: senderId, wait_until: "FINAL" }, wait), txHash);
         } catch (err) {
           last = err;
+          if (!(err instanceof RpcError && err.code === "UNKNOWN_TRANSACTION")) continue;
+          if (refusal) throw refusal; // nobody has it: the nonce was taken by another transaction
+          if (resent) continue;
+          resent = true;
+          try {
+            return await send();
+          } catch (again) {
+            if (again instanceof RpcError && !DUPLICATE.test(again.message)) throw again;
+            last = again;
+          }
         }
       }
       throw last;
@@ -189,8 +368,8 @@ export class NearRpc {
   }
 }
 
-const timedOut = (e: unknown): boolean =>
-  (e instanceof RpcError && e.code === "TIMEOUT_ERROR") || (e instanceof Error && / timed out after /.test(e.message));
+/** An answer meaning the node already has this transaction. */
+const DUPLICATE = /already (known|exists|processed|in the pool)|duplicate/i;
 
 interface JsonRpcError {
   name?: string;
@@ -200,9 +379,11 @@ interface JsonRpcError {
   data?: unknown;
 }
 
-function rpcMessage(err: JsonRpcError): string {
-  const data = typeof err.data === "string" ? err.data : JSON.stringify(err.data ?? err.cause?.info ?? null);
-  return `${err.cause?.name ?? err.name ?? "RPC error"}: ${data}`;
+/** The text of a NEAR-shaped error: its cause, then the most specific detail it carries. */
+function nearMessage(err: JsonRpcError): string {
+  const detail = err.data ?? err.cause?.info ?? err.message;
+  const text = typeof detail === "string" ? detail : detail === undefined ? "no detail" : JSON.stringify(detail);
+  return `${err.cause?.name ?? err.name}: ${text}`;
 }
 
 type ExecStatus = { SuccessValue: string } | { SuccessReceiptId: string } | { Failure: unknown } | "Unknown" | "Pending";
