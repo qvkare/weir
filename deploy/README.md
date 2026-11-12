@@ -13,6 +13,7 @@ node deploy/src/cli.ts apply  --network testnet --suffix <s>           # do it (
 node deploy/src/cli.ts status --network testnet                        # read the chain, compare
 node deploy/src/cli.ts seal   --network testnet --markets h100-fast --confirm weir-h100-fast-<s>.testnet
 node deploy/src/cli.ts topup  --network testnet --days 14 [--dry-run]  # keep it funded (below)
+node deploy/src/cli.ts rotate --network testnet --account <a> [--contract <c>] [--dry-run]  # replace keys (Keys)
 node deploy/src/cli.ts verify evidence/deploy/<record>.json [--txs]    # no keys: a record against the chain (below)
 ```
 
@@ -141,6 +142,36 @@ each key in every encoding (base58 with and without the public half, hex, base64
 `state.json`, `record.json` and `deployments.json` are refused if they would contain one. Tests
 check this with recognisable generated keys; the sandbox run scans every CLI output and output
 file for every secret it generated.
+
+### Replacing a key: `rotate`
+
+```sh
+node deploy/src/cli.ts rotate --network testnet --account <operator> [--contract <contract>] --dry-run   # what it would do
+node deploy/src/cli.ts rotate --network testnet --account <operator> [--contract <contract>]
+```
+
+Use it for a key that may have been seen: printed, pasted, copied off the machine. A NEAR ed25519
+secret key is its 32-byte seed followed by its public key, so a leak of the first half is a leak
+of the whole key. `rotate` replaces the function-call keys of one operator account (a reporter,
+an agent or the keeper): every key that account holds in the layout, or only the one for
+`--contract`. It refuses the market contracts, the token, the ops parent and any account not in
+the layout; their full-access keys are not what it is for (a contract's is removed by `seal`).
+
+It is `topup`'s rotation (below), run on demand, in the same order: the next-generation key is
+generated and saved in the credentials directory; it is added on chain with the same receiver and
+methods and the allowance a fresh key gets (a month at the expected load, `allowanceFor`);
+`keeper.env` is rewritten; the chain is read back, and unless the new key is there with exactly
+that receiver and method list the old key is kept and `rotate` stops; then the old key is
+deleted; `record.json` is rewritten, so its key list has the new public key and not the old one
+(the old one stays in its transaction list as the deleted key). Each hash goes into `state.json`
+(`rotate:<account>:<contract>:<new key>`, `retire:<account>:<old key>`). A run stopped before the
+add adds the key it saved; one stopped after the add finishes the job; neither makes a third key.
+`--dry-run` reads the chain and the credentials directory, prints what it would do, and sends
+nothing and creates no key. Source: `src/rotate.ts`; tests: `test/rotate.test.ts`.
+
+**Afterwards, restart the keeper** (`node --env-file=deploy/out/<network>/keeper.env keeper/src/node.ts ...`)
+or, for the Worker, put its secrets again (`wrangler secret put REPORTERS`, `AGENTS` or `KEEPER`, from
+the new `keeper.env`). Until then it signs with the old key, which is deleted, and its calls fail.
 
 ## Outputs (`--out`)
 
@@ -329,7 +360,7 @@ after a rotation.
 ## Tests
 
 ```sh
-pnpm --filter @weir/deploy test        # offline, node:test: 54 tests
+pnpm --filter @weir/deploy test        # offline, node:test: 60 tests
 pnpm --filter @weir/deploy typecheck   # tsc --noEmit
 pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 (WEIR_DEPLOY_E2E_PORT), about 3 minutes
 ```
@@ -368,6 +399,13 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   with both named; 40 s of 429 on both is waited through to a full result; `--txs` catches an
   unknown hash, a failed transaction and a wrong signer; the CLI's exit codes 0, 1, 3 and 2.
 - `pace.test.ts`: the RPC policy on a fake clock (see "RPC policy" above).
+- `rotate.test.ts`: one reporter key rotated on the fake chain (the new key has the same receiver
+  and methods and a fresh month's allowance, the old one is gone, `keeper.env` changes for that
+  contract only, every other key on chain is untouched, the record's key list and the state file
+  are updated); every key of the keeper; `--dry-run` changes nothing on chain or in the
+  credentials directory; killed before and after the add, the next run finishes without a third
+  key; a new key stored with another method list keeps the old key; the refusals; no secret in the
+  log, state, record or deployments.json.
 - `encode.test.ts`: `DeleteKey` (the one action this package encodes) and a 400 kB deploy, byte
   for byte against `@near-js/transactions`.
 - `faucet.test.ts`: the faucet client through 429 and 503, an existing account, a refusal, a
@@ -453,6 +491,14 @@ expected rate (for example 0.730 NEAR to each reporter, which held 0.127 NEAR); 
 same free RPC limit. So the operators are funded for about seven days from 07:42 UTC, not one.
 Still not shown: `apply` with the paced client, and what the faucet does after two accounts in a
 row.
+
+**Key rotation, 2026-11-12, after the top-up.** The first half of the secret of
+`reporter-a.weir-ops-w1.testnet`'s function-call key for `weir-h100-fast-w1.testnet` (`report`,
+`finalize_print`) was printed into a session's tool output by a shell mistake: zsh sends a piped
+command's output to the pipe even when it is also redirected to /dev/null. The key is treated as
+exposed. To replace it:
+`node deploy/src/cli.ts rotate --network testnet --account reporter-a.weir-ops-w1.testnet --contract weir-h100-fast-w1.testnet`.
+NOT RUN YET when this was written: the transaction hashes, the time and the result go here.
 
 Not yet shown on testnet:
 

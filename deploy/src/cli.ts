@@ -1,4 +1,4 @@
-// node deploy/src/cli.ts <plan|apply|status|seal|topup> --network sandbox|testnet [options]
+// node deploy/src/cli.ts <plan|apply|status|seal|topup|rotate> --network sandbox|testnet [options]
 // node deploy/src/cli.ts verify <record.json> [--rpc url,...] [--json] [--txs]   (keyless read-back, src/verify.ts)
 //
 //   --markets h100-fast,h100-weekly   markets to deploy (default: those in the state file, else all four)
@@ -11,8 +11,9 @@
 //   --faucet-wait <secs>              testnet only: how long apply keeps retrying a rate-limited faucet (900)
 //   --confirm <account>               seal only: once per market contract, the account name typed back
 //   --json                            status only: the report as JSON
-//   --dry-run                         topup only: print what it would do, send nothing, create no key
 //   --max-fund-accounts <n>           topup only: fresh faucet accounts it may create (default 20)
+//   --account <id> [--contract <id>]  rotate only: the operator whose function-call keys to replace (all, or the one for that contract)
+//   --dry-run                         topup and rotate: print what it would do, send nothing, create no key
 //   --now <unix secs>                 plan only: the time t0 is worked out for (default: now)
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -31,11 +32,12 @@ import { newState, readState, writeState } from "./state.ts";
 import { renderStatus, status } from "./status.ts";
 import { buildPlan } from "./steps.ts";
 import { DEFAULT_TOPUP_DAYS, planTopup, readTopupInputs, renderTopup, topup } from "./topup.ts";
+import { planRotation, renderRotation, rotate, rotationTargets } from "./rotate.ts";
 import { verifyCli } from "./verify.ts";
 import { loadWasm } from "./wasm.ts";
 
 const USAGE =
-  "usage: node deploy/src/cli.ts <plan|apply|status|seal|topup> --network sandbox|testnet [--markets a,b] [--suffix s] [--out dir] [--keys dir] [--days n] [--rpc url] [--root-key file] [--confirm account]... [--json]\n" +
+  "usage: node deploy/src/cli.ts <plan|apply|status|seal|topup|rotate> --network sandbox|testnet [--markets a,b] [--suffix s] [--out dir] [--keys dir] [--days n] [--rpc url] [--root-key file] [--confirm account]... [--account id [--contract id]] [--json] [--dry-run]\n" +
   "       node deploy/src/cli.ts verify <record.json> [--rpc url,...] [--json] [--txs]";
 
 const redactor = new Redactor();
@@ -60,6 +62,8 @@ async function main(): Promise<number> {
       "max-fund-accounts": { type: "string" },
       now: { type: "string" },
       txs: { type: "boolean" },
+      account: { type: "string" },
+      contract: { type: "string" },
     },
   });
   const command = positionals[0];
@@ -67,7 +71,7 @@ async function main(): Promise<number> {
     const rpc = values.rpc?.split(",").map((s) => s.trim()).filter(Boolean);
     return verifyCli(positionals.slice(1), { ...(rpc ? { rpc } : {}), json: values.json ?? false, txs: values.txs ?? false }, say);
   }
-  if (!command || !["plan", "apply", "status", "seal", "topup"].includes(command) || positionals.length > 1) {
+  if (!command || !["plan", "apply", "status", "seal", "topup", "rotate"].includes(command) || positionals.length > 1) {
     console.error(USAGE);
     return 2;
   }
@@ -130,6 +134,21 @@ async function main(): Promise<number> {
 
   const st = state ?? newState(network.id, suffix, markets, new Date().toISOString());
   st.markets = markets;
+
+  if (command === "rotate") {
+    if (!state) throw new Error(`no state file in ${out}: rotate works on a deployment apply made`);
+    if (!values.account) throw new Error("rotate needs --account <operator account> (and --contract <contract> for one key only)");
+    const targets = rotationTargets(l, values.account, values.contract);
+    if (values["dry-run"]) {
+      say(`${TOOL} ${VERSION} rotate --dry-run: ${network.id}, suffix ${suffix}; nothing will be sent and no key created`);
+      say(renderRotation(await planRotation({ chain, keys, layout: l }, targets)));
+      return 0;
+    }
+    say(`${TOOL} ${VERSION} rotate: ${network.id}, suffix ${suffix}, ${targets.length} key(s) of ${values.account}`);
+    const r = await rotate({ chain, keys, layout: l, state: st, out, log: say, writeOutputs: async () => void (await writeOutputs(out, plan, st, chain, keys, wasm)) }, targets);
+    say(`done: ${r.sent} transactions sent. Restart the keeper (or re-put its secrets) so it loads keeper.env: the old key is deleted.`);
+    return 0;
+  }
 
   if (command === "topup") {
     if (!state) throw new Error(`no state file in ${out}: run apply first`);
