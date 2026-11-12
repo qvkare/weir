@@ -11,7 +11,7 @@
 // Information lines (sealed or not, the market's status, its last print, its totals) are never
 // failures: a quiet market or a contract that is not sealed is not a broken deployment.
 import { existsSync, readFileSync } from "node:fs";
-import { decodeOutcome, RpcError, type NearRpc, type AccessKeyPermission, type AccountInfo, type FetchLike } from "../../chain/src/near.ts";
+import { decodeOutcome, RpcError, RpcUnavailable, type NearRpc, type AccessKeyPermission, type AccountInfo, type FetchLike } from "../../chain/src/near.ts";
 import type { WireLastPrint, WireParams, WireStatus, WireTotals } from "../../engine/src/mod.ts";
 import { rpcFor } from "./chain.ts";
 import { TESTNET } from "./layout.ts";
@@ -24,6 +24,9 @@ export const EXIT = { match: 0, differs: 1, usage: 2, unreachable: 3 } as const;
  * transactions after about five epochs, roughly two and a half days), then dRPC. Not
  * archival-rpc.testnet.near.org: on 2026-11-12 it answered HTTP 429 "THIS ENDPOINT IS DEPRECATED". */
 export const TESTNET_ARCHIVAL = ["https://archival-rpc.testnet.fastnear.com", "https://near-testnet.drpc.org"];
+
+/** How long `verify` lets one call wait out rate refusals on every endpoint (`src/pace.ts`). */
+export const VERIFY_MAX_CALL_WAIT_MS = 60_000;
 
 export const LOCAL_WEIR_WASM = "contracts/target/near/weir/weir.wasm";
 
@@ -51,8 +54,8 @@ export interface VerifyOptions {
   txs?: boolean;
   /** The local weir.wasm's code hash, or null when there is no local build. */
   localWeirCodeHash?: string | null;
-  /** Attempts per call when no endpoint answers (default 2, 5 s apart), on top of the paced
-   * fetch's own waiting out of rate limits. */
+  /** Attempts per call when no endpoint answers for a reason other than rate (default 2, 5 s
+   * apart). Rate refusals are waited out by the client (`src/pace.ts`), not retried here. */
   attempts?: number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -164,6 +167,8 @@ export async function verifyRecord(record: RecordJson, opts: VerifyOptions): Pro
       } catch (e) {
         if (isAnswer(e)) throw e;
         last = e;
+        // The client has already waited out the rate limit for its bound: do not double it.
+        if (e instanceof RpcUnavailable && e.attempts.every((a) => a.rateLimited)) break;
       }
     }
     throw new Unreachable(msg(last));
@@ -394,7 +399,7 @@ export function renderVerify(r: VerifyReport, file: string): string {
 /** The CLI: `verify <record.json> [--rpc url,...] [--json] [--txs]`. Returns the exit code. */
 export async function verifyCli(
   args: string[],
-  opts: { rpc?: string[]; json?: boolean; txs?: boolean; fetch?: FetchLike; sleep?: (ms: number) => Promise<void>; localWeirCodeHash?: string | null },
+  opts: { rpc?: string[]; json?: boolean; txs?: boolean; fetch?: FetchLike; sleep?: (ms: number) => Promise<void>; now?: () => number; localWeirCodeHash?: string | null },
   say: (line: string) => void,
 ): Promise<number> {
   if (args.length !== 1) {
@@ -411,8 +416,9 @@ export async function verifyCli(
     console.error(`${file}: ${msg(e)}`);
     return EXIT.usage;
   }
-  // Paced (src/pace.ts): a rate limit is waited out, up to 30 s per call per endpoint, before failing over.
-  const mk = (u: string[]) => rpcFor(u, opts.fetch, { maxWaitMs: 30_000, ...(opts.sleep ? { sleep: opts.sleep } : {}) });
+  // src/pace.ts: rate refusals on every endpoint are waited out for up to 60 s per call.
+  const mk = (u: string[]) =>
+    rpcFor(u, opts.fetch, { maxCallWaitMs: VERIFY_MAX_CALL_WAIT_MS, ...(opts.sleep ? { sleep: opts.sleep } : {}), ...(opts.now ? { now: opts.now } : {}) });
   const rpc = mk(urls);
   const txRpc = opts.rpc || record.network !== "testnet" ? rpc : mk(TESTNET_ARCHIVAL);
   const r = await verifyRecord(record, {

@@ -181,11 +181,8 @@ node deploy/src/cli.ts verify <record> --rpc <url,...> [--json]            # oth
 
 It takes a `record.json` and nothing else: no keys, no `deploy/out/`, no state file, no Rust. It
 reads from the record's network's public endpoints (testnet: fastnear, then dRPC, with failover;
-a sandbox record needs `--rpc`), one read-only call at a time. A rate limit is waited out on the
-same endpoint (`src/pace.ts`: `retry-after`, else 1, 2, 4 s ..., at most 30 s per call per endpoint)
-before failing over, and a call no endpoint answers is tried once more after 5 s. `apply`, `status`
-and `topup` use the same paced client (`rpcFor`, with up to 90 s of waiting per call). Source:
-`src/verify.ts`. One line per check:
+a sandbox record needs `--rpc`), one read-only call at a time, at least 100 ms apart per host.
+Source: `src/verify.ts`. One line per check (the RPC policy follows the table of outcomes):
 
 | Check | Fails when |
 |---|---|
@@ -217,7 +214,32 @@ Three outcomes, each with its own last line and exit code:
 |---|---|---|
 | `RESULT match: all N checks against testnet agree with <file>` | 0 | every check passed |
 | `RESULT DIFFERS: k of N checks found testnet different from <file>` | 1 | the chain answered and something differs (also when the chain stopped answering partway after a difference was found: the line says so) |
-| `RESULT NOT CHECKED: testnet could not be reached after N checks; nothing is claimed either way` | 3 | network errors, timeouts or rate limits on every endpoint, three times |
+| `RESULT NOT CHECKED: testnet could not be reached after N checks; nothing is claimed either way` | 3 | every endpoint failed a call for a reason other than rate, twice 5 s apart; or every endpoint refused it for rate for longer than 60 s. The line names each endpoint and what it said |
+
+**RPC policy** (`src/pace.ts`, `rpcFor` in `src/chain.ts`; `apply`, `status`, `topup` and `verify`
+all use it). It is the chain client's (`chain/README.md`, "RPC endpoints"), with two bounds raised
+for a command-line tool that can wait longer than a keeper tick:
+
+- A NEAR-shaped error is the node's answer and is never retried. Any other failure (no connection,
+  a timeout, HTTP 429, 4xx or 5xx, a provider's own error body) moves the call to the next endpoint
+  and puts the failing one on a cooldown: 10 s, or its positive `retry-after`, at most 60 s.
+- When every endpoint refused a call for rate, the client waits once, up to **30 s** (the client's
+  default is 2 s), and tries them all again.
+- If they still refuse, `PatientRpc` calls again, pausing 5 s whenever every endpoint is still
+  cooling down, until **120 s** have passed since the call began (**60 s** in `verify`). Then it
+  throws the client's `RpcUnavailable` from the last attempt, which names each endpoint and what it
+  said, with how long it waited. With the 30 s wait on top, a call gives up at most about 150 s
+  (90 s in `verify`) after it began. These bounds are the authors' choice, not a measurement.
+- A call that failed for any other reason fails at once: the client has already tried every
+  endpoint. `verify` tries such a call once more after 5 s; it does not retry a call that ran out
+  its rate-limit bound.
+- Requests time out after 20 s; `send_tx` and `tx` after 60 s.
+
+`pace.test.ts` pins this on a fake clock: both endpoints refusing for 25 s, then answering, give
+the answer; refusing beyond the bound gives `RpcUnavailable` naming both; a `retry-after` of 45 s
+is waited out; a burst limit like fastnear's costs waits, not failures; a node's answer and an
+unreachable pair fail at once. `verify.test.ts`: 40 s of refusals on both endpoints still give a
+full result; refusals without end give "not checked" with both endpoints named.
 
 Exit 2 is a usage error or a file that is not a record written by `apply`. `make verify-deploy`
 runs `verify` on every `evidence/deploy/*.json` (`DEPLOY_RPC=<url,...>` for other endpoints):
@@ -307,7 +329,7 @@ after a rotation.
 ## Tests
 
 ```sh
-pnpm --filter @weir/deploy test        # offline, node:test: 46 tests
+pnpm --filter @weir/deploy test        # offline, node:test: 54 tests
 pnpm --filter @weir/deploy typecheck   # tsc --noEmit
 pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 (WEIR_DEPLOY_E2E_PORT), about 3 minutes
 ```
@@ -341,10 +363,11 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   a foreign reporter, a missing account, a missing key, a key for another receiver, a key with
   another method list (extra and missing methods named), a function-call key turned full-access,
   and a record saying "sealed" over a contract with keys each fail with a line naming the
-  difference; a sealed and an unsealed contract are described and neither fails; an endpoint
-  that refuses connections, and one that answers HTTP 429 without end, give "not checked"
-  (exit 3), a brief 429 is waited through; `--txs` catches an unknown hash, a failed transaction
-  and a wrong signer; the CLI's exit codes 0, 1, 3 and 2.
+  difference; a sealed and an unsealed contract are described and neither fails; two endpoints
+  that refuse connections, or answer HTTP 429 beyond the 60 s bound, give "not checked" (exit 3)
+  with both named; 40 s of 429 on both is waited through to a full result; `--txs` catches an
+  unknown hash, a failed transaction and a wrong signer; the CLI's exit codes 0, 1, 3 and 2.
+- `pace.test.ts`: the RPC policy on a fake clock (see "RPC policy" above).
 - `encode.test.ts`: `DeleteKey` (the one action this package encodes) and a 400 kB deploy, byte
   for byte against `@near-js/transactions`.
 - `faucet.test.ts`: the faucet client through 429 and 503, an existing account, a refusal, a
@@ -406,11 +429,15 @@ What went wrong, and what was done:
 - **A burst limit turned into failures.** archival-rpc.testnet.fastnear.com answered 5 `tx`
   lookups in a row, then HTTP 429 with `retry-after: 0`, and answered again within 5 s.
   `NearRpc` fails over at the first 429, so the first `verify --txs` ended "NOT CHECKED" after
-  210 s. The deploy package's RPC client now waits a rate limit out (`src/pace.ts`,
-  `pace.test.ts`). Rerun at 00:53 UTC with the paced client, fastnear archival then dRPC:
+  210 s. The deploy package's RPC client then got a layer that waited a rate limit out on each
+  endpoint before failing over. Rerun at 00:53 UTC with it, fastnear archival then dRPC:
   `RESULT match: all 42 checks against testnet agree`, "all 211 recorded hashes are known to the
   chain and succeeded", 49 s. By then the fast market had its first print (bucket 00:50 UTC,
   2.9175 USD/GPU-hour) and 159.956 tUSDC locked in a round.
+  After the chain client gained its own failover, cooldowns and rate-limit wait (commit 9507b3c),
+  that layer fought the client's 10 s cooldown, and two `verify` tests failed. The layer was
+  replaced by the policy above, which uses the client's own options and retries only on top of
+  them.
 
 Not yet shown on testnet:
 

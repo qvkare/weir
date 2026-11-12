@@ -1,85 +1,93 @@
-// A `fetch` for `NearRpc` that paces itself against a public endpoint's rate limit. Measured on
-// 2026-11-12 against https://archival-rpc.testnet.fastnear.com: 5 `tx` lookups in a row answered
-// 200, the next 20 answered HTTP 429 with `retry-after: 0`, and the endpoint answered 200 again
-// within 5 s. Without pacing, `NearRpc` treats a 429 as an outage and fails over at once, so one
-// refusal became a failure (`verify --txs` reported "not checked" after 210 s on 2026-11-12).
+// How the deploy tool waits out RPC rate limits. A command-line tool can wait much longer than a
+// keeper tick, so it adds one thing to the chain client (`chain/src/near.ts`, "RPC endpoints" in
+// chain/README.md): it keeps retrying a call that failed only because every endpoint refused it
+// for rate, up to a bound per call. Everything else is the client's own policy:
 //
-// Here a 429 (or 503) is waited out on the same endpoint: `retry-after` seconds when the endpoint
-// gives a positive one, else 1, 2, 4, 8, 16 s, ..., capped at 30 s per wait and `maxWaitMs` in all
-// per request. Only then is the refusal handed to `NearRpc`, which fails over to the next URL.
-// Requests to one host are also spaced by at least `minGapMs`. Network errors pass straight through.
+// - a NEAR-shaped error is the node's answer and is never retried here;
+// - any other failure moves the call to the next endpoint and puts the failing one on a cooldown
+//   (10 s, or its positive `retry-after`, at most 60 s);
+// - when every endpoint refused for rate, the client waits once, up to `maxRateWaitMs`, and tries
+//   them all again. The deploy tool raises that bound from the client's 2 s to 30 s.
 //
-// Each try has its own timeout (`timeoutMs`, or `longTimeoutMs` for `send_tx`, `tx` and
-// `broadcast_tx_commit`, which wait on the chain), and the caller's signal is not used: `NearRpc`'s
-// own timer would otherwise count the waits. Give `NearRpc` a timeout longer than any try plus
-// `maxWaitMs` (`rpcFor` does). A try that times out throws "<url> timed out after <n> ms", the
-// text `NearRpc` recognises, so a slow `send_tx` is still followed by polling `tx`.
-import type { FetchLike } from "../../chain/src/near.ts";
+// `PatientRpc.call` then retries an `RpcUnavailable` whose every attempt was a rate refusal (or
+// that made no attempt because every endpoint was still cooling down after rate refusals), pausing
+// 5 s whenever the client made no attempt, until `maxCallWaitMs` has passed since the call began.
+// The error it finally throws is the client's `RpcUnavailable` from the last call that reached the
+// endpoints, so it names each endpoint and what it said, with how long it waited. A failure that
+// is not a rate refusal (no connection, a 5xx, a timeout) is thrown at once: the client has
+// already tried every endpoint.
+//
+// Measured on 2026-11-12 against https://archival-rpc.testnet.fastnear.com: 5 `tx` lookups in a
+// row answered 200, the next 20 answered HTTP 429 with `retry-after: 0`, and it answered 200 again
+// within 5 s.
+//
+// `spacedFetch` keeps at least `minGapMs` between two requests to one host, which the client does
+// not do.
+import { NearRpc, RpcUnavailable, type FetchLike, type RpcOptions } from "../../chain/src/near.ts";
 
-export interface PaceOptions {
-  /** Minimum time between two requests to the same host. Default 100 ms. */
-  minGapMs?: number;
-  /** Longest time one request may spend waiting out refusals. Default 90 s. */
-  maxWaitMs?: number;
-  /** Per try. Default 20 s; 60 s for the calls that wait on the chain. */
-  timeoutMs?: number;
-  longTimeoutMs?: number;
-  fetch?: FetchLike;
-  sleep?: (ms: number) => Promise<void>;
-  now?: () => number;
-  /** Told about each wait, for logging. */
-  onWait?: (url: string, status: number, ms: number) => void;
+/** The deploy tool's bounds, in milliseconds. */
+export const DEPLOY_MAX_RATE_WAIT_MS = 30_000;
+export const DEPLOY_MAX_CALL_WAIT_MS = 120_000;
+/** Pause before calling again when the client made no attempt (every endpoint still cooling). */
+export const COOLING_PAUSE_MS = 5_000;
+
+export interface PatientOptions extends RpcOptions {
+  /** How long one call may keep waiting out rate refusals, from its start. Default 120 s. */
+  maxCallWaitMs?: number;
 }
 
-type Reply = Awaited<ReturnType<FetchLike>> & { headers?: { get(name: string): string | null } };
+const rateOnly = (e: RpcUnavailable) => e.attempts.every((a) => a.rateLimited);
 
-export function pacedFetch(opts: PaceOptions = {}): FetchLike {
-  const inner: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const now = opts.now ?? Date.now;
-  const minGap = opts.minGapMs ?? 100;
-  const maxWait = opts.maxWaitMs ?? 90_000;
-  const timeout = opts.timeoutMs ?? 20_000;
-  const longTimeout = opts.longTimeoutMs ?? 60_000;
-  const last = new Map<string, number>();
-  const host = (url: string) => {
-    try {
-      return new URL(url).host;
-    } catch {
-      return url;
-    }
-  };
-  return async (url, init) => {
-    const h = host(url);
-    let waited = 0;
-    for (let attempt = 0; ; attempt++) {
-      const since = now() - (last.get(h) ?? -Infinity);
-      if (since < minGap) await sleep(minGap - since);
-      last.set(h, now());
-      const ms0 = /"method":"(send_tx|tx|broadcast_tx_commit)"/.test(init.body) ? longTimeout : timeout;
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), ms0);
-      let res: Reply;
+/** `NearRpc` that waits out rate limits for up to `maxCallWaitMs` per call. */
+export class PatientRpc extends NearRpc {
+  readonly maxCallWaitMs: number;
+  readonly #now: () => number;
+  readonly #sleep: (ms: number) => Promise<void>;
+
+  constructor(opts: PatientOptions) {
+    super({ maxRateWaitMs: DEPLOY_MAX_RATE_WAIT_MS, ...opts });
+    this.maxCallWaitMs = opts.maxCallWaitMs ?? DEPLOY_MAX_CALL_WAIT_MS;
+    this.#now = opts.now ?? (() => Date.now());
+    this.#sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
+
+  override async call<T>(method: string, params: unknown, timeoutMs?: number): Promise<T> {
+    const start = this.#now();
+    let reached: RpcUnavailable | null = null;
+    for (;;) {
       try {
-        res = (await inner(url, { ...init, signal: controller.signal })) as Reply;
-        if (res.status !== 429 && res.status !== 503) {
-          // Read the body inside the timeout, so a stalled body is a timeout too.
-          const text = await res.text();
-          return { status: res.status, text: async () => text };
-        }
+        return await super.call<T>(method, params, timeoutMs);
       } catch (e) {
-        if (controller.signal.aborted) throw new Error(`${url} timed out after ${ms0} ms`);
-        throw e;
-      } finally {
-        clearTimeout(timer);
+        if (!(e instanceof RpcUnavailable) || !rateOnly(e)) throw e;
+        if (e.attempts.length > 0) reached = e;
+        const waited = this.#now() - start;
+        if (waited >= this.maxCallWaitMs) {
+          const secs = Math.round(waited / 1000);
+          throw new RpcUnavailable(method, reached?.attempts ?? [], ` (rate-limited on every endpoint; gave up after ${secs} s of waiting, the bound is ${this.maxCallWaitMs / 1000} s)`);
+        }
+        if (e.attempts.length === 0) await this.#sleep(Math.min(COOLING_PAUSE_MS, this.maxCallWaitMs - waited));
       }
-      await res.text().catch(() => "");
-      const ra = Number(res.headers?.get("retry-after") ?? "");
-      const ms = Math.min(30_000, Number.isFinite(ra) && ra > 0 ? ra * 1000 : 1000 * 2 ** attempt);
-      if (waited + ms > maxWait) return res;
-      opts.onWait?.(url, res.status, ms);
-      await sleep(ms);
-      waited += ms;
     }
+  }
+}
+
+/** A fetch that spaces requests to one host by at least `minGapMs` (default 100 ms). */
+export function spacedFetch(opts: { fetch?: FetchLike; minGapMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {}): FetchLike {
+  const inner: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const minGap = opts.minGapMs ?? 100;
+  const last = new Map<string, number>();
+  return async (url, init) => {
+    let host = url;
+    try {
+      host = new URL(url).host;
+    } catch {
+      // not a URL: space by the string itself
+    }
+    const since = now() - (last.get(host) ?? -Infinity);
+    if (since < minGap) await sleep(minGap - since);
+    last.set(host, now());
+    return inner(url, init);
   };
 }

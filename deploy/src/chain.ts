@@ -16,7 +16,7 @@ import {
 } from "../../chain/src/mod.ts";
 import { decodeOutcome } from "../../chain/src/near.ts";
 import { sha256 } from "../../engine/src/mod.ts";
-import { pacedFetch, type PaceOptions } from "./pace.ts";
+import { PatientRpc, spacedFetch } from "./pace.ts";
 
 /** NEAR's `DeleteKey` action (borsh enum index 6 of `Action`), which `chain/src/tx.ts` does not encode. */
 export interface DeleteKey {
@@ -308,11 +308,17 @@ export function faucetCreator(opts: FaucetOptions = {}): TopLevelCreator {
   };
 }
 
-/** `NearRpc` over a paced fetch (`src/pace.ts`): a rate limit is waited out on the same endpoint
- * before failing over. Each try times out on its own (20 s, 60 s for calls that wait on the chain);
- * `NearRpc`'s own timer is set beyond a try plus the longest wait so that it never counts the waits. */
-export function rpcFor(urls: readonly string[], fetchImpl?: FetchLike, pace: Omit<PaceOptions, "fetch"> = {}): NearRpc {
-  const maxWaitMs = pace.maxWaitMs ?? 90_000;
-  const fetch = pacedFetch({ ...pace, maxWaitMs, ...(fetchImpl ? { fetch: fetchImpl } : {}) });
-  return new NearRpc({ urls, timeoutMs: 60_000 + maxWaitMs + 10_000, fetch });
+/** The deploy tool's RPC client (`src/pace.ts`): the chain client's failover and cooldowns, its
+ * rate-limit wait raised to 30 s, and a call that every endpoint refuses for rate retried for up
+ * to `maxCallWaitMs` (default 120 s). Requests to one host are at least 100 ms apart. Requests
+ * time out after 20 s, `send_tx` and `tx` after 60 s. */
+export function rpcFor(
+  urls: readonly string[],
+  fetchImpl?: FetchLike,
+  opts: { maxCallWaitMs?: number; maxRateWaitMs?: number; cooldownMs?: number; minGapMs?: number; now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+): NearRpc {
+  const { minGapMs, ...rest } = opts;
+  const clock = { ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}) };
+  const fetch = spacedFetch({ ...clock, ...(minGapMs !== undefined ? { minGapMs } : {}), ...(fetchImpl ? { fetch: fetchImpl } : {}) });
+  return new PatientRpc({ urls, timeoutMs: 20_000, sendTimeoutMs: 60_000, fetch, ...rest });
 }

@@ -1,90 +1,103 @@
-// The paced fetch behind `rpcFor`: a rate limit is waited out on the same endpoint (retry-after,
-// else 1, 2, 4 s ...), and only a refusal that outlasts `maxWaitMs` reaches `NearRpc`, which then
-// fails over. Requests to one host are spaced; each try has its own timeout. No network.
+// The deploy tool's RPC policy (`src/pace.ts`, `rpcFor`): the chain client's failover and
+// cooldowns, its rate-limit wait raised to 30 s, and a call that every endpoint refuses for rate
+// retried until 120 s (60 s in verify) have passed; the final error names every endpoint. A fake
+// clock: `sleep` advances it, nothing really waits. No network.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { FetchLike } from "../../chain/src/mod.ts";
+import { RpcError, RpcUnavailable, type FetchLike } from "../../chain/src/mod.ts";
 import { rpcFor } from "../src/chain.ts";
-import { pacedFetch } from "../src/pace.ts";
+import { DEPLOY_MAX_CALL_WAIT_MS, spacedFetch } from "../src/pace.ts";
 
-const reply = (status: number, body: unknown, retryAfter?: string) => ({
-  status,
-  text: async () => (typeof body === "string" ? body : JSON.stringify(body)),
-  headers: { get: (n: string) => (n.toLowerCase() === "retry-after" ? (retryAfter ?? null) : null) },
-});
-const req = (method = "query") => ({ method: "POST" as const, headers: {}, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} }), signal: new AbortController().signal });
-
-test("a 429 with retry-after 0 is waited out with 1, 2, 4 s on the same endpoint", async () => {
-  const answers = [429, 429, 429, 200];
-  const urls: string[] = [];
-  const waits: number[] = [];
-  const f = pacedFetch({ fetch: async (url) => (urls.push(url), reply(answers.shift()!, { ok: 1 }, "0")), sleep: async (ms) => void waits.push(ms), minGapMs: 0 });
-  const r = await f("https://a.example/", req());
-  assert.equal(r.status, 200);
-  assert.equal(await r.text(), '{"ok":1}');
-  assert.deepEqual(waits, [1000, 2000, 4000]);
-  assert.deepEqual(new Set(urls), new Set(["https://a.example/"]));
+const ACCOUNT = { amount: "1", locked: "0", code_hash: "11111111111111111111111111111111", storage_usage: 1 };
+const ok = (result: unknown) => ({ status: 200, text: async () => JSON.stringify({ jsonrpc: "2.0", id: 1, result }), headers: { get: () => null } });
+// fastnear's refusal over its free limit, measured 2026-11-12 (chain/README.md, "RPC endpoints").
+const limited = (retryAfter: string | null = null) => ({
+  status: 429,
+  text: async () => JSON.stringify({ jsonrpc: "2.0", error: { code: -429, message: "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com" }, id: "1" }),
+  headers: { get: (n: string) => (n.toLowerCase() === "retry-after" ? retryAfter : null) },
 });
 
-test("a positive retry-after is honoured, capped at 30 s", async () => {
-  const answers = [reply(429, "", "3"), reply(503, "", "120"), reply(200, "{}")];
-  const waits: number[] = [];
-  const f = pacedFetch({ fetch: async () => answers.shift()!, sleep: async (ms) => void waits.push(ms), minGapMs: 0 });
-  assert.equal((await f("https://a.example/", req())).status, 200);
-  assert.deepEqual(waits, [3000, 30_000]);
-});
+function clock() {
+  const c = { t: 1_000_000, waits: [] as number[] };
+  return { c, now: () => c.t, sleep: async (ms: number) => void (c.waits.push(ms), (c.t += ms)) };
+}
+const URLS = ["https://first.example/", "https://second.example/"];
+const host = (u: string) => new URL(u).host;
 
-test("a refusal that outlasts maxWaitMs is handed on, and NearRpc fails over to the next endpoint", async () => {
+test("both endpoints rate-limited briefly, then recovering: the call gets its answer", async () => {
+  const k = clock();
+  const until = k.c.t + 25_000; // both refuse for 25 s
   const seen: string[] = [];
-  const inner: FetchLike = async (url) => {
-    seen.push(url);
-    return url.includes("deprecated") ? reply(429, "THIS ENDPOINT IS DEPRECATED") : reply(200, { jsonrpc: "2.0", id: 1, result: { amount: "1", locked: "0", code_hash: "11111111111111111111111111111111", storage_usage: 1 } });
-  };
-  const waits: number[] = [];
-  const rpc = rpcFor(["https://deprecated.example/", "https://good.example/"], inner, { sleep: async (ms) => void waits.push(ms), maxWaitMs: 10_000, minGapMs: 0 });
+  const f: FetchLike = async (url) => (seen.push(host(url)), k.c.t < until ? limited() : ok(ACCOUNT));
+  const rpc = rpcFor(URLS, f, { now: k.now, sleep: k.sleep, minGapMs: 0 });
   const a = await rpc.viewAccount("x.testnet");
   assert.equal(a.amount, "1");
-  assert.deepEqual(waits, [1000, 2000, 4000], "1 + 2 + 4 = 7 s; the next wait (8 s) would pass 10 s");
-  assert.equal(seen.filter((u) => u.includes("deprecated")).length, 4);
-  assert.equal(seen.at(-1), "https://good.example/");
+  assert.ok(k.c.t - 1_000_000 >= 25_000 && k.c.t - 1_000_000 <= 40_000, `answered after ${k.c.t - 1_000_000} ms of waiting`);
+  assert.ok(seen.includes("first.example") && seen.includes("second.example"));
 });
 
-test("a burst limit like fastnear's (5 answered, then 429 for a while) costs waits, not failures", async () => {
-  // Measured 2026-11-12 on archival-rpc.testnet.fastnear.com: 5 x 200, then 429 with retry-after 0.
+test("both endpoints rate-limited beyond the bound: RpcUnavailable naming both and what they said", async () => {
+  const k = clock();
+  const f: FetchLike = async () => limited();
+  const rpc = rpcFor(URLS, f, { now: k.now, sleep: k.sleep, minGapMs: 0 });
+  const err = await rpc.viewAccount("x.testnet").then(() => null, (e: unknown) => e);
+  assert.ok(err instanceof RpcUnavailable);
+  assert.match(err.message, /^every RPC endpoint failed for query \(rate-limited on every endpoint; gave up after \d+ s of waiting, the bound is 120 s\): /);
+  assert.match(err.message, /first\.example answered HTTP 429: Rate limits exceeded\. .* \(code -429\)/);
+  assert.match(err.message, /second\.example answered HTTP 429: Rate limits exceeded/);
+  const waited = k.c.t - 1_000_000;
+  assert.ok(waited >= DEPLOY_MAX_CALL_WAIT_MS && waited <= DEPLOY_MAX_CALL_WAIT_MS + 30_000, `gave up after ${waited} ms`);
+});
+
+test("a retry-after longer than the client's own wait is still waited out, in 5 s pauses", async () => {
+  const k = clock();
+  const until = k.c.t + 45_000;
+  const f: FetchLike = async () => (k.c.t < until ? limited("45") : ok(ACCOUNT));
+  const rpc = rpcFor(URLS, f, { now: k.now, sleep: k.sleep, minGapMs: 0 });
+  assert.equal((await rpc.viewAccount("x.testnet")).amount, "1");
+  assert.ok(k.c.waits.includes(5_000), "paused while the client would not send");
+});
+
+test("a burst limit like fastnear's (5 answered, then 429) costs waits, not failures", async () => {
+  // Measured 2026-11-12 on archival-rpc.testnet.fastnear.com: 5 x 200, then 429 with retry-after 0,
+  // answered again within 5 s. Here the window refills 1 s after the first refusal.
+  const k = clock();
   let budget = 5;
-  let clock = 0;
-  const inner: FetchLike = async () => {
-    if (budget === 0) return reply(429, "", "0");
-    budget--;
-    return reply(200, { jsonrpc: "2.0", id: 1, result: { gas_price: "100000000" } });
+  let refilled = 0;
+  const f: FetchLike = async (url) => {
+    if (host(url) !== "first.example") return limited();
+    if (budget === 0 && k.c.t >= refilled) budget = 5;
+    if (budget === 0) return limited("0");
+    if (--budget === 0) refilled = k.c.t + 1_000;
+    return ok({ gas_price: "100000000" });
   };
-  const sleep = async (ms: number) => {
-    clock += ms;
-    budget = 5; // the window refills after any wait of a second or more
-  };
-  const seen = new Set<string>();
-  const rpc = rpcFor(["https://first.example/", "https://second.example/"], async (url, init) => (seen.add(url), inner(url, init)), { sleep, now: () => clock, minGapMs: 0 });
+  const rpc = rpcFor(URLS, f, { now: k.now, sleep: k.sleep, minGapMs: 0 });
   for (let i = 0; i < 30; i++) assert.equal((await rpc.call<{ gas_price: string }>("gas_price", [null])).gas_price, "100000000");
-  assert.deepEqual([...seen], ["https://first.example/"], "never failed over");
-  assert.equal(clock, 5 * 1000, "one 1 s wait per refusal, 5 refusals in 30 calls");
 });
 
-test("requests to one host are spaced by minGapMs; other hosts are not held up", async () => {
-  let clock = 0;
-  const waits: number[] = [];
-  const f = pacedFetch({ fetch: async () => reply(200, "{}"), sleep: async (ms) => void (waits.push(ms), (clock += ms)), now: () => clock, minGapMs: 100 });
-  await f("https://a.example/", req());
-  await f("https://a.example/", req());
-  await f("https://b.example/", req());
-  clock += 30;
-  await f("https://a.example/", req());
-  assert.deepEqual(waits, [100, 70]);
+test("a node's answer is thrown at once, and an unreachable pair fails at once, both named", async () => {
+  const k = clock();
+  const answer: FetchLike = async () => ({
+    status: 200,
+    text: async () => JSON.stringify({ jsonrpc: "2.0", id: 1, error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: {} }, data: "does not exist" } }),
+    headers: { get: () => null },
+  });
+  await assert.rejects(rpcFor(URLS, answer, { now: k.now, sleep: k.sleep, minGapMs: 0 }).viewAccount("x.testnet"), (e) => e instanceof RpcError && e.code === "UNKNOWN_ACCOUNT");
+  const down: FetchLike = async () => {
+    throw new Error("connect ECONNREFUSED");
+  };
+  await assert.rejects(rpcFor(URLS, down, { now: k.now, sleep: k.sleep, minGapMs: 0 }).viewAccount("x.testnet"), /every RPC endpoint failed for query: first\.example: connect ECONNREFUSED; second\.example: connect ECONNREFUSED$/);
+  assert.deepEqual(k.c.waits, [], "no waiting for anything but rate");
 });
 
-test("each try has its own timeout, longer for calls that wait on the chain, in the words NearRpc knows", async () => {
-  const hang: FetchLike = (_url, init) => new Promise((_r, reject) => init.signal.addEventListener("abort", () => reject(new Error("aborted"))));
-  const f = pacedFetch({ fetch: hang, timeoutMs: 20, longTimeoutMs: 40, minGapMs: 0 });
-  await assert.rejects(f("https://a.example/", req("query")), /^Error: https:\/\/a\.example\/ timed out after 20 ms$/);
-  await assert.rejects(f("https://a.example/", req("send_tx")), /timed out after 40 ms/);
-  await assert.rejects(f("https://a.example/", req("tx")), /timed out after 40 ms/);
+test("requests to one host are at least minGapMs apart; other hosts are not held up", async () => {
+  const k = clock();
+  const f = spacedFetch({ fetch: async () => ok({}), minGapMs: 100, now: k.now, sleep: k.sleep });
+  const init = { method: "POST" as const, headers: {}, body: "{}", signal: new AbortController().signal };
+  await f("https://a.example/", init);
+  await f("https://a.example/", init);
+  await f("https://b.example/", init);
+  k.c.t += 30;
+  await f("https://a.example/", init);
+  assert.deepEqual(k.c.waits, [100, 70]);
 });

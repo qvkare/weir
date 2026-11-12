@@ -7,14 +7,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { NearRpc, type FetchLike } from "../../chain/src/mod.ts";
+import type { FetchLike } from "../../chain/src/mod.ts";
+import { rpcFor } from "../src/chain.ts";
 import { apply } from "../src/apply.ts";
 import { Keystore, Redactor } from "../src/keys.ts";
 import { layout, sandboxNetwork, type MarketId } from "../src/layout.ts";
 import { buildRecord, type RecordJson } from "../src/outputs.ts";
 import { newState } from "../src/state.ts";
 import { buildPlan } from "../src/steps.ts";
-import { EXIT, parseRecord, renderVerify, rpcUrlsFor, signerOf, verifyCli, verifyRecord, type VerifyReport } from "../src/verify.ts";
+import { EXIT, VERIFY_MAX_CALL_WAIT_MS, parseRecord, renderVerify, rpcUrlsFor, signerOf, verifyCli, verifyRecord, type VerifyReport } from "../src/verify.ts";
 import { FakeChain, fakeWasm } from "./fake.ts";
 
 const dirs: string[] = [];
@@ -50,8 +51,10 @@ const bytes = (v: unknown) => [...Buffer.from(JSON.stringify(v))];
 interface World {
   /** Throw on every request, as an unreachable endpoint. */
   down: boolean;
-  /** Answer HTTP 429 to the next n requests. */
-  limited: number;
+  /** Answer HTTP 429, as fastnear does over its free limit, until this time on the fake clock (ms). */
+  limitedUntil: number;
+  /** The fake clock (ms): `sleep` advances it, nothing really waits. */
+  clock: number;
   /** Transactions that failed on chain. */
   failedTxs: Set<string>;
   /** Transactions signed by someone other than the deploy tool would sign them as. */
@@ -61,13 +64,13 @@ interface World {
 
 /** A JSON-RPC endpoint serving the fake chain: accounts, key lists, views, transactions. */
 function endpoint(chain: FakeChain, now: number): { fetch: FetchLike; world: World } {
-  const world: World = { down: false, limited: 0, failedTxs: new Set(), signedBy: new Map(), requests: 0 };
+  const world: World = { down: false, limitedUntil: 0, clock: 1_000_000, failedTxs: new Set(), signedBy: new Map(), requests: 0 };
   const fetch: FetchLike = async (_url, init) => {
     world.requests++;
     if (world.down) throw new Error("connect ECONNREFUSED");
-    if (world.limited > 0) {
-      world.limited--;
-      return { status: 429, text: async () => "slow down" };
+    if (world.clock < world.limitedUntil) {
+      const body = { jsonrpc: "2.0", error: { code: -429, message: "Rate limits exceeded. For higher rate limits get a subscription at https://fastnear.com" }, id: "1" };
+      return { status: 429, text: async () => JSON.stringify(body) };
     }
     const req = JSON.parse(init.body) as { id: number; method: string; params: Record<string, string> };
     const p = req.params;
@@ -99,12 +102,14 @@ function endpoint(chain: FakeChain, now: number): { fetch: FetchLike; world: Wor
   return { fetch, world };
 }
 
-const noSleep = async () => {};
+/** The fake clock of a world, for `rpcFor`. */
+const clockOf = (w: World) => ({ now: () => w.clock, sleep: async (ms: number) => void (w.clock += ms) });
 async function run(chain: FakeChain, record: RecordJson, setup: (w: World) => void = () => {}, extra: { txs?: boolean; local?: string | null } = {}): Promise<{ r: VerifyReport; text: string; world: World }> {
   const e = endpoint(chain, chain.clock);
   setup(e.world);
-  const rpc = new NearRpc({ urls: ["http://a.fake", "http://b.fake"], fetch: e.fetch });
-  const r = await verifyRecord(record, { rpc, txs: extra.txs ?? false, localWeirCodeHash: extra.local === undefined ? null : extra.local, sleep: noSleep });
+  const c = clockOf(e.world);
+  const rpc = rpcFor(["http://a.fake", "http://b.fake"], e.fetch, { ...c, maxCallWaitMs: VERIFY_MAX_CALL_WAIT_MS, minGapMs: 0 });
+  const r = await verifyRecord(record, { rpc, txs: extra.txs ?? false, localWeirCodeHash: extra.local === undefined ? null : extra.local, sleep: c.sleep });
   return { r, text: renderVerify(r, "record.json"), world: e.world };
 }
 const fails = (r: VerifyReport) => r.checks.filter((c) => c.status === "fail").map((c) => c.text);
@@ -221,17 +226,27 @@ test("an endpoint that does not answer gives the third outcome and claims nothin
   assert.equal(r.outcome, "unreachable");
   assert.deepEqual(r.checks, []);
   assert.equal(world.requests, 2 * 2, "two attempts, each through both endpoints");
-  assert.match(text, /  --  the chain could not be reached: connect ECONNREFUSED/);
+  assert.match(text, /  --  the chain could not be reached: every RPC endpoint failed for query: a\.fake: connect ECONNREFUSED; b\.fake: connect ECONNREFUSED$/m);
   assert.match(text, /^RESULT NOT CHECKED: sandbox could not be reached after 0 checks; nothing is claimed either way about record\.json$/m);
 });
 
-test("rate limits on both endpoints are waited through; when they last, nothing is claimed", async () => {
+test("both endpoints rate-limited briefly, then recovering: a full result", async () => {
   const { chain, record } = await deployed();
-  const brief = await run(chain, record, (w) => (w.limited = 3));
+  const brief = await run(chain, record, (w) => (w.limitedUntil = w.clock + 40_000));
   assert.equal(brief.r.outcome, "match", brief.text);
-  const lasting = await run(chain, record, (w) => (w.limited = 1_000_000));
+  assert.ok(brief.world.clock - 1_000_000 >= 40_000, "the 40 s of refusals were waited out");
+  assert.equal(brief.r.checks.filter((c) => c.status === "ok").length, 23, "every check ran");
+});
+
+test("both endpoints rate-limited beyond the bound: not checked, both endpoints named", async () => {
+  const { chain, record } = await deployed();
+  const lasting = await run(chain, record, (w) => (w.limitedUntil = Number.MAX_SAFE_INTEGER));
   assert.equal(lasting.r.outcome, "unreachable");
-  assert.match(lasting.text, /answered HTTP 429/);
+  assert.deepEqual(lasting.r.checks, []);
+  assert.match(lasting.text, /  --  the chain could not be reached: every RPC endpoint failed for query \(rate-limited on every endpoint; gave up after \d+ s of waiting, the bound is 60 s\): a\.fake answered HTTP 429: Rate limits exceeded\..*; b\.fake answered HTTP 429: Rate limits exceeded\./);
+  assert.match(lasting.text, /^RESULT NOT CHECKED: /m);
+  const waited = lasting.world.clock - 1_000_000;
+  assert.ok(waited >= VERIFY_MAX_CALL_WAIT_MS && waited <= VERIFY_MAX_CALL_WAIT_MS + 30_000, `gave up after ${waited} ms, once (not retried on top)`);
 });
 
 test("--txs: every recorded hash is looked up; a failed and an unknown one fail", async () => {
@@ -286,7 +301,7 @@ test("the CLI: exit codes 0, 1, 3 and 2, JSON output, and the endpoints a record
   const lines: string[] = [];
   const say = (s: string) => void lines.push(s);
   const e = endpoint(chain, chain.clock);
-  const base = { rpc: ["http://a.fake"], fetch: e.fetch, sleep: noSleep, localWeirCodeHash: null };
+  const base = { rpc: ["http://a.fake"], fetch: e.fetch, ...clockOf(e.world), localWeirCodeHash: null };
   assert.equal(await verifyCli([file], base, say), EXIT.match);
   assert.equal(await verifyCli([file], { ...base, json: true }, say), 0);
   assert.equal((JSON.parse(lines.at(-1)!) as { outcome: string }).outcome, "match");
