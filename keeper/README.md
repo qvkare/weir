@@ -381,7 +381,25 @@ sizes on stderr, and a refusal with nothing on stdout. In `wrangler dev --local`
 19:06 a fake part (`AGENTS_H100_FAST`, one agent with a malformed key, in a `.dev.vars` in a
 temporary directory) was read from the runtime's `env`: `/status` listed that agent's key as
 unusable and no longer said `AGENTS is not set`, and the fake key appeared nowhere in `/status`.
-The switch has not been retried yet.
+
+#### The second switch, 2026-11-12 (UTC)
+
+From the operator's run, then read back by the README's author through the Worker's public
+routes and testnet views (dRPC) at 19:23.
+
+| What | When | Result |
+|---|---|---|
+| Node loop stopped | 19:14:31 | After its 19:14 tick. It has not been started since and must not be while the Worker holds the keys |
+| `wrangler secret bulk` from `scripts/secrets.ts` | 19:15:00 | Accepted: 7 secrets (`REPORTERS`, `SWARM_SECRET`, `KEEPER` and four `AGENTS_*` parts). The rotated key of `reporter-a` for `weir-h100-fast-w1.testnet` (`deploy/README.md`, "Key rotation") was already in `REPORTERS` |
+| First tick with keys | 19:16 | 40/40 requests, 13 done, 0 failed, 6 transactions, 19.5 s, 13 rows read, 10 written (operator's reading of `wrangler tail`) |
+| Ticks 19:16 to 19:22 | 7 ticks | 0 failed entries in each (operator). `/status` at 19:20: `config: []`, `key_faults: []`, no `ed25519:` string |
+| Read back at 19:23 | `/status` | `last_tick` 19:23:00, `config` and `key_faults` empty, `undone` empty, no `ed25519:` string. Its log (50 entries, 19:17 to 19:22): 43 done, 7 skipped, 0 failed; 21 transactions (`report`, `commit`, `reveal`, `clear`, `prune_result`); the skipped ones are settle, redeem and prune left for want of the 40-request budget. One of them, commit `zs2sJYxYz8Whgxiy47VQALmYhhaGA11EeTxZ2nFmtMg`, read on chain: signed by `h100-fast-maker-1` with its recorded function-call key, succeeded |
+| Bundles | 19:23 | `/bundles/<hash>.json` for the 19:20 print of `h100-fast` answered 200; its sha256 equals the hash all three reporters posted (`get_print`), and `node index/src/cli.ts verify` passed 103/103 without the raw bodies, which the Worker does not publish. The 19:00 print's bundle answered 404: it is in the loop's `keeper/store/`, as the section above expects |
+
+Not shown yet: a full day on the free plan (duration, rows read and written, requests as
+Cloudflare counts them: nobody has looked at the account's usage page); a daily limit
+resetting; the retention rule running; settle and redeem by the Worker (the first ticks left
+them for want of budget); and what happens when fastnear rate-limits Cloudflare's addresses.
 
 #### Moving from the Node loop to the Worker
 
@@ -692,18 +710,17 @@ deployed yet.)
 The earlier, single-market version ran against the real contract on a local sandbox node
 (`integration/RESULTS.md`: 78 ticks, every print final, zero forfeits, settled and redeemed).
 A later sandbox run of the 0.4 version on two markets found the one-key-per-contract bug fixed
-here. Since 2026-11-12 the Node loop runs on testnet against four markets (above): reports,
+here. On 2026-11-12 the Node loop ran on testnet against four markets until 19:14 UTC, and the Worker since (above): reports,
 finalized prints, commits, reveals and clears through function-call keys, 30 ticks at most 40
 requests each. Not proven:
-- settle, redeem and prune on testnet (none was due in the first night), and refusal texts
-  from the 0.4 contract matching the engine's `ERR` there;
+- refusal texts on testnet matching the engine's `ERR` (settle and redeem have run there since
+  the first night: `README.md` at the root, "What is proven");
 - the keeper changes of 2026-11-12 (shared cooldowns, the loop's minute, `config`) on testnet:
   they are tested on the model and a fake RPC only;
 - request counts under failover and `send_tx` polling with the new chain client;
-- a tick that signs on Cloudflare: the Worker and its Durable Object ran on the operator's
-  account without secrets from 18:49 (above); the first attempt to set the secrets was refused
-  for size. Not shown:
-  the Worker's CPU time, the object's duration and whether it hibernates between ticks, rows
-  read and written as billed, subrequest limits for an alarm, the alarm's and the cron
-  trigger's timing, the Cache API on `workers.dev`, and a tick that signs;
+- a day on Cloudflare: the Worker and its Durable Object ran on the operator's account
+  without secrets from 18:49 and have signed since 19:16 (above). Not shown: the Worker's CPU
+  time and the object's duration as billed, whether it hibernates between ticks, rows read and
+  written as billed, subrequest limits for an alarm, the alarm's and the cron trigger's timing
+  over a day, a daily limit resetting, and the Cache API on `workers.dev`;
 - live source responses beyond the saved ones.

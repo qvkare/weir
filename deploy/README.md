@@ -498,7 +498,18 @@ row.
 command's output to the pipe even when it is also redirected to /dev/null. The key is treated as
 exposed. To replace it:
 `node deploy/src/cli.ts rotate --network testnet --account reporter-a.weir-ops-w1.testnet --contract weir-h100-fast-w1.testnet`.
-NOT RUN YET when this was written: the transaction hashes, the time and the result go here.
+Run at 19:14 UTC, two transactions, both signed by the reporter's full-access key and both
+succeeded: at 19:14:35 the new key `ed25519:FxXJgw7qK9VJKmNx2vtePrnn6L6uKuiRW9HBcjwNzVia` was added for
+the same contract and methods with a 3.26 NEAR allowance
+(`HGbJNyygam5Vn758dJmRfjPuYdpsgGnZShHUX96rQ1u`), and at 19:14:39 the old key
+`ed25519:ASxLS8ASDSkWWDGu3a3KbMKKbbi3sURDqyXnMTRgwds8` was deleted
+(`7VAxD6uFqLKTiLRCutQk1sJEtMEffYyNPMpsjTHCYq2X`). `view_access_key_list` on the account then lists
+the new key for `weir-h100-fast-w1.testnet` and not the old one. `evidence/deploy/testnet-w1.json`
+was rewritten with the new public key, and `make verify-deploy` matched 41 of 41 afterwards. The
+exposure was to the session's transcript on the author's machine and to the AI provider running the
+session, not to the repository: the record holds public keys only. The key could report and
+finalize prints on one market; it could not move money. Whether anyone else used it between the exposure (about 19:07)
+and the deletion (19:14:39) was not checked.
 
 Not yet shown on testnet:
 

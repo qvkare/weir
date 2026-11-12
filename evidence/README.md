@@ -14,6 +14,8 @@ What Weir has recorded, kept so that anyone can check it without trusting the au
 
 Recorded today: the version-1 H100 print and one version-2 run of all three chips (bucket 1794430800, 2026-11-11 21:00 UTC, fetched 21:54 UTC): H100-OD 2.90 USD, H200-OD 4.25 USD, A100-80-OD 1.55125 USD, with 8 raw bodies (1.2 MB).
 
+Bundles of the live prints on testnet are not committed here. The keeper serves those it made since 2026-11-12 19:15 UTC at `https://weir-keeper.qvkare.workers.dev/bundles/<hash>.json` (`bundles_base` in `deployments.json`), without their raw bodies; bundles of earlier live prints are not published.
+
 ## What a bundle is
 
 A bundle is the canonical JSON of one index computation: every provider with its offers, dropped placeholders, value or reason for exclusion, the sha256 of the raw response it came from, and the index. The bundle's own sha256 is the `bundle` argument a reporter posts on chain with `report(bucket, price, bundle)`, and `index` is the `price`. The method is in `index/METHOD.md`.
