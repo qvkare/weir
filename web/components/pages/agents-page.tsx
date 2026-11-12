@@ -1,3 +1,5 @@
+import { MarketSwitch } from "@/components/site-nav.tsx";
+import { liveMarkets } from "@/lib/build.ts";
 import { CopyBlock } from "@/components/copy-block.tsx";
 import { CheckIcon, CrossIcon } from "@/components/icons.tsx";
 import { AgentsBook } from "./agents-book.tsx";
@@ -79,6 +81,7 @@ for (;;) {
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">Agents · {MARKET_INFO[market].name} market</span>
+          <MarketSwitch markets={liveMarkets()} />
           <h1>A key that bids and stops there</h1>
           <p className="sub">A function-call key can commit, reveal, clear and redeem. Withdrawing needs 1 yoctoNEAR, which that key cannot attach.</p>
         </header>

@@ -257,8 +257,17 @@ function start(id: MarketId, now: number): ModelState {
   return { id, market, until: begin, pending: new Map(), deposited };
 }
 
+/**
+ * The model's clock, Unix seconds: the wall clock, or WEIR_MODEL_NOW when it is set (tests and the
+ * smoke build pin it, so what the model shows does not depend on the minute of the hour).
+ */
+export function modelNow(): number {
+  const pinned = typeof process !== "undefined" ? process.env.WEIR_MODEL_NOW : undefined;
+  return pinned && /^\d+$/.test(pinned) ? Number(pinned) : Math.floor(Date.now() / 1000);
+}
+
 /** The model market of `id`, advanced to `now` (Unix seconds). */
-export function modelMarket(id: MarketId, now = Math.floor(Date.now() / 1000)): ModelState {
+export function modelMarket(id: MarketId, now = modelNow()): ModelState {
   let st = states.get(id);
   if (!st || now < st.market.now) {
     st = start(id, now);

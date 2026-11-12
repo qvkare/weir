@@ -21,6 +21,12 @@ import { readBuildData } from "../lib/build-data.ts";
 import { route } from "../worker/route.ts";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
+// The model's clock is pinned (lib/model.ts, modelNow), so the checks do not depend on the minute
+// of the hour: 12 Nov 2026, 20:30:00 UTC, mid-hour; then 20:56:00 UTC, just after the hourly
+// market's next series opened, when none of its rounds has cleared yet.
+const MID_HOUR = 1_794_515_400;
+const EDGE = 1_794_516_960;
+process.env.WEIR_MODEL_NOW = String(MID_HOUR);
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const out = join(web, "out");
 const failures: string[] = [];
@@ -73,8 +79,9 @@ async function start(model: boolean): Promise<{ base: string; server: Server }> 
   return { base: `http://127.0.0.1:${port}`, server };
 }
 
-function build(model: boolean) {
-  console.log(`building${model ? " (model)" : ""}…`);
+function build(model: boolean, now = MID_HOUR) {
+  console.log(`building${model ? ` (model, clock ${new Date(now * 1000).toISOString()})` : ""}…`);
+  process.env.WEIR_MODEL_NOW = String(now);
   const b = spawnSync(process.execPath, [fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url)), "build"], { cwd: web, stdio: "inherit", env: { ...process.env, WEIR_MODEL: model ? "1" : "" } });
   if (b.status !== 0) throw new Error("next build failed");
 }
@@ -93,9 +100,12 @@ function text(html: string): string {
     .replace(/\s+/g, " ");
 }
 
+const seen = new Map<string, string>();
+
 async function page(base: string, path: string, expect: string[], status = 200): Promise<string> {
   const res = await fetch(base + path);
   const body = await res.text();
+  seen.set(path, body);
   check(res.status === status, `${path}: status ${res.status}, expected ${status}`);
   const t = text(body);
   for (const e of expect) check(t.includes(e), `${path}: missing "${e}"`);
@@ -120,15 +130,15 @@ async function api(base: string, path: string, status: number): Promise<Record<s
 if (!process.argv.includes("--no-build")) build(true);
 
 const PAGES: [string, string[]][] = [
-  ["/", ["one operator today", "Take the heat out of your", "GPU bill.", "Who is in the room", "One round, as work", "Example orders", "Simulated", "H100, USD per GPU-hour", "Series and phase clock", "Last clearing", "Payoff and hedge size", "Limits", "Model data, not the chain"]],
-  ["/?m=fast", ["H100, USD per GPU-hour", "H100 hourly (demo)", "Model data, not the chain"]],
-  ["/?m=h100-fast", ["H100, USD per GPU-hour", "H100 hourly (demo)"]],
-  ["/?m=h200-weekly", ["H200, USD per GPU-hour", "Week-ahead H200 auctions", "H200 weekly", "Open the A100 market", "This is the H200 market"]],
-  ["/?m=a100-80-weekly", ["A100 80 GB, USD per GPU-hour", "A100 80 GB weekly", "Open the H100 market"]],
+  ["/", ["GPU hours,", "priced today.", "See the live round", "How it works", "Markets · last index print, $/GPU-h", "Clearings", "Long price, $/GPU-h", "Cleared, UTC", "drawn as ridgelines", "Over 69 delivery weeks", "Three chips, a market each.", "H200", "A100 80 GB", "Check it yourself.", "All three price reporters are run by one operator today, who can set any price.", "The index is computed from the public price lists of", "Vast.ai", "RunPod", "Akash", "Lium", "Verda", "Shadeform", "no relationship with Weir is implied", "Sealed bids, one price,", "Bids arrive sealed", "One price clears the round", "worked example", "The life of a round", "Agents on this market", "Sources around the median", "A print, checked here", "Last events on chain", "What the review found,", "not customers, and not an audit firm", "Built by Qvkare.", "Blocks & pixel maxi", "Linea MCP", "Mirror Search", "Copil", "1st place, Linea Dev Cook-Off.", "2nd place, Chainlink Chromion Hackathon.", "AI coding agents were the tools: they wrote most of the code and much of the text, under the author", "statement: he read and checked the contracts himself, by hand.", "not an independent audit", "an independent project that shares no code with this one", "Using it", "test dollars; no real money moves.", "Every limit", "What you are trusting", "Model figures, computed when the site was built", "Model data, not the chain"]],
+  ["/?m=fast", ["H100 hourly · series", "Model data, not the chain"]],
+  ["/?m=h100-fast", ["H100 hourly · series", "Hourly demo"]],
+  ["/?m=h200-weekly", ["H200 weekly · series", "Weekly auction"]],
+  ["/?m=a100-80-weekly", ["A100 80 GB weekly · series"]],
   // The range is applied in the browser; the static page carries the links and the default range.
-  ["/?m=h200-weekly&range=30d", ["H200, USD per GPU-hour", "Index, last 7 d", "30 d"]],
-  ["/?m=fast&range=6h", ["Index, last 6 h", "1 h", "24 h"]],
-  ["/auction", ["Sealed book", "Bid with an agent", "Recent rounds"]],
+  ["/proof?m=h200-weekly&range=30d", ["Index, last 7 d", "30 d", "The index and its sources"]],
+  ["/proof?m=fast&range=6h", ["Index, last 6 h", "1 h", "24 h"]],
+  ["/auction", ["Sealed book", "Bid with an agent", "Recent rounds", "Series and phase clock"]],
   ["/auction?m=fast", ["Sealed book", "Recent rounds"]],
   ["/simulate", ["Simulation. Nothing here touches the chain.", "Skip to clearing", "Run 10 rounds"]],
   ["/simulate?m=fast", ["H100 hourly (demo) market"]],
@@ -138,11 +148,11 @@ const PAGES: [string, string[]][] = [
   ["/spec", ["The rules, as written", "Settlement"]],
   ["/audit", ["What the review found", "in four passes", "not an audit by a security firm", "Fourth pass (spec 0.6)", "Verdict"]],
   ["/simulate?m=h100-fast", ["Silent reporters (void series)", "cancelled at the centre of the band"]],
-  ["/?motion=reduce", ["Take the heat out of your", "Simulated"]],
-  ["/how?motion=reduce", ["One round, as work", "One price for all"]],
+  ["/?motion=reduce", ["GPU hours,", "Over 69 delivery weeks"]],
+  ["/how?motion=reduce", ["One round, as work", "One price for all", "Who is in the room", "Payoff and hedge size"]],
   ["/backtest", ["What a hedge would have done", "The rule", "Average stayed inside the band in", "What this does not show"]],
   ["/how", ["cancelled at the centre of the band", "who also trades", "How a print is decided", "max_spread_bps", "records the guard and the reference", "burned", "The series clock", "Commit and reveal", "weir:v1", "Clearing", "Settlement", "Funding from another chain", "quotes only", "Limits", "Trust"]],
-  ["/proof", ["What you are trusting today", "Residual risks before real money", "All three are run by one operator, who can set any price", "Nothing on chain checks a report against its published data", "about 0.029 $ a unit", "up to 0.299 $ a unit", "A round can be blocked for 6.40 $", "Both are off by default", "remove protections", "settlement turns void", "No mainnet history and no upgrade path", "Contract against the engine", "264 of 264 checks passed", "1,315 state changes, 2,315 views and 61 refusals", "not on a public network", "Audited", "Four passes", "4 passes, against specifications 0.3, 0.4, 0.5 and 0.6", "Closed by a rule", "Open, stated as limits in the specification", "A fix that was itself found faulty", "That fix was faulty", "$6.40 a round", "6.40 $ a round at the 0.10 $ commit fee", "0.299 $ a unit, 49.8% of the band", "About 0.029 $ a unit", "limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee", "audit4_a_non_reporter_cannot_move_the_void_payout", "not fit for real dollars until", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "Testnet"]],
+  ["/proof", ["What you are trusting today", "Residual risks before real money", "All three are run by one operator, who can set any price", "Nothing on chain checks a report against its published data", "about 0.029 $ a unit", "up to 0.299 $ a unit", "A round can be blocked for 6.40 $", "Both are off by default", "remove protections", "settlement turns void", "No mainnet history and no upgrade path", "Contract against the engine", "264 of 264 checks passed", "1,315 state changes, 2,315 views and 61 refusals", "not on a public network", "Audited", "Four passes", "4 passes, against specifications 0.3, 0.4, 0.5 and 0.6", "Closed by a rule", "Open, stated as limits in the specification", "A fix that was itself found faulty", "That fix was faulty", "$6.40 a round", "6.40 $ a round at the 0.10 $ commit fee", "0.299 $ a unit, 49.8% of the band", "About 0.029 $ a unit", "limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee", "audit4_a_non_reporter_cannot_move_the_void_payout", "not fit for real dollars until", "AI reviewer", "audit_one_reporter_can_no_longer_steer_the_index", "Burned", "max_spread_bps", "commit_fee", "Check every print yourself", "Contracts", "Solvency", "Bundle verifier", "Parameters", "Transactions on record", "NEAR testnet", "The index and its sources"]],
   ["/agents", ["A key that bids and stops there", "Who can do what", "Agents on the book", "max_round_lock", "Three things bound an agent"]],
 ];
 
@@ -151,6 +161,30 @@ try {
   console.log(`model mode on ${server.base}`);
   for (const [path, expect] of PAGES) await page(server.base, path, expect);
   await page(server.base, "/no-such-page", ["No page at this address"], 404);
+  // The homepage keeps its links to the proof, the review and the limits.
+  const front = seen.get("/")!;
+  // The maker's block: his portrait from our own origin, and every outside link in a new tab with rel=noopener.
+  check(existsSync(join(out, "maker", "qvkare.png")), "out/maker/qvkare.png: missing");
+  check(front.includes('src="/maker/qvkare.png"'), "/: the portrait is not served from this site");
+  for (const m of front.matchAll(/<a [^>]*href="(https:\/\/[^"]+)"[^>]*>/g)) check(/target="_blank"/.test(m[0]) && /rel="noopener"/.test(m[0]), `/: outside link ${m[1]} does not open in a new tab with rel=noopener`);
+  check(!/written by AI|built by AI/i.test(text(front)), "/: the page calls the project written or built by AI");
+  // Fail open: the built HTML shows the hero and the whole statement, with nothing hidden inline.
+  const built = readFileSync(join(out, "index.html"), "utf8");
+  check(/<h1[^>]*>Next week.s GPU hours,/.test(built), "index.html: no hero headline in the HTML");
+  // (stop-opacity in the backdrop's gradients is a colour stop, not hidden content.)
+  check(!/style="[^"]*(?<![-\w])opacity:\s*0(?![.\d])/.test(built), "index.html: an element starts at opacity 0 inline");
+  check(!/style="[^"]*(?<![-\w])opacity:\s*0?\.\d/.test(built), "index.html: an element starts part-transparent inline");
+  check(text(built).includes("Over 69 delivery weeks, the weekly average price of an H100 hour"), "index.html: the statement is not whole in the HTML");
+  for (const h of ["/proof#contracts", "/proof#verifier", "/audit", "/how#limits", "/backtest"]) check(front.includes(`href="${h}"`), `/: no link to ${h}`);
+  // No internal link points at an anchor that its page does not have.
+  const anchors = new Set<string>();
+  for (const body of seen.values()) for (const m of body.matchAll(/href="(\/[^"#]*)#([a-zA-Z][\w-]*)"/g)) anchors.add(`${m[1]}#${m[2]}`);
+  for (const a of anchors) {
+    const [path, id] = a.split("#") as [string, string];
+    const target = await (await fetch(server.base + (path || "/"))).text();
+    check(target.includes(`id="${id}"`), `link ${a}: the page has no id="${id}"`);
+  }
+  check(anchors.size > 5, `only ${anchors.size} anchored links found`);
   // ?m= is a redirect to the market's own page; the other parameters ride along.
   for (const [from, to] of [["/proof?m=h200-weekly", "/m/h200-weekly/proof"], ["/?m=fast&range=6h", "/m/h100-fast?range=6h"], ["/auction?m=weekly", "/auction"], ["/m/h100-weekly/how", "/how"]]) {
     const r = await fetch(server.base + from!, { redirect: "manual" });
@@ -197,6 +231,22 @@ try {
   check(/<meta property="og:image" content="https:\/\/[^"]+\/opengraph-image\.png"/.test(home), "/: no absolute og:image");
 } finally {
   server.server.close();
+}
+
+// The edge of the hour: the hourly market's new series has no cleared round. The pages must
+// show a state for it, not an error or a blank window.
+if (!process.argv.includes("--no-build")) {
+  build(true, EDGE);
+  server = await start(true);
+  try {
+    console.log(`model mode at the edge of the hour on ${server.base}`);
+    const home = await page(server.base, "/m/h100-fast", ["Clearings", "Committing", "Cleared"]);
+    check(/Series \d+ and \d+/.test(text(home)), "/m/h100-fast at :56: the grid is not filled from the series before");
+    await page(server.base, "/m/h100-fast/auction", ["Round 0", "No round of series", "has cleared yet", "Series and phase clock"]);
+    for (const p of ["/", "/m/h100-fast/proof", "/m/h100-fast/how"]) await page(server.base, p, []);
+  } finally {
+    server.server.close();
+  }
 }
 
 const deployed = JSON.parse(readFileSync(new URL("../../deployments.json", import.meta.url), "utf8")) as { markets?: unknown[] };

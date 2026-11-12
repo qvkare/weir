@@ -5,7 +5,7 @@ The Weir site: Next.js App Router, exported as static files and served by Cloudf
 read from the Weir contracts, labelled with the build time; the browser then reads the contract
 views itself over NEAR JSON-RPC. It re-checks index bundles in the browser, runs the agents'
 simulation in a Web Worker and draws every chart in hand-written SVG; the wafer on the first
-screen is a canvas cleared by the engine. Design brief: `DESIGN.md`.
+screen is a canvas cleared by the engine. Design brief: `DESIGN.md`. The homepage, header and footer use Tailwind v4 and five components adapted from Ruixen UI (MIT; `THIRD_PARTY_NOTICES.md`).
 
 ## Run
 
@@ -37,7 +37,7 @@ pnpm --filter @weir/web smoke             # model build, then every page, redire
 the server components as `WEIR_BUILD`; no client file imports them (the client chunks hold no
 build data). Rebuild after `deployments.json`, `evidence/` or `backtest/results/` change.
 
-Environment, at build: `WEIR_MODEL=1` (model mode), `WEIR_SITE_URL` (the site's address for
+Environment, at build: `WEIR_MODEL=1` (model mode), `WEIR_MODEL_NOW` (Unix seconds: pins the model's clock; the tests and the smoke script set it so they do not depend on the time of day), `WEIR_SITE_URL` (the site's address for
 `metadataBase`, canonical links, the link preview, `robots.txt`, `sitemap.xml` and the code on
 `/agents`; default `https://weir.qvkare.workers.dev`, `lib/site.ts`). On the Worker, optional:
 `WEIR_QUOTE_RECIPIENT` (NEAR mainnet account named in dry quotes; default a 64-hex placeholder;
@@ -56,7 +56,7 @@ Measured on 12 Nov 2026 with a chain build of four markets (`wc -c` and `gzip -9
 
 | Route | Served by | HTML, bytes (gzip) | Live data in the browser | Polls |
 |---|---|---|---|---|
-| `/`, `/m/<market>` | Worker, then asset; `/m/...` asset | 283,818 (42,873); h100-fast 275,111 | yes, about 21 views on open | `get_status` and `get_last_print` every 60 s (hourly market 30 s) while visible; reads the page again when either changes |
+| `/`, `/m/<market>` | Worker, then asset; `/m/...` asset | 98,190 (15,811), rebuilt homepage | yes, 12 views on open | the round, the last print and the book's size every 30 s (hourly market 15 s) while visible; reads the window again when one changes |
 | `/auction` | Worker, then asset | 97,268 (16,112) | yes, 6 views on open | the round in progress and its book every 30 s (hourly 15 s) while visible; a past round (`?series=&round=`) is read once |
 | `/agents` | Worker, then asset | 104,817 (18,673) | yes, about 11 views | none: read once, retry button on failure |
 | `/proof` | Worker, then asset | 659,041 (67,600) | contracts, solvency, last five prints: about 13 views, and the bundles from the keeper | none: read once |

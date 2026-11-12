@@ -3,6 +3,11 @@ import { ExtLink } from "@/components/ext-link.tsx";
 import { Empty, NotDeployed, RpcError, Stale } from "@/components/state.tsx";
 import { In } from "@/components/markdown-doc.tsx";
 import { ProofLive } from "./proof-live.tsx";
+import { ProofIndex } from "./proof-index.tsx";
+import { MarketSwitch } from "@/components/site-nav.tsx";
+import { loadHome } from "@/lib/data/home.ts";
+import { source } from "@/lib/source.ts";
+import { liveMarkets } from "@/lib/build.ts";
 import { integrationFigures, residualRisks, type RiskItem } from "@/lib/audit.ts";
 import { AUDIT_DOC, auditHref, CLOSED, HISTORY, OPEN, PASSES, SOUND_TESTS, specHref, STATED, VERDICT, type Finding } from "@/lib/audit.ts";
 import { buildData, deployments, sourceKind } from "@/lib/build.ts";
@@ -47,6 +52,7 @@ export async function ProofPage({ market }: { market: MarketId }) {
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">Proof · NEAR {d.network}</span>
+          <MarketSwitch markets={liveMarkets()} />
           <h1>Check every print yourself</h1>
           <p className="sub">Each report carries the hash of the data behind it. Nothing on chain checks a report against that data, and all three reporters are run by one operator today; this page fetches the data and hashes it in your browser, so you can.</p>
         </header>
@@ -61,6 +67,8 @@ export async function ProofPage({ market }: { market: MarketId }) {
           audited={<Audited market={market} params={params} kind={initial.kind} />}
           sandbox={<SandboxLine />}
         />
+
+        <ProofIndex cfg={cfg} market={market} initial={await loadHome(source(market), { bundlesBase: cfg.bundlesBase, chipSources: [], only: "index" })} sample={rec} />
 
         <section className="section" id="params" aria-labelledby="params-h">
           <div className="section-head">

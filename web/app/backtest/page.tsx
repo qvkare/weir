@@ -64,7 +64,7 @@ export default function BacktestPage() {
         </header>
 
         <section className="section" aria-labelledby="rule-h">
-          <h2 id="rule-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+          <h2 id="rule-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
             The rule
           </h2>
           <dl className="kv">
@@ -120,7 +120,7 @@ export default function BacktestPage() {
         </section>
 
         <section className="section" aria-labelledby="effect-h">
-          <h2 id="effect-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+          <h2 id="effect-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
             What hedging changed, for a buyer of {hours ? fmtInt(hours) : "no data"} GPU-hours a week
           </h2>
           <div className="figures">
@@ -140,7 +140,7 @@ export default function BacktestPage() {
 
         {covRows.length ? (
           <section className="section" aria-labelledby="cov-h">
-            <h2 id="cov-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+            <h2 id="cov-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
               Coverage by band width
             </h2>
             <div className="table-wrap">
@@ -182,7 +182,7 @@ export default function BacktestPage() {
 
         {sens.length ? (
           <section className="section" aria-labelledby="sens-h">
-            <h2 id="sens-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+            <h2 id="sens-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
               If the auction had cleared elsewhere
             </h2>
             <div className="table-wrap">
@@ -217,14 +217,14 @@ export default function BacktestPage() {
         ) : null}
 
         <section className="section" aria-labelledby="weeks-h">
-          <h2 id="weeks-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+          <h2 id="weeks-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
             Every week
           </h2>
           <BacktestTable weeks={bt.weeks} />
         </section>
 
         <section className="section" id="caveats" aria-labelledby="cav-h">
-          <h2 id="cav-h" style={{ fontSize: "var(--t21)", marginBottom: 16 }}>
+          <h2 id="cav-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
             What this does not show
           </h2>
           {caveats.length ? (

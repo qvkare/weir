@@ -3,7 +3,7 @@ import type { WireLiveSeries, WireResult, WireRound, WireSeries } from "@weir/en
 import { valueOf, type Read } from "../cache.ts";
 import { latestRound, loadCore, loadResults } from "../load.ts";
 import type { Source } from "../source-types.ts";
-import { probeKey, type CoreData } from "./home.ts";
+import { loadHome, probeKey, type CoreData, type HomeData } from "./home.ts";
 
 export interface AuctionData {
   core: CoreData;
@@ -16,6 +16,8 @@ export interface AuctionData {
   series: Read<WireSeries | null> | null;
   /** The latest cleared rounds of the series shown, newest last. */
   recent: Read<[number, WireResult][]> | null;
+  /** The series strips and phase clock (read for the round in progress only). */
+  series2: HomeData | null;
   at: number;
 }
 
@@ -24,7 +26,7 @@ export async function loadAuction(src: Source, sel: { series: number; round: num
   const core: CoreData = { kind: c.src.kind, params: c.params, status: c.status, last: c.last, now: c.now };
   const params = valueOf(c.params);
   const status = valueOf(c.status);
-  const empty: AuctionData = { core, sel, live: null, round: null, result: null, series: null, recent: null, at: Date.now() };
+  const empty: AuctionData = { core, sel, live: null, round: null, result: null, series: null, recent: null, series2: null, at: Date.now() };
   if (!params || !status) return empty;
   if (sel) {
     const [round, result, series, recent] = await Promise.all([
@@ -36,13 +38,15 @@ export async function loadAuction(src: Source, sel: { series: number; round: num
     return { ...empty, round, result, series, recent };
   }
   const live = status.live.find((l) => l.round !== null) ?? status.live[0] ?? null;
-  if (!live || live.round === null || live.phase_ends_at === null) return { ...empty, live };
-  const [round, series, recent] = await Promise.all([
+  const series2 = loadHome(src, { bundlesBase: null, chipSources: [], only: "series" });
+  if (!live || live.round === null || live.phase_ends_at === null) return { ...empty, live, series2: await series2 };
+  const [round, series, recent, strips] = await Promise.all([
     src.view("get_round", { series: live.series, round: live.round }),
     src.view("get_series", { series: live.series }),
     loadResults(src, live.series, Math.max(0, latestRound(params, live.series, c.now)), 12),
+    series2,
   ]);
-  return { ...empty, live, round, series, recent };
+  return { ...empty, live, round, series, recent, series2: strips };
 }
 
 const bookKey = (r: WireRound | null) => (r ? [r.next_seq, r.commits.filter((x) => x.state !== "Committed").length] : null);

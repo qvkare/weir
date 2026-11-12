@@ -163,7 +163,7 @@ export function SimRunner({ market }: { market: MarketId }) {
             </button>
           </div>
           <div className={tab === "agents" ? "" : "hide-narrow"}>
-            <h2 style={{ fontSize: "var(--t17)", marginBottom: 8 }}>Agents</h2>
+            <h2 style={{ fontSize: "var(--t18)", marginBottom: 8 }}>Agents</h2>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -191,7 +191,7 @@ export function SimRunner({ market }: { market: MarketId }) {
         </div>
 
         <div className="sim-centre stack">
-          <h2 style={{ fontSize: "var(--t17)" }}>
+          <h2 style={{ fontSize: "var(--t18)" }}>
             Sealed book{live && live.round !== null ? `, series ${live.series} round ${live.round}` : ""}
           </h2>
           {rows.length === 0 ? (
@@ -235,7 +235,7 @@ export function SimRunner({ market }: { market: MarketId }) {
               </table>
             </div>
           )}
-          <h2 style={{ fontSize: "var(--t17)", marginTop: 24 }}>{last ? `Last clearing: series ${last.series}, round ${last.round}` : "Last clearing"}</h2>
+          <h2 style={{ fontSize: "var(--t18)", marginTop: 24 }}>{last ? `Last clearing: series ${last.series}, round ${last.round}` : "Last clearing"}</h2>
           {last && last.info && p && lastSummary ? (
             <>
               <p className="small">
@@ -248,7 +248,7 @@ export function SimRunner({ market }: { market: MarketId }) {
           )}
           {snap?.results ? (
             <>
-              <h2 style={{ fontSize: "var(--t17)", marginTop: 24 }}>Results after settlement ({snap.settled} series settled)</h2>
+              <h2 style={{ fontSize: "var(--t18)", marginTop: 24 }}>Results after settlement ({snap.settled} series settled)</h2>
               <ul className="limits">
                 {snap.settlements.map((s) => (
                   <li key={s.series}>
@@ -295,7 +295,7 @@ export function SimRunner({ market }: { market: MarketId }) {
         </div>
 
         <div className={`sim-side sim-log ${tab === "log" ? "" : "hide-narrow"}`}>
-          <h2 style={{ fontSize: "var(--t17)", marginBottom: 8 }}>Event log</h2>
+          <h2 style={{ fontSize: "var(--t18)", marginBottom: 8 }}>Event log</h2>
           <ol className="log" aria-label="Simulation events, newest first">
             {[...log].reverse().slice(0, 200).map((e, i) => (
               <li key={`${log.length - i}`}>

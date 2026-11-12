@@ -39,14 +39,16 @@
   --radius: 14px;
   --radius-s: 6px;
 
-  --t11: 11px;
-  --t13: 13px;
-  --t15: 15px;
-  --t17: 17px;
-  --t21: 21px;
-  --t32: 32px;
-  --tdisplay: clamp(40px, 5.2vw, 72px);
-  --thero: clamp(46px, 6.6vw, 96px);
+  /* The type scale, eight steps for the whole site (DESIGN.md section 4). Nothing else sets a
+     font size except the labels inside drawings, which are in the drawing's own units. */
+  --t12: 12px;
+  --t14: 14px;
+  --t16: 16px;
+  --t18: 18px;
+  --t24: 24px;
+  --t36: 36px;
+  --tdisplay: clamp(40px, 4.6vw, 60px);
+  --thero: clamp(44px, 5.4vw, 72px);
 
   /* Motion (DESIGN section 7; lib/motion.ts holds the same values for scripts). */
   --dur-micro: 120ms;
@@ -119,7 +121,7 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 16px;
+  font-size: var(--t16);
   line-height: 1.55;
   font-variant-numeric: tabular-nums;
   font-synthesis: none;
@@ -145,16 +147,16 @@ h1 {
 }
 
 h2 {
-  font-size: var(--t32);
+  font-size: var(--t36);
 }
 
 h3 {
-  font-size: var(--t21);
+  font-size: var(--t24);
   letter-spacing: -0.02em;
 }
 
 h4 {
-  font-size: var(--t17);
+  font-size: var(--t18);
   letter-spacing: -0.01em;
 }
 
@@ -185,7 +187,6 @@ a:hover {
 code,
 .mono {
   font-family: var(--mono);
-  font-size: 0.88em;
   font-variant-numeric: normal;
 }
 
@@ -254,13 +255,13 @@ main {
   flex-wrap: wrap;
   background: var(--ink);
   color: var(--paper);
-  font-size: var(--t13);
+  font-size: var(--t14);
   text-align: center;
   padding: 6px var(--gutter);
 }
 
 .ribbon b {
-  font: 500 var(--t11) / 1 var(--mono);
+  font: 500 var(--t12) / 1 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   border: 1px solid currentColor;
@@ -300,7 +301,7 @@ main {
   display: inline-flex;
   align-items: baseline;
   gap: 0.3em;
-  font-size: 23px;
+  font-size: var(--t24);
   line-height: 1;
 }
 
@@ -340,7 +341,7 @@ main {
   align-items: center;
   min-height: 44px;
   padding: 0 var(--s3);
-  font-size: 14px;
+  font-size: var(--t14);
   text-decoration: none;
   color: var(--ink-2);
   white-space: nowrap;
@@ -395,7 +396,7 @@ main {
   border: 1px solid currentColor;
   border-radius: 999px;
   padding: 3px 8px 2px;
-  font: 500 var(--t11) / 1.2 var(--mono);
+  font: 500 var(--t12) / 1.2 var(--mono);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -453,7 +454,7 @@ main {
   min-height: 32px;
   min-width: 44px;
   padding: 0 var(--s3);
-  font: 500 var(--t11) / 1 var(--mono);
+  font: 500 var(--t12) / 1 var(--mono);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -566,7 +567,7 @@ main {
 
 .site-footer {
   padding: var(--s7) 0 var(--s7);
-  font-size: var(--t15);
+  font-size: var(--t16);
   color: var(--ink-2);
   background: var(--sheet);
   border-top: 1px solid var(--rule);
@@ -589,7 +590,7 @@ main {
 }
 
 .footer-level .footer-line {
-  font: 600 clamp(26px, 3.4vw, 44px) / 1 var(--sans);
+  font: 600 var(--t36) / 1 var(--sans);
   letter-spacing: -0.045em;
 }
 
@@ -617,7 +618,7 @@ main {
 }
 
 .footer-brand .lockup {
-  font-size: 26px;
+  font-size: var(--t24);
   margin-bottom: var(--s2);
 }
 
@@ -626,7 +627,7 @@ main {
 }
 
 .site-footer b {
-  font: 500 var(--t11) / 1.2 var(--mono);
+  font: 500 var(--t12) / 1.2 var(--mono);
   color: var(--ink-2);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -656,7 +657,7 @@ main {
   border-top: 1px solid var(--rule);
   max-width: none;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t14);
 }
 
 @media (max-width: 640px) {
@@ -679,7 +680,7 @@ main {
 }
 
 .page-head .sub {
-  font-size: 19px;
+  font-size: var(--t18);
   color: var(--ink-2);
   max-width: 54ch;
   line-height: 1.45;
@@ -689,7 +690,7 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font: 500 var(--t11) / 1.3 var(--mono);
+  font: 500 var(--t12) / 1.3 var(--mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -733,13 +734,13 @@ main {
 
 .section-head h2,
 .section > h2 {
-  font-size: clamp(22px, 2.3vw, 28px);
+  font-size: var(--t24);
   font-weight: 500;
   letter-spacing: -0.025em;
 }
 
 .section-head .note {
-  font: 400 var(--t11) / 1.4 var(--mono);
+  font: 400 var(--t12) / 1.4 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-2);
@@ -757,17 +758,17 @@ main {
 }
 
 .sheet-no {
-  font-size: 30px;
+  font-size: var(--t36);
 }
 
 .sheet-head h2 {
-  font-size: clamp(24px, 2.6vw, 30px);
+  font-size: var(--t24);
   font-weight: 500;
   letter-spacing: -0.03em;
 }
 
 .sheet-head .note {
-  font: 400 var(--t11) / 1.4 var(--mono);
+  font: 400 var(--t12) / 1.4 var(--mono);
   color: var(--ink-2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -780,7 +781,7 @@ main {
   }
 
   .sheet-no {
-    font-size: 22px;
+    font-size: var(--t24);
   }
 
   .sheet-head .note {
@@ -790,7 +791,7 @@ main {
 }
 
 .statement {
-  font-size: clamp(34px, 4.6vw, 64px);
+  font-size: var(--tdisplay);
   font-weight: 600;
   letter-spacing: -0.05em;
   line-height: 0.98;
@@ -799,7 +800,7 @@ main {
 }
 
 .lead {
-  font-size: var(--t17);
+  font-size: var(--t18);
   color: var(--ink-2);
   margin-bottom: var(--s5);
 }
@@ -830,11 +831,11 @@ main {
 }
 
 .small {
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 .tiny {
-  font-size: var(--t13);
+  font-size: var(--t14);
 }
 
 .long {
@@ -870,7 +871,7 @@ main {
 }
 
 .figure .label {
-  font: 500 var(--t11) / 1.3 var(--mono);
+  font: 500 var(--t12) / 1.3 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-2);
@@ -878,20 +879,20 @@ main {
 
 .figure .value {
   font-weight: 600;
-  font-size: var(--t21);
+  font-size: var(--t24);
   letter-spacing: -0.02em;
   line-height: 1.15;
 }
 
 .figure .value .unit {
-  font: 500 var(--t13) / 1 var(--mono);
+  font: 500 var(--t14) / 1 var(--mono);
   letter-spacing: 0;
   color: var(--ink-2);
   margin-left: 6px;
 }
 
 .figure .source {
-  font-size: var(--t13);
+  font-size: var(--t14);
   color: var(--ink-2);
 }
 
@@ -903,7 +904,7 @@ main {
 }
 
 .figure.display .value .unit {
-  font-size: var(--t13);
+  font-size: var(--t14);
 }
 
 .figure.display .value .dm {
@@ -927,12 +928,12 @@ main {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 caption {
   text-align: left;
-  font-size: var(--t13);
+  font-size: var(--t14);
   color: var(--ink-2);
   padding-bottom: var(--s3);
   caption-side: top;
@@ -947,7 +948,7 @@ td {
 }
 
 thead th {
-  font: 500 var(--t11) / 1.25 var(--mono);
+  font: 500 var(--t12) / 1.25 var(--mono);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ink-2);
@@ -963,7 +964,7 @@ th.num {
 
 td.num {
   font-family: var(--mono);
-  font-size: 13.5px;
+  font-size: var(--t14);
 }
 
 tbody tr {
@@ -996,7 +997,7 @@ tbody th {
   padding: var(--s3) var(--s4);
   background: var(--sheet);
   border-radius: 0 var(--radius-s) var(--radius-s) 0;
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 .state.error {
@@ -1052,7 +1053,7 @@ tbody th {
   min-height: 48px;
   padding: 0 20px;
   font: inherit;
-  font-size: var(--t15);
+  font-size: var(--t16);
   font-weight: 500;
   color: var(--paper);
   background: var(--ink);
@@ -1099,7 +1100,7 @@ tbody th {
 
 .field label,
 .field .label {
-  font: 500 var(--t11) / 1.3 var(--mono);
+  font: 500 var(--t12) / 1.3 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-2);
@@ -1109,7 +1110,7 @@ input[type="text"],
 input[type="number"],
 select {
   font: inherit;
-  font-size: var(--t17);
+  font-size: var(--t18);
   color: var(--ink);
   background: var(--sheet);
   border: 1px solid var(--rule);
@@ -1128,12 +1129,12 @@ select:focus-visible {
 }
 
 .field .hint {
-  font-size: var(--t13);
+  font-size: var(--t14);
   color: var(--ink-2);
 }
 
 .field .error-text {
-  font-size: var(--t13);
+  font-size: var(--t14);
   color: var(--bad);
 }
 
@@ -1233,7 +1234,7 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s5);
-  font: 400 12px / 1.4 var(--mono);
+  font: 400 var(--t14) / 1.4 var(--mono);
   color: var(--ink-2);
   margin-top: var(--s3);
 }
@@ -1273,7 +1274,7 @@ select:focus-visible {
 
 details.data {
   margin-top: var(--s3);
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 details.data summary {
@@ -1282,13 +1283,13 @@ details.data summary {
   display: flex;
   align-items: center;
   color: var(--ink-2);
-  font: 500 var(--t11) / 1.3 var(--mono);
+  font: 500 var(--t12) / 1.3 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .readout {
-  font-size: var(--t15);
+  font-size: var(--t16);
   min-height: 1.5em;
   margin-top: var(--s2);
 }
@@ -1455,7 +1456,7 @@ details.data summary {
 }
 
 .hero-sub {
-  font-size: 19px;
+  font-size: var(--t18);
   line-height: 1.5;
   color: var(--ink-2);
   max-width: 38ch;
@@ -1477,7 +1478,7 @@ details.data summary {
 }
 
 .hero-index .figure.display .value {
-  font-size: clamp(46px, 5.4vw, 64px);
+  font-size: var(--tdisplay);
 }
 
 .hero-index .figure .source {
@@ -1485,7 +1486,7 @@ details.data summary {
 }
 
 .hero-plate .plate-meta {
-  font: 400 12.5px / 1.5 var(--mono);
+  font: 400 var(--t14) / 1.5 var(--mono);
   color: var(--ink-2);
   padding-bottom: 6px;
 }
@@ -1510,7 +1511,7 @@ details.data summary {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s4);
-  font-size: var(--t15);
+  font-size: var(--t16);
   color: var(--ink-2);
   margin-top: var(--s2);
 }
@@ -1579,7 +1580,7 @@ details.data summary {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   border: 1px solid var(--rule-2);
-  font: 400 11.5px / 1.45 var(--mono);
+  font: 400 var(--t12) / 1.45 var(--mono);
   color: var(--ink-2);
 }
 
@@ -1750,7 +1751,7 @@ details.data summary {
   min-height: 44px;
   padding: 0 var(--s2);
   font: inherit;
-  font-size: var(--t13);
+  font-size: var(--t14);
   font-weight: 500;
   color: var(--ink);
   background: var(--sheet);
@@ -1781,7 +1782,7 @@ details.data summary {
 }
 
 .mf-caption {
-  font-size: var(--t15);
+  font-size: var(--t16);
   line-height: 1.45;
   min-height: 2.9em;
   padding-top: 11px;
@@ -1792,7 +1793,7 @@ details.data summary {
   display: inline-block;
   min-width: 3.2em;
   margin-right: var(--s2);
-  font: 500 var(--t11) / 1 var(--mono);
+  font: 500 var(--t12) / 1 var(--mono);
   color: var(--ink-2);
   text-transform: uppercase;
 }
@@ -1821,14 +1822,14 @@ details.data summary {
   align-items: baseline;
   gap: var(--s3);
   flex-wrap: wrap;
-  font: 400 var(--t11) / 1.4 var(--mono);
+  font: 400 var(--t12) / 1.4 var(--mono);
   text-transform: uppercase;
   color: var(--ink-2);
   margin-bottom: var(--s3);
 }
 
 .floor-head .fig-n {
-  font-size: 18px;
+  font-size: var(--t18);
   color: var(--ink);
   margin-right: var(--s3);
   text-transform: none;
@@ -2018,13 +2019,13 @@ details.data summary {
   gap: var(--s4);
   flex-wrap: wrap;
   padding: var(--s4) var(--s5) 0;
-  font: 400 var(--t11) / 1.3 var(--mono);
+  font: 400 var(--t12) / 1.3 var(--mono);
   text-transform: uppercase;
   color: var(--ink-2);
 }
 
 .spec-headrow .fig-n {
-  font-size: 18px;
+  font-size: var(--t18);
   color: var(--ink);
   text-transform: none;
 }
@@ -2154,7 +2155,7 @@ details.data summary {
 }
 
 .spec-model {
-  font-size: 44px;
+  font-size: var(--tdisplay);
 }
 
 .spec-ui {
@@ -2180,16 +2181,16 @@ details.data summary {
 }
 
 .spec-n {
-  font: 600 26px / 1 var(--mono);
+  font: 600 var(--t24) / 1 var(--mono);
 }
 
 .spec-of {
-  font: 400 13px / 1 var(--mono);
+  font: 400 var(--t14) / 1 var(--mono);
   color: var(--ink-2);
 }
 
 .spec-h {
-  font-size: 20px;
+  font-size: var(--t18);
   font-weight: 500;
   letter-spacing: -0.02em;
   margin-left: 6px;
@@ -2219,7 +2220,7 @@ details.data summary {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font: 500 13px / 1 var(--mono);
+  font: 500 var(--t14) / 1 var(--mono);
   padding: 0;
 }
 
@@ -2248,7 +2249,7 @@ dl.kv {
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px var(--s4);
   margin: 0;
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 dl.kv dt {
@@ -2260,7 +2261,7 @@ dl.kv dd {
 }
 
 dl.kv.spec {
-  font: 400 12.5px / 1.4 var(--mono);
+  font: 400 var(--t14) / 1.4 var(--mono);
 }
 
 dl.kv.spec dt {
@@ -2301,7 +2302,7 @@ dl.kv.spec dd {
   justify-content: space-between;
   align-items: center;
   padding: 12px 14px 0;
-  font: 400 var(--t11) / 1 var(--mono);
+  font: 400 var(--t12) / 1 var(--mono);
   text-transform: uppercase;
   color: var(--ink-2);
 }
@@ -2336,7 +2337,7 @@ dl.kv.spec dd {
 }
 
 .chip-card .name {
-  font-size: 34px;
+  font-size: var(--t36);
   padding: 0 16px;
 }
 
@@ -2460,7 +2461,7 @@ dl.kv.spec dd {
   display: flex;
   align-items: center;
   gap: 10px;
-  font: 500 12px / 1 var(--mono);
+  font: 500 var(--t14) / 1 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -2490,7 +2491,7 @@ dl.kv.spec dd {
 }
 
 .side-card h3 {
-  font-size: 24px;
+  font-size: var(--t24);
   font-weight: 500;
 }
 
@@ -2532,7 +2533,7 @@ dl.kv.spec dd {
 }
 
 .fact h3 {
-  font-size: var(--t17);
+  font-size: var(--t18);
   font-weight: 500;
 }
 
@@ -2540,7 +2541,7 @@ dl.kv.spec dd {
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 .limits li {
@@ -2570,7 +2571,7 @@ dl.kv.spec dd {
 }
 
 .strip-head h3 {
-  font-size: var(--t17);
+  font-size: var(--t18);
   font-weight: 500;
 }
 
@@ -2587,7 +2588,7 @@ dl.kv.spec dd {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2) var(--s5);
-  font-size: var(--t15);
+  font-size: var(--t16);
   margin-top: var(--s3);
 }
 
@@ -2618,7 +2619,7 @@ dl.kv.spec dd {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font: 500 12px / 1 var(--mono);
+  font: 500 var(--t14) / 1 var(--mono);
   letter-spacing: 0.03em;
 }
 
@@ -2694,7 +2695,7 @@ tr.selectable {
   list-style: none;
   padding: 0;
   margin: var(--s2) 0 0;
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 .board li {
@@ -2711,7 +2712,7 @@ tr.selectable {
 
 pre {
   font-family: var(--mono);
-  font-size: var(--t13);
+  font-size: var(--t14);
   line-height: 1.65;
   background: var(--sheet);
   padding: var(--s4);
@@ -2747,11 +2748,11 @@ pre .c {
   background: var(--panel);
   border-bottom: 1px solid var(--rule);
   color: var(--ink-2);
-  font-size: var(--t13);
+  font-size: var(--t14);
 }
 
 .copy-title {
-  font: 400 12px / 1 var(--mono);
+  font: 400 var(--t14) / 1 var(--mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2765,7 +2766,7 @@ pre .c {
   min-width: 88px;
   justify-content: center;
   padding: 0 var(--s4);
-  font: 500 var(--t11) / 1 var(--mono);
+  font: 500 var(--t12) / 1 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink);
@@ -2830,7 +2831,7 @@ ol.steps > li {
   padding: 0;
   max-height: 560px;
   overflow-y: auto;
-  font-size: var(--t13);
+  font-size: var(--t14);
 }
 
 .log li {
@@ -2850,7 +2851,7 @@ ol.steps > li {
 .tabs button {
   min-height: 44px;
   padding: 0 var(--s4);
-  font: 500 var(--t11) / 1 var(--mono);
+  font: 500 var(--t12) / 1 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   background: transparent;
@@ -2890,7 +2891,7 @@ ol.steps > li {
 
 .preimage {
   font-family: var(--mono);
-  font-size: var(--t13);
+  font-size: var(--t14);
   background: var(--sheet);
   border: 1px solid var(--rule-2);
   padding: var(--s3) var(--s4);
@@ -2982,11 +2983,11 @@ ol.steps > li {
   border-left: 2px solid var(--ink);
   border-radius: 2px var(--radius-s) var(--radius-s) 2px;
   background: var(--paper);
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 .cr-k {
-  font: 500 var(--t11) / 1.3 var(--mono);
+  font: 500 var(--t12) / 1.3 var(--mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ink-2);
@@ -3013,16 +3014,16 @@ ol.steps > li {
 }
 
 .cr-hashing .preimage {
-  font-size: 12px;
+  font-size: var(--t14);
 }
 
 .cr-hash {
-  font-size: var(--t13);
+  font-size: var(--t14);
   overflow-wrap: anywhere;
 }
 
 .cr-hash .mono {
-  font-size: 12px;
+  font-size: var(--t14);
 }
 
 .cr-arrow {
@@ -3061,7 +3062,7 @@ ol.steps > li {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
-  font: 400 12px / 1.4 var(--mono);
+  font: 400 var(--t14) / 1.4 var(--mono);
 }
 
 .chips li {
@@ -3104,7 +3105,7 @@ ol.steps > li {
   border: 1px solid var(--ink);
   border-radius: 4px;
   overflow: hidden;
-  font: 500 12px / 1 var(--mono);
+  font: 500 var(--t14) / 1 var(--mono);
 }
 
 .pay-bar > span {
@@ -3149,7 +3150,7 @@ ol.steps > li {
   border: 1px solid var(--rule);
   border-radius: var(--radius-s);
   background: var(--paper);
-  font-size: var(--t15);
+  font-size: var(--t16);
 }
 
 @media (max-width: 520px) {
@@ -3186,7 +3187,7 @@ ol.steps > li {
 }
 
 .flow-chip {
-  font: 400 12px / 1.4 var(--mono);
+  font: 400 var(--t14) / 1.4 var(--mono);
   padding: 1px var(--s2);
   border: 1px solid var(--rule);
   border-radius: 4px;
@@ -3198,7 +3199,7 @@ ol.steps > li {
   gap: var(--s2);
   height: 26px;
   padding-left: 24px;
-  font-size: var(--t13);
+  font-size: var(--t14);
   color: var(--ink-2);
 }
 
@@ -3427,7 +3428,7 @@ ol.steps > li {
   list-style: none;
   margin: 0;
   padding: 0;
-  font: 400 12px / 1.4 var(--mono);
+  font: 400 var(--t14) / 1.4 var(--mono);
 }
 
 .spec-toc a {
@@ -3451,7 +3452,7 @@ ol.steps > li {
 }
 
 .spec-h2 {
-  font-size: 24px;
+  font-size: var(--t24);
   font-weight: 500;
   padding-top: var(--s6);
   border-bottom: 1px solid var(--ink);
@@ -3459,7 +3460,7 @@ ol.steps > li {
 }
 
 .spec-h3 {
-  font-size: 18px;
+  font-size: var(--t18);
   font-weight: 500;
   padding-top: var(--s4);
 }
@@ -3483,7 +3484,7 @@ ol.steps > li {
   min-height: 48px;
   padding: 0 16px;
   border-top: 1px solid var(--rule-2);
-  font-size: var(--t15);
+  font-size: var(--t16);
   font-weight: 500;
   text-decoration: none;
   margin-top: auto;
@@ -3513,7 +3514,7 @@ ol.steps > li {
   gap: 10px;
   max-width: 340px;
   min-height: 44px;
-  font-size: var(--t15);
+  font-size: var(--t16);
   cursor: pointer;
 }
 
@@ -3545,7 +3546,7 @@ ol.steps > li {
 }
 
 .risks h3 {
-  font-size: var(--t17);
+  font-size: var(--t18);
   font-weight: 600;
 }
 
@@ -3579,7 +3580,7 @@ ol.steps > li {
   border: 1px solid var(--rule);
   border-radius: var(--radius-s);
   background: var(--sheet);
-  font: 400 12.5px / 1.45 var(--mono);
+  font: 400 var(--t14) / 1.45 var(--mono);
   color: var(--ink-2);
 }
 
@@ -3626,7 +3627,7 @@ ol.steps > li {
   display: flex;
   align-items: center;
   gap: var(--s3);
-  font-size: var(--t15);
+  font-size: var(--t16);
   list-style: none;
 }
 

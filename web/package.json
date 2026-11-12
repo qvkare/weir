@@ -15,13 +15,18 @@
     "deploy": "next build && wrangler deploy"
   },
   "dependencies": {
+    "@tailwindcss/postcss": "4.1.14",
     "@weir/agents": "workspace:*",
     "@weir/chain": "workspace:*",
     "@weir/engine": "workspace:*",
     "@weir/index": "workspace:*",
+    "clsx": "2.1.1",
+    "motion": "12.23.24",
     "next": "16.4.5",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "tailwind-merge": "3.3.1",
+    "tailwindcss": "4.1.14"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

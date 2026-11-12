@@ -13,6 +13,7 @@ const EMPTY: BuildData = {
   bundles: [],
   bundleCount: 0,
   txs: [],
+  agents: [],
   backtest: { site: null, summary: null, summaryMd: null, siteMissing: true },
   modules: { sim: false, intents: false },
 };

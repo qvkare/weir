@@ -67,7 +67,20 @@ The direction is SILICON, the first of three art-direction boards (`brand/propos
 
 One system, SILICON's: **Geist** (text and headings, variable 100 to 900), **Geist Mono** (labels, tables, spec sheets, hashes, code), and a **dot-matrix face for figures to remember** (the index, the countdown, specimen names, section numbers, "GPU bill."). Both Geist files are self-hosted in `app/fonts` with `LICENSE-geist.txt` (OFL 1.1). The dot-matrix face is not a font: `lib/dotmatrix.ts` draws each character on the same 5 by 7 grid as a die, as one SVG path, and `components/dot-text.tsx` keeps the real text in the page for screen readers, search and copying. It needs no file, renders identically everywhere and is part of the server HTML, so it never delays the first paint. Why this system over the other boards': SWARM's Bricolage and Instrument pair is friendly but soft for tables of money; EXCHANGE's condensed display and serif belong to its black board. Geist is neutral and exact at 11 px in mono and at 96 px in a headline, and the dots tie the figures to the wafer.
 
-Sizes: 11 (mono labels, uppercase, +0.05 em), 13, 15, 17, 21, 32; display clamp(40, 5.2vw, 72); hero clamp(46, 6.6vw, 96) at -0.055 em. Headings Geist 600 at -0.03 to -0.055 em; section heads 500. Tabular figures everywhere. No italic.
+**The type scale, one for the whole site (12 Nov 2026).** Eight steps, defined once in `app/globals.css` `:root` and mapped onto Tailwind's text sizes in `app/site.css`; nothing else sets a font size except the labels inside drawings, which are in the drawing's own units.
+
+| Token | Size | Tailwind | Use |
+|---|---|---|---|
+| `--t12` | 12 px | `text-xs` | labels, captions, the live-read line |
+| `--t14` | 14 px | `text-sm` | secondary text, tables, links in lists |
+| `--t16` | 16 px | `text-base` | body |
+| `--t18` | 18 px | `text-lg` | lede, card titles |
+| `--t24` | 24 px | `text-2xl` | sub-heads, figures in cards |
+| `--t36` | 36 px | `text-4xl` | section headings (h2), the statement |
+| `--tdisplay` | clamp(40, 4.6vw, 60) px | `text-6xl` | the large live figure, page titles |
+| `--thero` | clamp(44, 5.4vw, 72) px | `text-7xl` | the homepage headline |
+
+The homepage uses all eight and no other (measured in the browser at 1440 x 900: 12, 14, 16, 18, 24, 36, 60, 72 px), weights 400 and 500, no uppercase, mono only for figures. Headline at -0.035 em; headings at -0.02 em. Section headings follow one pattern: a lead phrase in the ink colour runs into the rest of the sentence in the muted grey ("How it works. Four rules do the work a broker would."). The inner pages were moved onto the same steps by find-and-replace (15 to 16, 17 to 18/19 to 18, 21 to 24, 32 to 36, and stray pixel sizes to the nearest step); their uppercase mono labels are unchanged for now. Tabular figures everywhere. No italic.
 
 ### 4.3 Space and shape
 
@@ -95,12 +108,16 @@ Header (sticky, translucent cleanroom; between 961 and 1180 px the market switch
 
 ## 6. Page by page
 
-### 6.1 `/`
-1. **First screen.** Eyebrow (a blue die and a hatched gold one, then "Week-ahead H100 auctions · NEAR testnet"), the h1, one sentence, two actions ("The round in progress", "How a round clears"), and the index plate: the last final print in dots, its unit, label and source line (age, median of how many reports, link to the sources). Behind it on the right, the wafer (7.3) with a caption pill tagged **Simulated** and a pause button. Under 900 px the wafer becomes its own band below the copy. The h1 and the figure are server HTML.
-2. **01 One round, as work.** "Many agents. One price.", one paragraph, and the floor (7.4), labelled "Example orders · cleared by the Weir engine".
-3. **02 Who is in the room.** Two cards: buyers hold LONG (a seated person at a screen with two agents' bids, solid blue) and sellers hold SHORT (a person sliding a tray out of a rack, gold lights), each with who they are, what their side pays out and why, and the agent-key and full-collateral facts.
-4. **03 The hour is the product.** Fig. 1, the specimen: an isometric H100 SXM module taken apart in five steps, with a spec sheet column (always the H100); then three live chip cards, one per chip, each with its market's last print, its status (Trading, Model or Not deployed) and a link to that market; the selected chip's card is outlined. Every hardware fact is in `lib/hardware.ts` with its public source (section 6.6).
-5. **04 to 09.** Series and phase clock, index chart, the index and its sources, last clearing, payoff and hedge size (under "Next week's compute, called today."), three facts, limits; each on a numbered sheet head.
+### 6.1 `/` (rebuilt 12 Nov 2026)
+Six sections, one job each, about 500 words, centred like the reference pages the owner chose; built in `components/front/`.
+1. **Hero.** A pill that is true at every moment (the market and "NEAR testnet, test dollars" until this browser has read the chain, then the round in progress and when its phase ends, linking to it); the headline "Next week's GPU hours, / priced today." with the second line in the muted grey; one sentence; "See the live round" and "How it works". Below it, rising from the lower edge, the **market window** (`market-window.tsx`): the last index print large in the dot-matrix face with its unit and time, the round in progress (phase, countdown, one tile per sealed commit, dollars locked), the last clearing (long price, forward, volume, round, time) and the live-read line. It is the only place on the page that uses the two side colours.
+2. **The problem.** One sentence from the backtest (`backtest/results/summary.json`, "move": the spread of weekly moves over 69 delivery weeks), revealed word by word as it scrolls (20% to 100% opacity, a sticky box over a 170vh runway; shown whole under reduced motion), with a line saying what it is and a link to `/backtest`.
+3. **How it works.** Four cards with a still drawing each: sealed bids; one price for everyone filled; paid in full when it opens; agents with keys that cannot withdraw.
+4. **Three chips, a market each.** H100, H200, A100 80 GB: the part and its memory, the last print and its time, links to each market's auction.
+5. **Check it yourself.** Contracts, the review, a print re-hashed in the browser; the plain line the record requires ("All three price reporters are run by one operator today... test dollars"); three questions in a grouped FAQ ("What you are trusting").
+6. **Close.** "Watch a round clear." and two buttons.
+
+Moved off the homepage, nothing deleted: the floor and "Who is in the room" and the payoff and hedge-size tool to `/how` (`#round`, `#room`, `#hedge`); the series and phase clock to `/auction` (`#series`; the last clearing was already there as "Round N, cleared"); the index chart and its sources to `/proof` (`#index`, `#sources`); the three facts and the limits list were already on `/how`. The wafer and the H100 specimen are no longer shown (their components and tests stay); the chips' specs live on in the markets section. Old homepage anchors (`/#series` and the rest) are sent to the new places by the page.
 
 ### 6.2 `/auction`, `/simulate`, `/backtest`, `/proof`, `/agents`
 Same data and behaviour as before, in the cleanroom treatment: page heads on an ink rule with the two-die eyebrow, mono uppercase table heads and mono figures, side cells with a solid blue or hatched gold die, panels on the sheet, supply dashed and its paid area hatched in every step chart, the "now" rule in ink. `/auction`'s countdown is drawn in dots. Code blocks on `/agents` have a panel title bar and a mono COPY button.
@@ -181,7 +198,7 @@ Cleanroom: hairline grid in `--rule-2`, mono 11 px labels, ink axis. **Auction s
 A clerk reading the results: the figure, then its source. Headings are names without a full stop (the three brand lines are sentences and keep theirs). No "X, not Y" turns, em dashes or emoji. Banned: revolutionary, seamless, unlock, empower, trustless, guaranteed, risk-free, insurance, yield, bet, AI-powered, next-gen. Sample, simulated and example figures say so where they appear (Simulated tag on the wafer, "Example orders" on the floor, "Illustration · not to scale" on the specimen, "(model)" after model figures, the ribbon in model mode).
 
 ## 10. Build notes
-Next.js App Router, React, TypeScript; no component or animation library: Canvas, SVG, CSS and the Web Animations API. Charts are hand-written SVG. Shared SVG patterns (`hatch-short`, `hatch-short-soft`, `hatch-sealed`, `dots`) are defined once in `app/layout.tsx`. The floor plan and the /how scores are built at build time and passed as data. Every page is a static file (`output: "export"`); pages with chain data carry the figures the build read, labelled with the build time, and the browser reads them again from the RPC endpoints (`components/live.tsx`). No external requests beyond the RPC endpoints and the bundle host. The Worker is 22.63 KiB, 8.23 KiB gzipped (`wrangler deploy --dry-run`, 12 Nov 2026); it serves /api and the `?m=` redirects only.
+Next.js App Router, React, TypeScript. The homepage, the header and the footer are built on Tailwind v4 utilities (theme and utilities only, no preflight; `app/site.css` puts the old CSS in a `legacy` layer under the utilities and generates utilities only from `components/front` and `components/ui`) and five components adapted from Ruixen UI's MIT registry (`THIRD_PARTY_NOTICES.md`), with `motion` for the scroll-linked statement. Every other page is still hand-written CSS: Canvas, SVG, CSS and the Web Animations API. Charts are hand-written SVG. Shared SVG patterns (`hatch-short`, `hatch-short-soft`, `hatch-sealed`, `dots`) are defined once in `app/layout.tsx`. The floor plan and the /how scores are built at build time and passed as data. Every page is a static file (`output: "export"`); pages with chain data carry the figures the build read, labelled with the build time, and the browser reads them again from the RPC endpoints (`components/live.tsx`). No external requests beyond the RPC endpoints and the bundle host. The Worker is 22.63 KiB, 8.23 KiB gzipped (`wrangler deploy --dry-run`, 12 Nov 2026); it serves /api and the `?m=` redirects only.
 
 ## 11. Still in force from v1 and v2
 No order form and no wallet; two markets (Weekly / Fast, `?m=fast`); the series strip; reporter lines on the index chart; no refund column; "none" for exact zeros; the phone fills table; the recorded bundle in the verifier when no host is set; model mode with its ribbon.

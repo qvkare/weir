@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { clearRound, commitHash, commitPreimage, type Order } from "@weir/engine";
 import type { WireParams } from "@weir/engine";
-import { LimitsList } from "@/components/home-blocks.tsx";
+import { LimitsList, PayoffBlock } from "@/components/home-blocks.tsx";
+import { Room } from "@/components/room.tsx";
+import { MarketSwitch } from "@/components/site-nav.tsx";
+import { loadHome } from "@/lib/data/home.ts";
+import { liveMarkets } from "@/lib/build.ts";
 import { FloorScene } from "@/components/floor-scene.tsx";
 import { QuoteWidget } from "@/components/quote-widget.tsx";
 import { buildFloor } from "@/lib/floor.ts";
@@ -28,6 +32,8 @@ function exampleParams(): WireParams {
 
 export async function HowPage({ market }: { market: MarketId }) {
   const core = await loadCore(source(market));
+  // The payoff tool needs the band of an open series: read once, at build, and labelled so.
+  const hedge = await loadHome(source(market), { bundlesBase: null, chipSources: [], only: "series" });
   const live = valueOf(core.params);
   const params = live ?? exampleParams();
   // Worked examples in round dollars, put on the tick grid.
@@ -73,6 +79,7 @@ export async function HowPage({ market }: { market: MarketId }) {
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">How it works</span>
+          <MarketSwitch markets={liveMarkets()} />
           <h1>A week-ahead price, set in sealed rounds</h1>
           <p className="sub">One round as work first, then five steps from a sealed order to a payout, then every limit. Figures in the drawings use {live ? "the live parameters" : "example parameters"}; worked examples are computed by the Weir engine on this page.</p>
         </header>
@@ -86,6 +93,14 @@ export async function HowPage({ market }: { market: MarketId }) {
           <div className="floor-wrap">
             <FloorScene plan={FLOOR} />
           </div>
+        </section>
+
+        <section className="section" id="room" aria-labelledby="room-h">
+          <div className="section-head">
+            <h2 id="room-h">Who is in the room</h2>
+            <span className="note">Two sides, one price</span>
+          </div>
+          <Room />
         </section>
 
         <section className="how-section" id="series">
@@ -211,6 +226,14 @@ export async function HowPage({ market }: { market: MarketId }) {
             </table>
           </div>
           </div>
+        </section>
+
+        <section className="section" id="hedge" aria-labelledby="hedge-h">
+          <div className="section-head">
+            <h2 id="hedge-h">Payoff and hedge size</h2>
+            <span className="note">Per GPU-hour, at settlement · the band of the open series as read when the site was built ({fmtUtc(core.now)})</span>
+          </div>
+          <PayoffBlock d={hedge} wall />
         </section>
 
         <section className="how-section" id="funding">

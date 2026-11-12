@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
+import { SeriesStrips } from "@/components/home-blocks.tsx";
+import { MarketSwitch } from "@/components/site-nav.tsx";
 import { AgentPanel, LiveCurves, NoRoundInProgress, auctionHref, RecentRounds, RoundResult, SealedBook } from "@/components/auction-blocks.tsx";
 import { Countdown } from "@/components/countdown.tsx";
 import { Figure } from "@/components/figure.tsx";
@@ -17,7 +19,7 @@ import { bookRows, bookTotals, lastResult } from "@/lib/views.ts";
 
 const int = (v: string | null): number | null => (v !== null && /^\d{1,10}$/.test(v) ? Number(v) : null);
 
-export function AuctionLive({ cfg, initial, market }: { cfg: SiteConfig; initial: AuctionData; market: MarketId }) {
+export function AuctionLive({ cfg, initial, market, offered }: { cfg: SiteConfig; initial: AuctionData; market: MarketId; offered: MarketId[] }) {
   // ?series=&round= is read in the browser; the static page shows the round in progress.
   const [sel, setSel] = useState<AuctionData["sel"]>(null);
   useEffect(() => {
@@ -58,6 +60,7 @@ export function AuctionLive({ cfg, initial, market }: { cfg: SiteConfig; initial
           <span className="eyebrow">
             Auction · {MARKET_INFO[market].name} market, {MARKET_INFO[market].delivery}
           </span>
+          <MarketSwitch markets={offered} />
           <h1>{h1}</h1>
           {sub ? <p className="sub">{sub}</p> : null}
           {bar}
@@ -97,7 +100,7 @@ export function AuctionLive({ cfg, initial, market }: { cfg: SiteConfig; initial
           {result ? <RoundResult result={result} series={series} params={params} round={d.sel.round} /> : <SealedBook round={round} params={params} />}
         </section>
         <section className="section" aria-labelledby="recent-h">
-          <h2 id="recent-h" className="section-head" style={{ fontSize: "var(--t21)" }}>Other rounds</h2>
+          <h2 id="recent-h" className="section-head" style={{ fontSize: "var(--t24)" }}>Other rounds</h2>
           <RecentRounds read={d.recent} series={d.sel.series} params={params} market={market} current={d.sel.round} />
         </section>
       </>,
@@ -166,9 +169,18 @@ export function AuctionLive({ cfg, initial, market }: { cfg: SiteConfig; initial
         {prev ? <RoundResult result={prev.result} series={series} params={params} round={prev.round} animate /> : <p className="muted">No round of series {live.series} has cleared yet.</p>}
       </section>
       <section className="section" aria-labelledby="recent-h">
-        <h2 id="recent-h" style={{ fontSize: "var(--t21)", marginBottom: 24 }}>Recent rounds</h2>
+        <h2 id="recent-h" style={{ fontSize: "var(--t24)", marginBottom: 24 }}>Recent rounds</h2>
         <RecentRounds read={d.recent} series={live.series} params={params} market={market} current={null} />
       </section>
+      {d.series2 ? (
+        <section className="section" id="series" aria-labelledby="series-h">
+          <div className="section-head">
+            <h2 id="series-h">Series and phase clock</h2>
+            <span className="note">{MARKET_INFO[market].name}: {MARKET_INFO[market].delivery}, {MARKET_INFO[market].rounds}</span>
+          </div>
+          <SeriesStrips d={d.series2} wall={wall} />
+        </section>
+      ) : null}
     </>,
   );
 }

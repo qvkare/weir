@@ -202,7 +202,7 @@ function Solvency({ market, d }: { market: MarketId; d: ProofData }) {
         </table>
       </div>
       <div className="stack">
-        <p style={{ fontSize: "var(--t21)" }}>
+        <p style={{ fontSize: "var(--t24)" }}>
           {bal === null || sum === null ? (
             <span className="flag">Unverified: the balance could not be read.</span>
           ) : ok ? (

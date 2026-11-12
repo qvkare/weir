@@ -52,8 +52,15 @@ export function readBuildData(root: string): BuildData {
   bundles.sort((a, b) => (b.bucket ?? 0) - (a.bucket ?? 0));
 
   const txs: TxRecord[] = [];
+  const agents: BuildData["agents"] = [];
   for (const path of walk(evidence, (p) => p.startsWith(bundlesDir) || p.endsWith(".raw"))) {
-    txs.push(...readTxFile(relative(root, path), readJson(path)));
+    const json = readJson(path);
+    txs.push(...readTxFile(relative(root, path), json));
+    const list = json && typeof json === "object" && Array.isArray((json as { agents?: unknown }).agents) ? ((json as { agents: unknown[] }).agents) : [];
+    for (const a of list) {
+      const r = a as Record<string, unknown>;
+      if (typeof r.account === "string" && typeof r.market === "string" && typeof r.role === "string") agents.push({ account: r.account, market: r.market, role: r.role, file: relative(root, path) });
+    }
   }
 
   const results = join(root, "backtest", "results");
@@ -72,6 +79,7 @@ export function readBuildData(root: string): BuildData {
     bundles: [...new Set(bundles.map((b) => b.chip))].map((c) => bundles.find((b) => b.chip === c)!),
     bundleCount: bundles.length,
     txs,
+    agents,
     backtest: { site: site ?? null, summary: summary ?? null, summaryMd, siteMissing: site === undefined },
     modules: {
       sim: existsSync(join(root, "agents", "src", "sim.ts")),

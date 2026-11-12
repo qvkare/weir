@@ -63,7 +63,7 @@ export function HeroIndex({ d }: HomeView) {
           last ? (
             <>
               Final print for the bucket from {fmtUtcTime(last.bucket)}, {fmtDuration(core.now - last.bucket)} old
-              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href="#sources">Sources</a>
+              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href={`${withMarket("/proof", d.market)}#sources`}>Sources</a>
             </>
           ) : (
             "No print has become final yet."
@@ -98,7 +98,7 @@ export function chipCards(d: HomeData, offered: readonly MarketId[]): ChipCardDa
         ? { kind: d.core.kind, last: valueOf(d.core.last), tick: valueOf(d.core.params)?.tick ?? null, now: d.core.now }
         : d.chips.find((x) => x.market === m) ?? { kind: "none" as const, last: null, tick: null, now: d.core.now };
     const text = c.kind === "none" ? "Not deployed yet" : c.last ? `${fmtPrice(c.last.price, c.tick ?? undefined)}, ${fmtDuration(c.now - c.last.bucket)} old${c.kind === "model" ? " (model)" : ""}` : "No print yet";
-    return { chip, href: withMarket("/", m) + "#hardware", status: c.kind === "chain" ? "Trading" : c.kind === "model" ? "Model" : "Not deployed", live: c.kind !== "none", last: text, current: m === d.market };
+    return { chip, href: withMarket("/", m) + "#markets", status: c.kind === "chain" ? "Trading" : c.kind === "model" ? "Model" : "Not deployed", live: c.kind !== "none", last: text, current: m === d.market };
   });
 }
 
@@ -224,7 +224,7 @@ export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; on
       {RANGES[market].map((x) => (
         <a
           key={x.id}
-          href={`${withMarket("/", market, `range=${x.id}`)}#index`}
+          href={`${withMarket("/proof", market, `range=${x.id}`)}#index`}
           aria-current={x.id === r.id ? "true" : undefined}
           onClick={
             onRange
@@ -240,23 +240,35 @@ export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; on
       ))}
     </nav>
   );
+  // The chart draws only the span that has prints: a market younger than the range starts at
+  // its first print, and the title says since when, so the line never sits alone at one edge.
+  const all = valueOf(d.chart.prints) ?? [];
+  const firstPrint = all.length ? all[0]!.bucket : null;
+  const young = params && firstPrint !== null && firstPrint - d.chart.from > 2 * params.print_interval_secs ? firstPrint : null;
+  const title = young !== null ? <>Index since {fmtUtc(young)}, the first print</> : <>Index, last {r.label}</>;
   const head = no ? (
-    <SheetHead no={no} id="index-h" title={<>Index, last {r.label}</>} note={nav} />
+    <SheetHead no={no} id="index-h" title={title} note={nav} />
   ) : (
     <div className="section-head">
-      <h2>Index, last {r.label}</h2>
+      <h2 id="index-h">{title}</h2>
       {nav}
     </div>
   );
-  const problem = coreProblem(core, market, withMarket("/", market), "index history");
+  const problem = coreProblem(core, market, withMarket("/proof", market), "index history");
   if (problem || !params) return (
     <>
       {head}
       {problem}
     </>
   );
-  const { from, prints, gaps } = d.chart;
+  const { prints } = d.chart;
+  const from = young ?? d.chart.from;
   const list = valueOf(prints) ?? [];
+  const noPrint = d.chart.gaps.noPrint.filter((b) => b >= from);
+  const open = d.chart.gaps.open.filter((b) => b >= from);
+  // Buckets in the drawn span with no final print that were not asked about (one view each).
+  const span = Math.max(0, Math.floor(core.now / params.print_interval_secs) - Math.ceil(from / params.print_interval_secs));
+  const gaps = { noPrint, open, unread: young === null ? d.chart.gaps.unread : Math.max(0, span - list.length - noPrint.length - open.length) };
   const delivering = d.set.find((s) => s.series === d.chart.delivering) ?? null;
   const dInfo = delivering ? valueOf(delivering.info) : null;
   const t = delivering ? timesOf(delivering.series, params) : null;
@@ -328,7 +340,7 @@ export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; on
 export function SeriesStrips({ d, wall }: HomeView) {
   const { core, market, set } = d;
   const params = valueOf(core.params);
-  const problem = coreProblem(core, market, withMarket("/", market), "series");
+  const problem = coreProblem(core, market, withMarket("/auction", market), "series");
   if (problem || !params) return problem;
   if (set.length === 0) return <Empty>No series is in auction or delivery.</Empty>;
   return (
@@ -437,7 +449,7 @@ export function LastClearing({ d }: HomeView) {
 export function PayoffBlock({ d }: HomeView) {
   const { core, market } = d;
   const params = valueOf(core.params);
-  const problem = coreProblem(core, market, withMarket("/", market), "band to draw");
+  const problem = coreProblem(core, market, withMarket("/how", market), "band to draw");
   if (problem || !params) return problem;
   const { series, info, traded } = d.clearing;
   if (!info || series === null) return <Empty>No series is open yet, so there is no band to draw. The first commit of a series sets it from the last print.</Empty>;

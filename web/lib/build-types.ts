@@ -24,6 +24,8 @@ export interface BuildData {
   bundles: RecordedBundle[];
   bundleCount: number;
   txs: TxRecord[];
+  /** The agents the deploy tool recorded (evidence/deploy/*.json, "agents"): account, market, role. */
+  agents: { account: string; market: string; role: string; file: string }[];
   backtest: { site: unknown; summary: unknown; summaryMd: string | null; siteMissing: boolean };
   modules: { sim: boolean; intents: boolean };
 }

@@ -1,0 +1,153 @@
+/*
+  The site's stylesheet. Order of the layers, weakest first:
+  - theme: Tailwind's design tokens (no reset: its preflight is not imported, so the inner pages
+    keep the base styles of globals.css);
+  - legacy: globals.css, the hand-written CSS every page has used so far;
+  - utilities: Tailwind utilities, generated only from the files named by @source below (the
+    homepage, the header and the footer), so no inner page gets a utility it did not ask for.
+*/
+@layer theme, legacy, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "./globals.css" layer(legacy);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../components/front";
+@source "../components/ui";
+
+/* Fonts: Tailwind's font-sans and font-mono read --font-sans and --font-mono, which next/font sets
+   on <html> (Geist, Geist Mono), so they are not redefined here. Dark mode needs no variant: the
+   tokens below follow the palette, which follows the theme. */
+
+/* The shadcn-style names the adapted components use, mapped onto the site's own palette
+   (globals.css :root, light and dark), so both colour schemes work without a second set. */
+:root {
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--sheet);
+  --card-foreground: var(--ink);
+  --muted: var(--panel);
+  --muted-foreground: var(--ink-2);
+  --border: var(--rule-2);
+  --input: var(--rule);
+  --primary: var(--ink);
+  --primary-foreground: var(--paper);
+  --ring: var(--ink-3);
+  --accent: var(--long);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-long: var(--long);
+  --color-short: var(--short);
+  --color-flag: var(--flag);
+
+  /* Tailwind's text sizes are the site's eight steps (globals.css :root); no other size exists. */
+  --text-xs: var(--t12);
+  --text-xs--line-height: 1.5;
+  --text-sm: var(--t14);
+  --text-sm--line-height: 1.55;
+  --text-base: var(--t16);
+  --text-base--line-height: 1.6;
+  --text-lg: var(--t18);
+  --text-lg--line-height: 1.55;
+  --text-2xl: var(--t24);
+  --text-2xl--line-height: 1.3;
+  --text-4xl: var(--t36);
+  --text-4xl--line-height: 1.12;
+  --text-6xl: var(--tdisplay);
+  --text-6xl--line-height: 1.05;
+  --text-7xl: var(--thero);
+  --text-7xl--line-height: 1.04;
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Entrances: the hero text, then the market window, settle in once. Nothing loops.
+   Fail open: the content is visible in the HTML and without JavaScript. The hidden start state
+   applies only under html.anim, which the head script (lib/reduced-motion.ts, ENTRANCE_SCRIPT)
+   sets from inside an animation frame, so a browser that runs no frames never hides anything;
+   and html.anim-done, set by a plain timer after 1.2 s, ends the entrance wherever it stands. */
+@keyframes front-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+:root.anim .front-rise {
+  animation: front-rise 0.7s var(--ease-settle) both;
+}
+
+:root.anim-done .front-rise,
+:root[data-motion="reduce"] .front-rise {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root .front-rise {
+    animation: none;
+  }
+}
+
+/* Headline face: Source Serif 4 (OFL, app/fonts) for h1 and h2 on the homepage; ?headline=sans
+   shows the same page in Geist so the two can be compared (HEADLINE_SCRIPT, lib/reduced-motion.ts). */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  :root[data-headline="sans"] .font-display {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.035em;
+  }
+}
+
+/* The backdrop's dusk (components/front/backdrop.tsx): a warm glow and three ridges that step
+   from lit to dark. Light theme: pale daylight haze. */
+:root {
+  --dusk-1: #f6c995;
+  --dusk-2: #eab489;
+  --dusk-3: #d9a383;
+  --dusk-a: 0.55;
+  --crest-a: 0.55;
+  --ridge-0: color-mix(in srgb, #8a8780 30%, var(--background));
+  --ridge-1: color-mix(in srgb, #8a8780 18%, var(--background));
+  --ridge-2: color-mix(in srgb, #8a8780 8%, var(--background));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --dusk-1: #ffb877;
+    --dusk-2: #e07b45;
+    --dusk-3: #7a3b2a;
+    --dusk-a: 0.95;
+    --crest-a: 0.7;
+    --ridge-0: color-mix(in srgb, #4a3a35 70%, var(--background));
+    --ridge-1: color-mix(in srgb, #2a2422 75%, var(--background));
+    --ridge-2: color-mix(in srgb, #141213 85%, var(--background));
+  }
+}
+
+:root[data-theme="dark"] {
+  --dusk-1: #ffb877;
+  --dusk-2: #e07b45;
+  --dusk-3: #7a3b2a;
+  --dusk-a: 0.95;
+  --crest-a: 0.7;
+  --ridge-0: color-mix(in srgb, #4a3a35 70%, var(--background));
+  --ridge-1: color-mix(in srgb, #2a2422 75%, var(--background));
+  --ridge-2: color-mix(in srgb, #141213 85%, var(--background));
+}

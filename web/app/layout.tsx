@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
-import { SiteFooter } from "@/components/site-footer.tsx";
-import { SiteHeader } from "@/components/site-header.tsx";
-import { MOTION_SCRIPT, THEME_SCRIPT } from "@/lib/reduced-motion.ts";
-import { buildData, deployments, isModel, liveMarkets } from "@/lib/build.ts";
+import { Footer } from "@/components/front/footer.tsx";
+import { Navbar } from "@/components/front/navbar.tsx";
+import { ENTRANCE_SCRIPT, HEADLINE_SCRIPT, MOTION_SCRIPT, THEME_SCRIPT } from "@/lib/reduced-motion.ts";
+import { buildData, deployments, isModel } from "@/lib/build.ts";
 import { SITE_URL } from "@/lib/site.ts";
-import "./globals.css";
+import "./site.css";
 
 // Geist and Geist Mono, both variable in weight (OFL; licence in app/fonts). Figures to remember
 // are drawn in the dot-matrix face (lib/dotmatrix.ts), which needs no font file.
@@ -17,6 +17,16 @@ const sans = localFont({
   display: "swap",
 });
 
+// Source Serif 4 (OFL 1.1, app/fonts/LICENSE-source-serif-4.txt), latin, variable weight: the
+// homepage's h1 and h2 only, so it is not preloaded on the other pages.
+const serif = localFont({
+  src: "./fonts/source-serif-4-latin-wght.woff2",
+  weight: "200 900",
+  variable: "--font-serif",
+  display: "swap",
+  preload: false,
+});
+
 const mono = localFont({
   src: "./fonts/geist-mono-latin-wght.woff2",
   weight: "100 900",
@@ -24,9 +34,9 @@ const mono = localFont({
   display: "swap",
 });
 
-const TITLE = "Weir: take the heat out of your GPU bill";
+const TITLE = "Weir: next week’s GPU hours, priced today";
 const DESCRIPTION =
-  "Weir runs sealed, single-price auctions on next week's GPU-hour, one market per chip: H100, H200 and A100 80 GB. Teams that need compute buy LONG, people who own GPUs buy SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash; all three reporters are run by one operator today, who can set any price. NEAR testnet.";
+  "Teams that need compute and people who own GPUs bid once, sealed. One price clears for everyone filled, and every position is paid in full when it opens. H100, H200 and A100 80 GB markets on NEAR testnet, with test dollars; all three price reporters are run by one operator today.";
 
 export const metadata: Metadata = {
   // WEIR_SITE_URL at build time, default https://weir.qvkare.workers.dev (lib/site.ts).
@@ -34,7 +44,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "./" },
   title: { default: TITLE, template: "%s | Weir" },
   description: DESCRIPTION,
-  openGraph: { siteName: "Weir", title: TITLE, description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The heatsink mark, the line Take the heat out of your GPU bill, and a wafer map of one simulated sealed round with the filled orders lit in blue and gold." }] },
+  openGraph: { siteName: "Weir", title: TITLE, description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The mark and wordmark, the headline Next week’s GPU hours, priced today, and one sentence on how a round clears." }] },
   twitter: { card: "summary_large_image", title: "Weir", description: DESCRIPTION, images: ["/opengraph-image.png"] },
   icons: {
     icon: [
@@ -81,9 +91,9 @@ function SharedDefs() {
 export default function RootLayout({ children }: { children: ReactNode }) {
   const model = isModel();
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT + ";" + MOTION_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT + ";" + MOTION_SCRIPT + ";" + HEADLINE_SCRIPT + ";" + ENTRANCE_SCRIPT }} />
       </head>
       <body>
         <a className="skip" href="#main">
@@ -95,9 +105,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script when the site was built.
           </div>
         ) : null}
-        <SiteHeader network={deployments().network} markets={liveMarkets()} />
+        <Navbar />
         {children}
-        <SiteFooter builtAt={buildData().builtAt} spec={buildData().specVersion} />
+        <Footer builtAt={buildData().builtAt} spec={buildData().specVersion} network={deployments().network} />
       </body>
     </html>
   );

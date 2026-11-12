@@ -96,10 +96,11 @@ export function useLive<T>(o: LiveOptions<T>): [LiveState<T>, () => void] {
 const hms = (ms: number) => new Date(ms).toISOString().slice(11, 19);
 
 /** One line above a page's live figures: where they came from, when, and what is polled. */
-export function LiveBar({ st, mode, builtAt, polls, retry }: { st: LiveState<unknown>; mode: SourceKind; builtAt: number; polls: string; retry: () => void }) {
+export function LiveBar({ st, mode, builtAt, polls, retry, className }: { st: LiveState<unknown>; mode: SourceKind; builtAt: number; polls: string; retry: () => void; /** Added to "live-bar": "quiet" drops the box. */ className?: string }) {
+  const cls = (base: string) => (className ? `${base} ${className}` : base);
   if (mode === "model") {
     return (
-      <p className="live-bar" role="status">
+      <p className={cls("live-bar")} role="status">
         <span className="live-dot model" aria-hidden="true" /> Model figures, computed when the site was built ({fmtUtc(builtAt)}). They do not change in the browser.
       </p>
     );
@@ -107,7 +108,7 @@ export function LiveBar({ st, mode, builtAt, polls, retry }: { st: LiveState<unk
   if (mode === "none") return null;
   if (st.error) {
     return (
-      <div className="live-bar error" role="alert">
+      <div className={cls("live-bar error")} role="alert">
         <span className="live-dot bad" aria-hidden="true" />
         <span>
           Could not read the chain just now: {st.error}. {st.from === "live" ? `Showing figures read at ${hms(st.at)} UTC.` : `Showing figures from the build (${fmtUtc(Math.floor(st.at / 1000))}).`}
@@ -120,13 +121,13 @@ export function LiveBar({ st, mode, builtAt, polls, retry }: { st: LiveState<unk
   }
   if (st.from === "build") {
     return (
-      <p className="live-bar" role="status">
+      <p className={cls("live-bar")} role="status">
         <span className="live-dot stale" aria-hidden="true" /> Figures from the build ({fmtUtc(Math.floor(st.at / 1000))}), not live. {st.busy ? "Reading NEAR testnet now…" : null}
       </p>
     );
   }
   return (
-    <p className="live-bar" role="status">
+    <p className={cls("live-bar")} role="status">
       <span className="live-dot" aria-hidden="true" /> Read from NEAR testnet at {hms(st.at)} UTC, in this browser. {polls}
     </p>
   );

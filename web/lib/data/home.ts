@@ -66,7 +66,14 @@ export interface HomeData {
 
 const coreData = (c: Awaited<ReturnType<typeof loadCore>>): CoreData => ({ kind: c.src.kind, params: c.params, status: c.status, last: c.last, now: c.now });
 
-export async function loadHome(src: Source, opts: { range?: string | null; bundlesBase: string | null; chipSources: Source[]; ticks?: Partial<Record<MarketId, number>> }): Promise<HomeData> {
+/**
+ * `only` reads part of it: "index" for the chart and its sources (on /proof), "series" for the
+ * series strips, the last clearing and the payoff (on /auction and /how). The parts not read
+ * come back empty.
+ */
+export async function loadHome(src: Source, opts: { range?: string | null; bundlesBase: string | null; chipSources: Source[]; ticks?: Partial<Record<MarketId, number>>; only?: "index" | "series" }): Promise<HomeData> {
+  const wantIndex = opts.only !== "series";
+  const wantSeries = opts.only !== "index";
   const market = src.market;
   const core = await loadCore(src);
   const params = valueOf(core.params);
@@ -74,12 +81,12 @@ export async function loadHome(src: Source, opts: { range?: string | null; bundl
   const r = rangeOf(market, opts.range);
 
   const [printR, set, chips] = await Promise.all([
-    last ? src.view("get_print", { bucket: last.bucket }) : Promise.resolve(null),
+    last && wantIndex ? src.view("get_print", { bucket: last.bucket }) : Promise.resolve(null),
     loadSeriesSet(core),
     // Each other chip needs only its last print. Parameters never change after deployment, so the
     // tick the build read is reused when it is given.
     Promise.all(
-      opts.chipSources.map(async (s) => {
+      (opts.only ? [] : opts.chipSources).map(async (s) => {
         const known = opts.ticks?.[s.market];
         const [l, p] = await Promise.all([s.view("get_last_print", {}), known ? Promise.resolve(null) : s.view("get_params", {})]);
         return { market: s.market, kind: s.kind, last: valueOf(l), tick: known ?? (p ? valueOf(p)?.tick ?? null : null), now: s.kind === "model" ? s.now() : Math.floor(Date.now() / 1000) } satisfies ChipLast;
@@ -91,7 +98,7 @@ export async function loadHome(src: Source, opts: { range?: string | null; bundl
 
   // The last clearing: the live series first, else the delivering one.
   let clearing: HomeData["clearing"] = { series: null, info: null, traded: null };
-  for (const s of [...set].sort((a, b) => Number(!!b.live) - Number(!!a.live))) {
+  for (const s of wantSeries ? [...set].sort((a, b) => Number(!!b.live) - Number(!!a.live)) : []) {
     const info = valueOf(s.info);
     if (!info) continue;
     const c = await loadLastClearing(core, s.series);
@@ -100,7 +107,7 @@ export async function loadHome(src: Source, opts: { range?: string | null; bundl
       break;
     }
   }
-  if (!clearing.traded) {
+  if (!clearing.traded && wantSeries) {
     const first = set.find((s) => valueOf(s.info));
     clearing = { series: first?.series ?? set[0]?.series ?? null, info: first ? valueOf(first.info) : null, traded: null };
   }
@@ -108,11 +115,11 @@ export async function loadHome(src: Source, opts: { range?: string | null; bundl
   const from = core.now - r.secs;
   const delivering = set.find((s) => !s.live || (s.live.delivery_start <= core.now && core.now < s.live.delivery_end)) ?? null;
   const [hosted, prints, accR] = await Promise.all([
-    firstHash ? loadBundle(opts.bundlesBase, firstHash) : Promise.resolve(null),
-    params ? loadPrints(src, params, from, core.now) : Promise.resolve({ ok: false, error: "no parameters", lastGood: null } as Read<WirePrint[]>),
-    delivering ? src.view("get_accumulator", { series: delivering.series }) : Promise.resolve(null),
+    firstHash && wantIndex ? loadBundle(opts.bundlesBase, firstHash) : Promise.resolve(null),
+    params && wantIndex ? loadPrints(src, params, from, core.now) : Promise.resolve({ ok: false, error: wantIndex ? "no parameters" : "not read here", lastGood: null } as Read<WirePrint[]>),
+    delivering && wantIndex ? src.view("get_accumulator", { series: delivering.series }) : Promise.resolve(null),
   ]);
-  const gaps = params ? await loadGaps(src, params, valueOf(prints) ?? [], from, core.now, GAP_READS[src.kind]) : { noPrint: [], open: [], unread: 0 };
+  const gaps = params && wantIndex ? await loadGaps(src, params, valueOf(prints) ?? [], from, core.now, GAP_READS[src.kind]) : { noPrint: [], open: [], unread: 0 };
 
   return {
     market,

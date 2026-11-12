@@ -199,7 +199,7 @@ export function NoRoundInProgress({ params, now }: { params: WireParams; now: nu
 export function AgentPanel({ market }: { market: MarketId }) {
   return (
     <aside className="state none" aria-labelledby="bid-agent-h">
-      <h3 id="bid-agent-h" style={{ fontSize: "var(--t17)" }}>Bid with an agent</h3>
+      <h3 id="bid-agent-h" style={{ fontSize: "var(--t18)" }}>Bid with an agent</h3>
       <p className="small" style={{ marginTop: 8 }}>
         This version of the site reads the chain and does not hold keys. To bid, give an agent a function-call key that can commit, reveal, clear and redeem, and cannot withdraw.
       </p>
