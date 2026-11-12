@@ -15,7 +15,6 @@
     "deploy": "next build && wrangler deploy"
   },
   "dependencies": {
-    "@opennextjs/cloudflare": "1.20.16",
     "@weir/agents": "workspace:*",
     "@weir/chain": "workspace:*",
     "@weir/engine": "workspace:*",
