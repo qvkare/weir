@@ -129,7 +129,8 @@ export function nearChain(rpcUrls: readonly string[], opts: NearChainOptions = {
       });
     },
     async connect(market, signer, hooks) {
-      const rpc = new NearRpc({ urls: rpcUrls, fetch: hooks.fetch as unknown as FetchLike, health, ...rpcOpts });
+      // The tick's own "request budget used up" is not an endpoint failing: it must not fail over or start a cooldown.
+      const rpc = new NearRpc({ urls: rpcUrls, fetch: hooks.fetch as unknown as FetchLike, health, ...rpcOpts, isCallerError: (e) => e instanceof BudgetExhausted });
       const account = signer ? new NearAccount(rpc, signer.account_id, await keyOf(signer.secret_key)) : undefined;
       return new ChainWeir({
         rpc,

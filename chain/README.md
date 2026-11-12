@@ -110,7 +110,7 @@ What the client does now (`NearRpc.call`):
   ... (code -429)`. When every endpoint fails, `RpcUnavailable` lists each one.
 - **Cooldown.** An endpoint that refused or faulted goes to the back of the line for 10 s
   (`cooldownMs`), or for its `retry-after` when that is positive (at most 60 s); one that was
-  only slow does not. Endpoints are otherwise tried in the order given, so the first one is
+  only slow (a timeout, or HTTP 408, 504 or 524) does not. Endpoints are otherwise tried in the order given, so the first one is
   used again once its cooldown ends. The cooldowns live in an `EndpointHealth`; clients that
   share one (`new NearRpc({ ..., health })`) steer each other.
 - **Rate-limit wait.** When every endpoint refused a call for rate (HTTP 429 or code -429),
@@ -123,19 +123,65 @@ What the client does now (`NearRpc.call`):
 - **Every attempt is a request through the `fetch` passed in**, so a caller that meters its
   requests (the keeper's budget) is charged for each one; a call that fails at once during a
   cooldown sends nothing.
+- **The caller's own errors.** Every error the passed-in `fetch` throws, of any class, is
+  that endpoint failing: runtimes differ (Node throws `TypeError: fetch failed`; Cloudflare
+  Workers may throw a plain `Error`, such as "Network connection lost."), so the class cannot
+  be relied on. A caller whose `fetch` throws errors of its own (the keeper's
+  `BudgetExhausted`) names them with `isCallerError`: those go up unchanged, with no failover
+  and no cooldown, and if one interrupts the lookups of a transaction that may have landed,
+  it comes back as `TxStatusUnknown`, never as a failure.
 
-`sendTx` and a transaction that may already have landed: the same signed bytes are one
-transaction with one hash, so sending them again can only end in that transaction's
-outcome. If an endpoint fails after the request may have reached a node (no response, a
-timeout, a 5xx, a node `TIMEOUT_ERROR` or `INTERNAL_ERROR`), the next endpoint gets the same
-bytes. If every endpoint fails that way, the client polls `tx` for the hash; if no endpoint
-knows it, it resends the same bytes once and keeps polling. `InvalidNonce` from one endpoint
-after another may have delivered the transaction is checked with `tx` first: found, it is our
-own transaction and its outcome is returned; unknown, the refusal stands and `NearAccount`
-re-signs with a fresh nonce. An answer saying the transaction is "already known" or a
-"duplicate" is read as pending and polled. A send refused everywhere for rate (429) was not
-delivered and is thrown without polling. The duplicate wording is matched by pattern; no
-provider was seen sending it.
+**Second finding, 2026-11-12, 19:00 UTC.** With the messages above in place, the live
+keeper logged, for each of 4 report transactions on two markets in one tick:
+
+> report for bucket 1794510000 failed: every RPC endpoint failed for send_tx:
+> near-testnet.drpc.org answered HTTP 408: Request timeout on the free plan, please upgrade
+> to paid plan (code 30); test.rpc.fastnear.com answered HTTP 429: Rate limits exceeded.
+> For higher rate limits get a subscription at https://fastnear.com (code -429)
+
+fastnear rate-limits at the top of the hour, when the keeper reports for four markets in one
+tick; the send then went to dRPC, whose free plan gives up on a `send_tx` that waits for
+`FINAL` and answers 408. The keeper's log analysis found that every such transaction it
+looked up had landed (`keeper/README.md`, "First night on testnet"): dRPC forwards the
+transaction, then times out its own HTTP request. The client classified 408 as a refusal
+(a 4xx, not delivered), so it did not look the transaction up and reported a landed
+transaction as failed. That was the fault.
+
+dRPC's free plan and `tx`, measured the same evening for a final transaction
+(`5Hekok9D...`, signer `keeper.weir-ops-w1.testnet`, from `evidence/deploy/testnet-w1.json`),
+one request each, 5 s apart: `wait_until` `NONE` 138 ms, `INCLUDED` 119 ms, `INCLUDED_FINAL`
+129 ms, `EXECUTED_OPTIMISTIC` 162 ms, `EXECUTED` 125 ms, `FINAL` 150 ms, all HTTP 200 with
+the full outcome and `final_execution_status: "FINAL"`. A transaction that is final is
+therefore answered at once at every level. What it answers for a transaction still in
+flight was not measured (that needs a transaction to be sent).
+
+What the client does now:
+
+- **408, 504 and 524** are a gateway timing out its own request: the transaction may have
+  been delivered (`maybeDelivered`), and the endpoint is slow, not refusing (`timeout`): no
+  cooldown, so it still serves the lookups and the reads that follow. A view that gets a 408
+  fails over to the next endpoint.
+- **Sending.** The first attempt waits for `FINAL` (`send_tx`), so the common case is one
+  request, two with the keeper's access-key read. If it fails, the next endpoints get the same
+  signed bytes with `wait_until: NONE`, which returns as soon as the node has them. Then, and
+  whenever any endpoint may have delivered the transaction, it is looked up with `tx` by hash
+  and signer at `wait_until: NONE`, every 1 s, up to 8 times, until it is executed in final
+  blocks (`EXECUTED` or `FINAL`). If no endpoint knows the hash after two lookups, the same
+  bytes are sent once more without waiting; the same bytes can only land once. If it is still
+  not final after the 8 lookups, the error is `TxStatusUnknown`: the transaction may yet land,
+  so it must be reported as unknown, not as failed, and not signed again.
+- **Cost per transaction, in requests**, counting the access-key read: 2 in the common case;
+  in the 19:00 case 1 + 2 sends + the lookups, typically 2 to 4 (a lookup a second until
+  finality): 5 to 7, and at most 1 + 2 + 8 + 2 = 13 when nothing is known. Each lookup waits
+  1 s first, so such a transaction takes a few seconds.
+
+The rest of `sendTx`: `InvalidNonce` from one endpoint after another may have delivered the
+transaction is checked with `tx` first: found, it is our own transaction and its outcome is
+returned; unknown everywhere, the refusal stands and `NearAccount` re-signs with a fresh
+nonce. An answer saying the transaction is "already known" or a "duplicate" is read as
+pending and looked up. A send refused everywhere for rate (429) was not delivered and is
+thrown without a lookup. The duplicate wording is matched by pattern; no provider was seen
+sending it.
 
 ## Dependencies
 
@@ -181,7 +227,12 @@ WEIR_LIVE=1 pnpm --filter @weir/chain test   # adds one read-only call to NEAR t
   to one outcome), when nobody knows the hash (one resend), `InvalidNonce` after a possible
   delivery (our own transaction), a real `InvalidNonce`, "already known", and a send refused
   for rate everywhere (thrown, not polled); two clients sharing an `EndpointHealth` share a
-  cooldown.
+  cooldown; the 19:00 case (fastnear 429, dRPC's exact 408) with the transaction found by `tx`
+  (one success, four requests after the access key) and unknown everywhere (one resend of the
+  same bytes, then `TxStatusUnknown`, never a failure); a 408 on a view (fails over, no
+  cooldown); every class a fetch throws (plain `Error`, `TypeError`, abort error) fails over; an error
+  `isCallerError` accepts goes up unchanged before a send, with no cooldown, and as
+  `TxStatusUnknown` after one.
 - `token.test.ts`, `intents.test.ts` (against real 1Click responses saved in
   `test/fixtures/` on 2026-11-11), `portable.test.ts`, `live.test.ts`.
 

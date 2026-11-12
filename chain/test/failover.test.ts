@@ -4,7 +4,7 @@
 // whose first attempt may already have landed.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EndpointError, EndpointHealth, NearRpc, RpcError, RpcUnavailable, type FetchLike } from "../src/near.ts";
+import { EndpointError, EndpointHealth, NearRpc, RpcError, RpcUnavailable, TxStatusUnknown, type FetchLike } from "../src/near.ts";
 import { base64Encode, utf8Encode } from "../src/tx.ts";
 
 const FAST = "https://test.rpc.fastnear.com";
@@ -158,7 +158,7 @@ test("both endpoints rate-limited for longer than the bound: no wait, and later 
   assert.equal(log.length, 4, "then tried both once, without a second wait");
 });
 
-test("send_tx: the first endpoint times out, the same signed bytes go to the next, one outcome", async () => {
+test("send_tx: the first endpoint times out, the same signed bytes go to the next without waiting, one outcome", async () => {
   const bodies: string[] = [];
   const base = scripted((url, method) => (url === FAST && method === "send_tx" ? "hang" : { status: 200, body: OUTCOME }));
   const fetch: FetchLike = (url, init) => (bodies.push(init.body), base.fetch(url, init));
@@ -166,8 +166,9 @@ test("send_tx: the first endpoint times out, the same signed bytes go to the nex
   const out = await rpc.sendTx(new Uint8Array([1, 2, 3]), "H", "a.testnet");
   assert.equal(out.result, 3);
   assert.deepEqual(base.log, ["test.rpc.fastnear.com send_tx", "near-testnet.drpc.org send_tx"]);
-  const params = bodies.map((b) => (JSON.parse(b) as { params: unknown }).params);
-  assert.deepEqual(params[0], params[1], "the same signed bytes both times");
+  const params = bodies.map((b) => (JSON.parse(b) as { params: { signed_tx_base64: string; wait_until: string } }).params);
+  assert.equal(params[0]!.signed_tx_base64, params[1]!.signed_tx_base64, "the same signed bytes both times");
+  assert.deepEqual(params.map((p) => p.wait_until), ["FINAL", "NONE"]);
 });
 
 test("send_tx: every endpoint fails after maybe delivering (502, timeout): polled by hash, one outcome", async () => {
@@ -187,16 +188,16 @@ test("send_tx: every endpoint fails after maybe delivering (502, timeout): polle
   assert.deepEqual(sent, ["test.rpc.fastnear.com", "near-testnet.drpc.org"], "sent once to each endpoint, never re-signed");
 });
 
-test("send_tx: nobody knows the hash after a maybe-delivered failure: the same bytes are resent once", async () => {
+test("send_tx: nobody knows the hash after a maybe-delivered failure: the same bytes are resent once, then found", async () => {
   let sends = 0;
   const { fetch } = scripted((_url, method) => {
-    if (method === "send_tx") return ++sends === 1 ? "network" : { status: 200, body: OUTCOME };
-    return { status: 200, body: UNKNOWN_TX };
+    if (method === "send_tx") return ++sends === 1 ? "network" : { status: 200, body: ok({ final_execution_status: "NONE" }) };
+    return { status: 200, body: sends >= 2 ? OUTCOME : UNKNOWN_TX };
   });
-  const rpc = new NearRpc({ urls: [FAST], fetch });
-  const out = await rpc.sendTx(new Uint8Array([1]), "H", "a.testnet");
+  const c = clock();
+  const out = await new NearRpc({ urls: [FAST], fetch, now: c.now, sleep: c.sleep }).sendTx(new Uint8Array([1]), "H", "a.testnet");
   assert.equal(out.result, 3);
-  assert.equal(sends, 2);
+  assert.equal(sends, 2, "one resend after two lookups found nothing");
 });
 
 test("send_tx: InvalidNonce after another endpoint may have delivered it is our own transaction, landed", async () => {
@@ -204,7 +205,8 @@ test("send_tx: InvalidNonce after another endpoint may have delivered it is our 
     if (method === "send_tx") return url === FAST ? { status: 504, body: "Gateway Timeout" } : { status: 200, body: INVALID_NONCE };
     return { status: 200, body: OUTCOME };
   });
-  const rpc = new NearRpc({ urls: [FAST, DRPC], fetch });
+  const c = clock();
+  const rpc = new NearRpc({ urls: [FAST, DRPC], fetch, now: c.now, sleep: c.sleep });
   const out = await rpc.sendTx(new Uint8Array([1]), "H", "a.testnet");
   assert.equal(out.ok, true);
   assert.ok(log.includes("near-testnet.drpc.org tx") || log.includes("test.rpc.fastnear.com tx"));
@@ -220,13 +222,15 @@ test("send_tx: InvalidNonce when nothing was delivered, or the hash is unknown, 
     if (method === "send_tx") return url === FAST ? { status: 503, body: "" } : { status: 200, body: INVALID_NONCE };
     return { status: 200, body: UNKNOWN_TX };
   });
-  await assert.rejects(new NearRpc({ urls: [FAST, DRPC], fetch: unknown.fetch }).sendTx(new Uint8Array([1]), "H", "a.testnet"), /InvalidNonce/);
+  const c = clock();
+  await assert.rejects(new NearRpc({ urls: [FAST, DRPC], fetch: unknown.fetch, now: c.now, sleep: c.sleep }).sendTx(new Uint8Array([1]), "H", "a.testnet"), /InvalidNonce/);
 });
 
 test("send_tx: an 'already known' answer is pending, not a failure: polled to its outcome", async () => {
   const known = '{"jsonrpc":"2.0","id":1,"error":{"name":"HANDLER_ERROR","cause":{"name":"INVALID_TRANSACTION"},"data":"transaction already known"}}';
   const { fetch } = scripted((_url, method) => (method === "send_tx" ? { status: 200, body: known } : { status: 200, body: OUTCOME }));
-  const out = await new NearRpc({ urls: [FAST], fetch }).sendTx(new Uint8Array([1]), "H", "a.testnet");
+  const c = clock();
+  const out = await new NearRpc({ urls: [FAST], fetch, now: c.now, sleep: c.sleep }).sendTx(new Uint8Array([1]), "H", "a.testnet");
   assert.equal(out.result, 3);
 });
 
@@ -248,4 +252,104 @@ test("clients sharing one EndpointHealth share a cooldown: the second never pays
   await first.call("query", {});
   await second.call("query", {});
   assert.deepEqual(log, ["test.rpc.fastnear.com query", "near-testnet.drpc.org query", "near-testnet.drpc.org query"]);
+});
+
+// dRPC's free plan, 2026-11-12 19:00 UTC, as the keeper logged it.
+const DRPC_408 = '{"jsonrpc":"2.0","id":1,"error":{"message":"Request timeout on the free plan, please upgrade to paid plan","code":30}}';
+const PENDING = ok({ final_execution_status: "INCLUDED" });
+const FINAL_OUTCOME = ok({
+  final_execution_status: "FINAL",
+  status: { SuccessValue: base64Encode(utf8Encode("true")) },
+  transaction: { hash: "H" },
+  transaction_outcome: { outcome: { logs: [], gas_burnt: 1 } },
+  receipts_outcome: [{ outcome: { logs: ["EVENT_JSON:{}"], gas_burnt: 2 } }],
+});
+
+test("the 19:00 case: fastnear 429 and dRPC 408 on send_tx, then found by tx: one success, five requests", async () => {
+  let lookups = 0;
+  const { fetch, log } = scripted((url, method) => {
+    if (method === "send_tx") return url === FAST ? { status: 429, body: FASTNEAR_429 } : { status: 408, body: DRPC_408 };
+    return ++lookups === 1 ? { status: 200, body: PENDING } : { status: 200, body: FINAL_OUTCOME };
+  });
+  const c = clock();
+  const rpc = new NearRpc({ urls: [FAST, DRPC], fetch, now: c.now, sleep: c.sleep });
+  const out = await rpc.sendTx(new Uint8Array([9]), "H", "keeper.testnet");
+  assert.deepEqual([out.ok, out.result, out.logs], [true, true, ["EVENT_JSON:{}"]]);
+  // fastnear refused (cooling), dRPC timed out (not cooling): the lookups go to dRPC.
+  assert.deepEqual(log, ["test.rpc.fastnear.com send_tx", "near-testnet.drpc.org send_tx", "near-testnet.drpc.org tx", "near-testnet.drpc.org tx"]);
+  assert.deepEqual(c.sleeps, [1000, 1000]);
+});
+
+test("the 19:00 case with the transaction unknown everywhere: resent once with the same bytes, then reported unknown, not failed", async () => {
+  const sentBytes: string[] = [];
+  const base = scripted((url, method) => {
+    if (method === "send_tx") return url === FAST ? { status: 429, body: FASTNEAR_429 } : { status: 408, body: DRPC_408 };
+    return { status: 200, body: UNKNOWN_TX };
+  });
+  const fetch: FetchLike = (url, init) => {
+    const body = JSON.parse(init.body) as { method: string; params: { signed_tx_base64?: string } };
+    if (body.method === "send_tx") sentBytes.push(body.params.signed_tx_base64!);
+    return base.fetch(url, init);
+  };
+  const c = clock();
+  const err = await new NearRpc({ urls: [FAST, DRPC], fetch, now: c.now, sleep: c.sleep })
+    .sendTx(new Uint8Array([9]), "H", "keeper.testnet")
+    .catch((e: unknown) => e);
+  assert.ok(err instanceof TxStatusUnknown, String(err));
+  assert.match(err.message, /outcome not known after 8 lookups, it may still land/);
+  assert.ok(sentBytes.length >= 3 && new Set(sentBytes).size === 1, "only ever the same signed bytes");
+  assert.equal(base.log.filter((l) => l.endsWith(" tx")).length, 8);
+});
+
+test("a 408 on a view fails over and puts nothing on cooldown: the next call tries dRPC first again", async () => {
+  const { fetch, log } = scripted((url) => (url === DRPC ? { status: 408, body: DRPC_408 } : { status: 200, body: ok(1) }));
+  const c = clock();
+  const rpc = new NearRpc({ urls: [DRPC, FAST], fetch, now: c.now, sleep: c.sleep });
+  assert.equal(await rpc.call("query", {}), 1);
+  assert.equal(await rpc.call("query", {}), 1);
+  assert.deepEqual(log, ["near-testnet.drpc.org query", "test.rpc.fastnear.com query", "near-testnet.drpc.org query", "test.rpc.fastnear.com query"]);
+  const only = new NearRpc({ urls: [DRPC], fetch, now: c.now, sleep: c.sleep });
+  await assert.rejects(only.call("query", {}), /near-testnet\.drpc\.org answered HTTP 408: Request timeout on the free plan, please upgrade to paid plan \(code 30\)/);
+});
+
+test("every error a fetch throws, of any class, is the endpoint failing: plain Error, TypeError, abort error", async () => {
+  const thrown = [new Error("Network connection lost."), new TypeError("fetch failed"), Object.assign(new Error("The operation was aborted"), { name: "AbortError" })];
+  for (const first of thrown) {
+    const base = scripted(() => ({ status: 200, body: ok(1) }));
+    const fetch: FetchLike = (url, init) => (url === FAST ? Promise.reject(first) : base.fetch(url, init));
+    const rpc = new NearRpc({ urls: [FAST, DRPC], fetch });
+    assert.equal(await rpc.call("query", {}), 1, first.message);
+    assert.deepEqual(base.log, ["near-testnet.drpc.org query"], first.message);
+  }
+  const only = new NearRpc({ urls: [FAST, DRPC], fetch: async (url) => Promise.reject(new Error(`${new URL(url).host} unreachable`)) });
+  await assert.rejects(only.call("query", {}), /every RPC endpoint failed for query: test\.rpc\.fastnear\.com: test\.rpc\.fastnear\.com unreachable; near-testnet\.drpc\.org: /);
+});
+
+test("an error isCallerError accepts goes up unchanged before a send, and as unknown once a send may have landed", async () => {
+  class OutOfBudget extends Error {}
+  let left = 0;
+  const base = scripted((url, method) => (method === "send_tx" ? (url === FAST ? { status: 429, body: FASTNEAR_429 } : { status: 408, body: DRPC_408 }) : { status: 200, body: PENDING }));
+  const fetch: FetchLike = (url, init) => {
+    if (left-- <= 0) throw new OutOfBudget("no requests left");
+    return base.fetch(url, init);
+  };
+  const c = clock();
+  const isCallerError = (e: unknown) => e instanceof OutOfBudget;
+  // Before anything was sent: the error itself, no failover, no cooldown.
+  const rpc = new NearRpc({ urls: [FAST, DRPC], fetch, now: c.now, sleep: c.sleep, isCallerError });
+  await assert.rejects(rpc.call("query", {}), OutOfBudget);
+  assert.equal(base.log.length, 0);
+  left = 1;
+  assert.deepEqual(await rpc.call("tx", {}), { final_execution_status: "INCLUDED" }, "fastnear was not put on cooldown");
+  assert.deepEqual(base.log, ["test.rpc.fastnear.com tx"]);
+  // After dRPC may have delivered the transaction: unknown, not failed.
+  left = 3;
+  const err = await new NearRpc({ urls: [FAST, DRPC], fetch, now: c.now, sleep: c.sleep, isCallerError })
+    .sendTx(new Uint8Array([9]), "H", "k.testnet")
+    .catch((e: unknown) => e);
+  assert.ok(err instanceof TxStatusUnknown);
+  assert.match(err.message, /no requests left/);
+  // Without the option the same error is just the endpoint failing.
+  left = 0;
+  await assert.rejects(new NearRpc({ urls: [FAST, DRPC], fetch }).call("query", {}), RpcUnavailable);
 });
