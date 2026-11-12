@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { backtestGeometry, caveatsFromMarkdown, coverage, niceStep, readBacktest } from "./backtest.ts";
 import { readCache, valueOf } from "./cache.ts";
-import { marketFromParam, mq, parseDeployments } from "./config.ts";
-import { fundingStatus, groupTxs, readTxFile } from "./evidence.ts";
+import { marketFromParam, marketOfPath, parseDeployments, withMarket } from "./config.ts";
+import { fundingStatus, groupTxs, readTxFile, stepGroups } from "./evidence.ts";
+import { readFileSync as readEvidence } from "node:fs";
 import { specVersion } from "./build-data.ts";
 
 test("deployments.json: empty markets, defaults, and tolerant entries", () => {
@@ -29,8 +30,17 @@ test("market switcher param", () => {
   assert.equal(marketFromParam(["h200-weekly", "weekly"]), "h200-weekly");
   assert.equal(marketFromParam("other"), "h100-weekly");
   assert.equal(marketFromParam(undefined), "h100-weekly");
-  assert.equal(mq("h100-weekly"), "");
-  assert.equal(mq("h200-weekly", "range=7d"), "?m=h200-weekly&range=7d");
+  assert.equal(withMarket("/", "h100-weekly"), "/");
+  assert.equal(withMarket("/proof", "h100-weekly"), "/proof");
+  assert.equal(withMarket("/backtest", "h200-weekly"), "/backtest");
+  assert.equal(withMarket("/spec", "h100-fast"), "/spec");
+  assert.equal(withMarket("/", "h200-weekly", "range=7d"), "/m/h200-weekly?range=7d");
+  assert.equal(withMarket("/auction", "h100-fast", "series=1&round=2"), "/m/h100-fast/auction?series=1&round=2");
+  assert.deepEqual(marketOfPath("/m/h200-weekly/proof"), { market: "h200-weekly", page: "/proof" });
+  assert.deepEqual(marketOfPath("/m/h200-weekly/proof/"), { market: "h200-weekly", page: "/proof" });
+  assert.deepEqual(marketOfPath("/m/a100-80-weekly"), { market: "a100-80-weekly", page: "/" });
+  assert.deepEqual(marketOfPath("/proof"), { market: "h100-weekly", page: "/proof" });
+  assert.deepEqual(marketOfPath("/m/nope/proof"), { market: "h100-weekly", page: "/m/nope/proof" });
 });
 
 test("the read cache serves fresh values and the last good one after a failure", async () => {
@@ -66,6 +76,21 @@ test("evidence: tolerant transaction reader, failed ones kept", () => {
   assert.deepEqual(readTxFile("f", 42), []);
   const groups = groupTxs([...txs, txs[0]!]);
   assert.deepEqual(groups.map((g) => [g.group, g.txs.length]), [["commit", 1], ["reveal", 1]]);
+});
+
+test("the deploy record groups by step: every transaction lands in a named group, none in Other", () => {
+  const json = JSON.parse(readEvidence(new URL("../../evidence/deploy/testnet-w1.json", import.meta.url), "utf8")) as { transactions: unknown[] };
+  const txs = readTxFile("evidence/deploy/testnet-w1.json", json);
+  assert.equal(txs.length, json.transactions.length);
+  const groups = stepGroups(txs);
+  assert.equal(groups.reduce((n, g) => n + g.txs.length, 0), txs.length);
+  assert.ok(!groups.some((g) => g.kind.startsWith("method-")), groups.map((g) => g.kind).join(","));
+  const by = Object.fromEntries(groups.map((g) => [g.kind, g.txs.length]));
+  assert.ok(by.accounts! > 0 && by.contracts! > 0 && by.keys! > 0 && by.topup! > 0 && by.rotation! > 0);
+  assert.ok(txs.every((t) => t.note && t.explorer?.startsWith("https://")));
+  assert.equal(fundingStatus(txs).tag, "quotes only");
+  // A record without a step still falls back to its method.
+  assert.deepEqual(stepGroups(readTxFile("f", [{ hash: "8".repeat(44), method: "commit" }])).map((g) => g.label), ["Commit"]);
 });
 
 test("funding is quotes only until a successful intents transfer is on record", () => {

@@ -5,6 +5,7 @@ import { SiteFooter } from "@/components/site-footer.tsx";
 import { SiteHeader } from "@/components/site-header.tsx";
 import { MOTION_SCRIPT, THEME_SCRIPT } from "@/lib/reduced-motion.ts";
 import { buildData, deployments, isModel, liveMarkets } from "@/lib/build.ts";
+import { SITE_URL } from "@/lib/site.ts";
 import "./globals.css";
 
 // Geist and Geist Mono, both variable in weight (OFL; licence in app/fonts). Figures to remember
@@ -28,8 +29,9 @@ const DESCRIPTION =
   "Weir runs sealed, single-price auctions on next week's GPU-hour, one market per chip: H100, H200 and A100 80 GB. Teams that need compute buy LONG, people who own GPUs buy SHORT, every position is paid in full when it opens, and the index is the median of named reporters whose data anyone can re-hash; all three reporters are run by one operator today, who can set any price. NEAR testnet.";
 
 export const metadata: Metadata = {
-  // Set WEIR_SITE_URL at build time to the deployed address so link previews resolve.
-  metadataBase: new URL(process.env.WEIR_SITE_URL ?? "http://localhost:3000"),
+  // WEIR_SITE_URL at build time, default https://weir.qvkare.workers.dev (lib/site.ts).
+  metadataBase: new URL(SITE_URL),
+  alternates: { canonical: "./" },
   title: { default: TITLE, template: "%s | Weir" },
   description: DESCRIPTION,
   openGraph: { siteName: "Weir", title: TITLE, description: DESCRIPTION, type: "website", images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: "Weir. The heatsink mark, the line Take the heat out of your GPU bill, and a wafer map of one simulated sealed round with the filled orders lit in blue and gold." }] },
@@ -90,7 +92,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <SharedDefs />
         {model ? (
           <div className="ribbon" role="note">
-            <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script on this server.
+            <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script when the site was built.
           </div>
         ) : null}
         <SiteHeader network={deployments().network} markets={liveMarkets()} />

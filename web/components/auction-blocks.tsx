@@ -1,9 +1,9 @@
+"use client";
 import Link from "next/link";
 import type { WireParams, WireResult, WireRound, WireSeries } from "@weir/engine";
-import { valueOf } from "@/lib/cache.ts";
-import { mq, type MarketId } from "@/lib/config.ts";
+import { valueOf, type Read } from "@/lib/cache.ts";
+import { withMarket, type MarketId } from "@/lib/config.ts";
 import { fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtUsd, fmtUsdOrNone, fmtUtc, shortAccount, shortHash } from "@/lib/format.ts";
-import { latestRound, loadResults } from "@/lib/load.ts";
 import { bookRows, bookTotals, fillRows, nextOpening, stepOrdersFromResult, stepOrdersFromRound, summarize } from "@/lib/views.ts";
 import { Figure, priceParts } from "./figure.tsx";
 import { EyeIcon, LockIcon } from "./icons.tsx";
@@ -11,7 +11,8 @@ import { Empty } from "./state.tsx";
 import { StepChart } from "./step-chart.tsx";
 import { stepSummary } from "@/lib/step.ts";
 
-export const qs = (market: MarketId, extra = "") => mq(market, extra);
+/** An auction link: a full page load, so the page reads its ?series=&round= again. */
+export const auctionHref = (market: MarketId, extra = "") => withMarket("/auction", market, extra);
 
 export function SealedBook({ round, params }: { round: WireRound | null; params: WireParams }) {
   const rows = bookRows(round);
@@ -154,8 +155,7 @@ export function LiveCurves({ round, series, params }: { round: WireRound | null;
   );
 }
 
-export async function RecentRounds({ src, series, params, now, market, current }: { src: Parameters<typeof loadResults>[0]; series: number; params: WireParams; now: number; market: MarketId; current: number | null }) {
-  const read = await loadResults(src, series, latestRound(params, series, now), 12);
+export function RecentRounds({ read, series, params, market, current }: { read: Read<[number, WireResult][]> | null; series: number; params: WireParams; market: MarketId; current: number | null }) {
   const list = [...(valueOf(read) ?? [])].reverse();
   if (list.length === 0) return <Empty>No round of series {series} has cleared yet.</Empty>;
   return (
@@ -175,9 +175,9 @@ export async function RecentRounds({ src, series, params, now, market, current }
           {list.map(([round, r]) => (
             <tr key={round}>
               <td className="num">
-                <Link href={`/auction${qs(market, `series=${series}&round=${round}`)}`} aria-current={round === current ? "true" : undefined}>
+                <a href={auctionHref(market, `series=${series}&round=${round}`)} aria-current={round === current ? "true" : undefined}>
                   Round {round}
-                </Link>
+                </a>
               </td>
               <td className="num">{r.price === null ? <span className="muted">no trade</span> : fmtPrice(r.price, params.tick)}</td>
               <td className="num">{fmtGpuH(r.volume)}</td>
@@ -204,7 +204,7 @@ export function AgentPanel({ market }: { market: MarketId }) {
         This version of the site reads the chain and does not hold keys. To bid, give an agent a function-call key that can commit, reveal, clear and redeem, and cannot withdraw.
       </p>
       <p style={{ marginTop: 12 }}>
-        <Link className="button" href={`/agents${qs(market)}`}>Set up an agent</Link>
+        <Link className="button" href={withMarket("/agents", market)}>Set up an agent</Link>
       </p>
     </aside>
   );

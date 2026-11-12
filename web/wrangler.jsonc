@@ -1,18 +1,22 @@
-// The Weir site: the Next.js app and its /api routes on Cloudflare Workers, built by OpenNext.
-// Deploy with `pnpm --filter @weir/web run deploy` (needs `wrangler login`). No custom domain yet.
+// The Weir site on Cloudflare Workers, free plan. Every page is a static file in out/ (written by
+// `next build`, a static export); Cloudflare serves those without running the Worker. The Worker
+// (worker/index.ts) runs only for the paths in run_worker_first: the per-market pages, to redirect
+// ?m=<market> to /m/<market>/..., the three /api routes, and old /m/ names. It holds no secret.
+// Keep run_worker_first equal to WORKER_FIRST in worker/route.ts (worker/route.test.ts checks).
+// Build: `pnpm --filter @weir/web run build:worker`. Deploy: see README.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "weir",
-  "main": ".open-next/worker.js",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": ["global_fetch_strictly_public"],
   "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
+    "directory": "out",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/", "/auction", "/agents", "/proof", "/how", "/simulate", "/api/*", "/m/h100-weekly", "/m/h100-weekly/*", "/m/weekly", "/m/weekly/*", "/m/fast", "/m/fast/*"]
   },
-  "services": [
-    // OpenNext calls back into its own Worker. The service name must match the Worker name.
-    { "binding": "WORKER_SELF_REFERENCE", "service": "weir" }
-  ],
-  "workers_dev": true
+  "workers_dev": true,
+  "preview_urls": false
 }

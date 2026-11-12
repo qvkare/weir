@@ -1,11 +1,12 @@
-// Server-side reads shared by the pages and the API routes. Every function returns Reads, so a
-// page can show each block's own loading, error, stale or not-deployed state.
+// Reads shared by the build, the browser and the site's Worker: each takes a Source, so the same
+// code reads the model, the chain from the build machine, or the chain from a visitor's browser.
+// Every function returns Reads, so a page can show each block's own error, stale or not-deployed
+// state. Browser-safe: nothing here may import build data.
 import type { Bundle } from "@weir/index";
 import type { WireLastPrint, WireLiveSeries, WireParams, WirePrint, WireResult, WireSeries, WireStatus } from "@weir/engine";
-import { buildData, deployments } from "./build.ts";
 import { readCache, valueOf, type Read } from "./cache.ts";
 import type { ChipKey, MarketId } from "./config.ts";
-import { source, type Source } from "./source.ts";
+import type { Source } from "./source-types.ts";
 import { deliveringSeries, lastResult } from "./views.ts";
 
 export interface Core {
@@ -16,8 +17,7 @@ export interface Core {
   now: number;
 }
 
-export async function loadCore(market: MarketId): Promise<Core> {
-  const src = source(market);
+export async function loadCore(src: Source): Promise<Core> {
   const [params, status, last] = await Promise.all([src.view("get_params", {}), src.view("get_status", {}), src.view("get_last_print", {})]);
   const s = valueOf(status);
   return { src, params, status, last, now: s?.now ?? src.now() };
@@ -123,9 +123,8 @@ export interface LoadedBundle {
 
 const bundles = readCache(10 * 60_000, 50);
 
-/** Fetches `<bundles_base>/<hash>.json` on the server, for the sources table. Not verified here. */
-export async function loadBundle(hash: string): Promise<Read<LoadedBundle> | null> {
-  const base = deployments().bundlesBase;
+/** Fetches `<bundles_base>/<hash>.json`, for the sources table. Not verified here (the proof page does). */
+export async function loadBundle(base: string | null, hash: string): Promise<Read<LoadedBundle> | null> {
   if (!base || !/^[0-9a-f]{64}$/.test(hash)) return null;
   const url = `${base}/${hash}.json`;
   return bundles.read(url, async () => {
@@ -140,17 +139,6 @@ export async function loadBundle(hash: string): Promise<Read<LoadedBundle> | nul
       clearTimeout(t);
     }
   });
-}
-
-/** The newest bundle recorded in evidence/bundles for a chip, the fixture and fallback. */
-export function recordedBundle(chip: ChipKey = "h100"): LoadedBundle | null {
-  const r = buildData().bundles.find((b) => b.chip === chip);
-  if (!r) return null;
-  try {
-    return { bundle: JSON.parse(r.text) as Bundle, text: r.text, origin: { kind: "recorded", file: r.file } };
-  } catch {
-    return null;
-  }
 }
 
 export const isStale = (params: WireParams | null, last: WireLastPrint | null, now: number): boolean => !!params && !!last && now - last.bucket > params.max_anchor_age_secs;

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { Suspense } from "react";
 import { Lockup } from "./logo.tsx";
-import { MarketSwitch, MarketSwitchFallback, SiteNav, SiteNavFallback } from "./site-nav.tsx";
+import { MarketSwitch, SiteNav } from "./site-nav.tsx";
 import { ThemeToggle } from "./theme-toggle.tsx";
 import type { MarketId } from "@/lib/config.ts";
 
@@ -13,17 +12,13 @@ export function SiteHeader({ network, markets }: { network: string; markets: rea
         <Link href="/" className="wordmark" aria-label="Weir, home">
           <Lockup />
         </Link>
-        <Suspense fallback={<SiteNavFallback />}>
-          <SiteNav />
-        </Suspense>
+        <SiteNav />
         <div className="header-tools">
           <span className="tag net" title={`Every contract is on NEAR ${network}. No real money.`}>
             <span className="net-dot" aria-hidden="true" />
             {net}
           </span>
-          <Suspense fallback={<MarketSwitchFallback markets={markets} />}>
-            <MarketSwitch markets={markets} />
-          </Suspense>
+          <MarketSwitch markets={markets} />
           <ThemeToggle />
         </div>
       </div>

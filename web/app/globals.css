@@ -3566,3 +3566,93 @@ ol.steps > li {
 .risk-list code {
   overflow-wrap: anywhere;
 }
+
+/* The live line above each data page's figures (components/live.tsx). */
+.live-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  max-width: none;
+  margin: var(--s4) 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-s);
+  background: var(--sheet);
+  font: 400 12.5px / 1.45 var(--mono);
+  color: var(--ink-2);
+}
+
+.live-bar.error {
+  border-color: var(--flag);
+  color: var(--ink);
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--long);
+  flex: none;
+}
+
+.live-dot.stale,
+.live-dot.model {
+  background: transparent;
+  border: 1px solid var(--ink-3);
+}
+
+.live-dot.bad {
+  background: var(--flag);
+}
+
+.live-retry {
+  min-height: 44px;
+  margin-left: auto;
+}
+
+/* /proof, transactions on record: one collapsed group per kind of step, with its count. */
+.tx-groups {
+  border-top: 1px solid var(--rule);
+}
+
+.tx-group {
+  border-bottom: 1px solid var(--rule);
+}
+
+.tx-group > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  font-size: var(--t15);
+  list-style: none;
+}
+
+.tx-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tx-group > summary::before {
+  content: "+";
+  width: 1ch;
+  font-family: var(--mono);
+  color: var(--ink-2);
+}
+
+.tx-group[open] > summary::before {
+  content: "\2212";
+}
+
+.tx-group > summary .tx-count {
+  margin-left: auto;
+}
+
+.tx-group[open] > summary {
+  color: var(--ink);
+}
+
+.tx-group > .table-wrap {
+  margin-bottom: var(--s4);
+}

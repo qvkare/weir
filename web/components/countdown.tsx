@@ -8,15 +8,15 @@ import { DotText } from "./dot-text.tsx";
  * the HTML and the hydrated text agree; after that the browser's clock, corrected by the
  * difference seen at load.
  */
-export function Countdown({ endsAt, serverNow, className, dots = false }: { endsAt: number; serverNow: number; className?: string; dots?: boolean }) {
+export function Countdown({ endsAt, serverNow, className, dots = false, wall = false }: { endsAt: number; serverNow: number; className?: string; dots?: boolean; /** Count against this machine's clock (figures from the build: their "now" is past). */ wall?: boolean }) {
   const [left, setLeft] = useState(endsAt - serverNow);
   useEffect(() => {
-    const skew = serverNow - Date.now() / 1000;
+    const skew = wall ? 0 : serverNow - Date.now() / 1000;
     const tick = () => setLeft(endsAt - (Date.now() / 1000 + skew));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [endsAt, serverNow]);
+  }, [endsAt, serverNow, wall]);
   const secs = Math.max(0, Math.floor(left));
   return (
     <time className={className ?? "countdown"} dateTime={`PT${secs}S`}>

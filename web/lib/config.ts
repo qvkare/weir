@@ -34,14 +34,24 @@ const ALIASES: Record<string, MarketId> = { weekly: "h100-weekly", fast: "h100-f
 /** The markets of one chip, in switcher order. */
 export const marketsOfChip = (chip: ChipKey, among: readonly MarketId[] = MARKET_IDS): MarketId[] => among.filter((m) => MARKET_INFO[m].chip === chip);
 
-/** The query string that selects a market: empty for the default. */
-export function mq(market: MarketId, extra = ""): string {
-  const parts = [market === DEFAULT_MARKET ? "" : `m=${market}`, extra].filter(Boolean);
-  return parts.length ? `?${parts.join("&")}` : "";
+/** The pages written once per market; the rest (/spec, /audit, /backtest) are the same for all. */
+export const PER_MARKET_PAGES: readonly string[] = ["/", "/auction", "/agents", "/proof", "/how", "/simulate"];
+
+/**
+ * A page of a market: the plain path for the default market, /m/<market>/<page> for the others
+ * (each written once at build). `extra` is a query string without its "?".
+ */
+export function withMarket(path: string, market: MarketId, extra = ""): string {
+  const base = market === DEFAULT_MARKET || !PER_MARKET_PAGES.includes(path) ? path : `/m/${market}${path === "/" ? "" : path}`;
+  return extra ? `${base}?${extra}` : base;
 }
 
-/** A path with the market's query string. */
-export const withMarket = (path: string, market: MarketId, extra = ""): string => `${path}${mq(market, extra)}`;
+/** The market and the page of a site path: /m/h200-weekly/proof is the H200 market's /proof. */
+export function marketOfPath(pathname: string): { market: MarketId; page: string } {
+  const m = /^\/m\/([^/]+)(\/.*)?$/.exec(pathname);
+  if (m && isMarketId(m[1]!)) return { market: m[1] as MarketId, page: (m[2] ?? "/").replace(/(.)\/$/, "$1") };
+  return { market: DEFAULT_MARKET, page: pathname };
+}
 
 export interface MarketDeployment {
   id: MarketId;

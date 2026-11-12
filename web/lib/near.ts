@@ -1,6 +1,17 @@
-// NEAR JSON-RPC: view calls, access keys, account state. Every read tries the RPC URLs of
-// deployments.json in order and moves to the next on a network error, a timeout or an RPC
-// error that is not the contract's own panic.
+// NEAR JSON-RPC: view calls, access keys, account state. Browser-safe. Every read tries the RPC
+// URLs in the order given (rpcOrder: dRPC first for views, fastnear after) and moves to the next
+// on a network error, a timeout, an HTTP error such as 429 (rate limited) or 408 (timed out), or
+// an RPC error that is not the contract's own panic. When all fail, the error says which
+// endpoint said what.
+
+/** Views go to dRPC first and fastnear second. fastnear's free tier rate-limits per source
+ * address and the keeper needs it to send transactions; dRPC's free tier answers views (it times
+ * out long requests, which views are not). chain/README.md, "RPC endpoints". A site-side order:
+ * deployments.json is not edited. */
+export function rpcOrder(urls: readonly string[]): string[] {
+  const rank = (u: string) => (/drpc\.org/.test(u) ? 0 : /fastnear/.test(u) ? 1 : 2);
+  return [...urls].sort((a, b) => rank(a) - rank(b));
+}
 
 export class RpcError extends Error {
   /** True when the contract itself answered with an error (a panic), so failing over is pointless. */
@@ -12,6 +23,14 @@ export class RpcError extends Error {
 }
 
 const TIMEOUT_MS = 6000;
+
+const host = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
 
 function b64(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -28,8 +47,9 @@ async function post(url: string, body: unknown): Promise<unknown> {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      // No `cache` option: JSON-RPC is a POST, which nothing caches, and the Workers runtime and
+      // Next's static build both refuse some values of it.
       signal: ctrl.signal,
-      cache: "no-store",
     });
     if (!res.ok) throw new RpcError(`${new URL(url).host} answered HTTP ${res.status}`);
     return await res.json();
@@ -44,7 +64,7 @@ async function post(url: string, body: unknown): Promise<unknown> {
 /** Sends one query to the first RPC that answers. */
 export async function rpcQuery(rpcs: readonly string[], params: Record<string, unknown>): Promise<Record<string, unknown>> {
   if (rpcs.length === 0) throw new RpcError("No RPC URL is configured");
-  let last: Error = new RpcError("No RPC answered");
+  const said: string[] = [];
   for (const url of rpcs) {
     try {
       const json = (await post(url, { jsonrpc: "2.0", id: "weir", method: "query", params: { finality: "optimistic", ...params } })) as {
@@ -62,11 +82,12 @@ export async function rpcQuery(rpcs: readonly string[], params: Record<string, u
       if (typeof result.error === "string") throw new RpcError(String(result.error).slice(0, 300), true);
       return result;
     } catch (e) {
-      last = e as Error;
       if (e instanceof RpcError && e.fromContract) throw e;
+      const m = (e as Error).message;
+      said.push(m.startsWith(host(url)) ? m : `${host(url)}: ${m}`);
     }
   }
-  throw last;
+  throw new RpcError(said.join("; "));
 }
 
 /** A contract view with JSON arguments and a JSON result. */

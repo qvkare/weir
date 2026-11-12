@@ -7,13 +7,12 @@
     "dev": "next dev",
     "dev:model": "WEIR_MODEL=1 next dev",
     "build": "next build",
-    "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --disable-warning=ExperimentalWarning \"lib/**/*.test.ts\"",
+    "test": "node --test --disable-warning=ExperimentalWarning \"lib/**/*.test.ts\" \"worker/**/*.test.ts\"",
     "smoke": "node --disable-warning=ExperimentalWarning scripts/smoke.ts",
-    "build:worker": "opennextjs-cloudflare build",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview --port 8787",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
+    "build:worker": "next build",
+    "preview": "next build && wrangler dev --port 8787",
+    "deploy": "next build && wrangler deploy"
   },
   "dependencies": {
     "@opennextjs/cloudflare": "1.20.16",

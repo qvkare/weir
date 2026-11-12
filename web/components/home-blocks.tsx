@@ -1,15 +1,17 @@
+"use client";
+// The home page's data blocks, drawn from one HomeData (lib/data/home.ts): read by the build for
+// the static page, then by the browser for live figures. Pure: no reads here.
 import Link from "next/link";
-import { cache } from "react";
 import type { WireParams } from "@weir/engine";
-import { funding } from "@/lib/build.ts";
 import { valueOf } from "@/lib/cache.ts";
-import { CHIP_LABEL, MARKET_INFO, marketsOfChip, mq, withMarket, type ChipKey, type MarketId } from "@/lib/config.ts";
-import { liveMarkets } from "@/lib/build.ts";
+import { CHIP_LABEL, MARKET_INFO, marketsOfChip, withMarket, type ChipKey, type MarketId } from "@/lib/config.ts";
 import { CHIPS } from "@/lib/hardware.ts";
 import type { ChipCardData } from "./chip-cards.tsx";
 import { dollarsOfPrice, fmtBps, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
-import { isStale, loadBundle, loadCore, loadGaps, loadLastClearing, loadPrints, loadSeriesSet, recordedBundle, type Core, type LoadedBundle } from "@/lib/load.ts";
-import { isNotDeployed } from "@/lib/source.ts";
+import type { CoreData, HomeData } from "@/lib/data/home.ts";
+import { RANGES, rangeOf } from "@/lib/data/home.ts";
+import { isStale, type LoadedBundle } from "@/lib/load.ts";
+import { isNotDeployed } from "@/lib/source-types.ts";
 import { average, printView, seriesTimes, settlementLine, stepOrdersFromResult, summarize, timesOf, tradedAverage } from "@/lib/views.ts";
 import { seriesStage } from "@/lib/timeline.ts";
 import { Countdown } from "./countdown.tsx";
@@ -21,38 +23,28 @@ import { SeriesStrip } from "./series-strip.tsx";
 import { Empty, NotDeployed, RpcError, Stale } from "./state.tsx";
 import { StepChart } from "./step-chart.tsx";
 import { SheetHead } from "./sheet-head.tsx";
-import { Wafer } from "./wafer.tsx";
 
-export const getCore = cache(loadCore);
-const getSeriesSet = cache(async (market: MarketId) => loadSeriesSet(await getCore(market)));
 
-const q = mq;
+/** The figures came from the build: count clocks against this machine, not the build's "now". */
+export interface HomeView {
+  d: HomeData;
+  wall: boolean;
+}
 
-function coreProblem(core: Core, market: MarketId, href: string, what: string) {
+function coreProblem(core: CoreData, market: MarketId, href: string, what: string) {
   if (isNotDeployed(core.params)) return <NotDeployed market={market} what={what} />;
-  if (!core.params.ok && !valueOf(core.params)) return <RpcError read={core.params} href={href} model={core.src.kind === "model"} />;
-  if (!core.status.ok && !valueOf(core.status)) return <RpcError read={core.status} href={href} model={core.src.kind === "model"} />;
+  if (!core.params.ok && !valueOf(core.params)) return <RpcError read={core.params} href={href} model={core.kind === "model"} />;
+  if (!core.status.ok && !valueOf(core.status)) return <RpcError read={core.status} href={href} model={core.kind === "model"} />;
   return null;
 }
 
 // 1. Index head
 
-async function headData(market: MarketId) {
-  const core = await getCore(market);
-  const last = valueOf(core.last);
-  const print = last ? valueOf(await core.src.view("get_print", { bucket: last.bucket })) : null;
-  const pv = printView(print);
-  // Sources: the bundle behind the first report, from the bundle host, else the recorded sample.
-  const firstHash = pv?.reporters[0]?.bundle ?? null;
-  const hosted = firstHash ? await loadBundle(firstHash) : null;
-  return { core, last, pv, hosted };
-}
-const getHead = cache(headData);
-
 /** The live index figure in the hero: last final print, its age, and what it is the median of. */
-export async function HeroIndex({ market }: { market: MarketId }) {
-  const { core, last, pv } = await getHead(market);
-  const href = `/${q(market)}`;
+export function HeroIndex({ d }: HomeView) {
+  const { core, pv, market } = d;
+  const last = valueOf(core.last);
+  const href = withMarket("/", market);
   const params = valueOf(core.params);
   const problem = coreProblem(core, market, href, "index print");
   const stale = isStale(params, last, core.now);
@@ -87,57 +79,46 @@ export async function HeroIndex({ market }: { market: MarketId }) {
       ) : null}
       {!core.last.ok ? (
         <div style={{ marginTop: 16 }}>
-          <RpcError read={core.last} href={href} model={core.src.kind === "model"} />
+          <RpcError read={core.last} href={href} model={core.kind === "model"} />
         </div>
       ) : null}
     </>
   );
 }
 
-/** The wafer behind the first screen, its simulated book centred on the live index when there is one. */
-export async function HeroWafer({ market }: { market: MarketId }) {
-  const { last } = await getHead(market);
-  return <Wafer anchor={last?.price ?? null} anchorIsLive={!!last} />;
-}
-
 /** One card per chip: the market shown for it (the selected one, else its first market), its last print and a link. */
-export async function chipCardData(market: MarketId): Promise<ChipCardData[]> {
-  const offered = liveMarkets();
-  return Promise.all(
-    CHIPS.map(async (chip) => {
-      const key = chip.id as ChipKey;
-      const ids = marketsOfChip(key, offered);
-      const m = MARKET_INFO[market].chip === key ? market : ids[0] ?? null;
-      if (!m) return { chip, href: null, status: "No market", live: false, last: "No market listed", current: false };
-      const core = await getCore(m);
-      const kind = core.src.kind;
-      const last = valueOf(core.last);
-      const tick = valueOf(core.params)?.tick;
-      const text = kind === "none" ? "Not deployed yet" : last ? `${fmtPrice(last.price, tick)}, ${fmtDuration(core.now - last.bucket)} old${kind === "model" ? " (model)" : ""}` : "No print yet";
-      return { chip, href: withMarket("/", m) + "#hardware", status: kind === "chain" ? "Trading" : kind === "model" ? "Model" : "Not deployed", live: kind !== "none", last: text, current: m === market };
-    }),
-  );
+export function chipCards(d: HomeData, offered: readonly MarketId[]): ChipCardData[] {
+  return CHIPS.map((chip) => {
+    const key = chip.id as ChipKey;
+    const ids = marketsOfChip(key, offered);
+    const m = MARKET_INFO[d.market].chip === key ? d.market : ids[0] ?? null;
+    if (!m) return { chip, href: null, status: "No market", live: false, last: "No market listed", current: false };
+    const c =
+      m === d.market
+        ? { kind: d.core.kind, last: valueOf(d.core.last), tick: valueOf(d.core.params)?.tick ?? null, now: d.core.now }
+        : d.chips.find((x) => x.market === m) ?? { kind: "none" as const, last: null, tick: null, now: d.core.now };
+    const text = c.kind === "none" ? "Not deployed yet" : c.last ? `${fmtPrice(c.last.price, c.tick ?? undefined)}, ${fmtDuration(c.now - c.last.bucket)} old${c.kind === "model" ? " (model)" : ""}` : "No print yet";
+    return { chip, href: withMarket("/", m) + "#hardware", status: c.kind === "chain" ? "Trading" : c.kind === "model" ? "Model" : "Not deployed", live: c.kind !== "none", last: text, current: m === d.market };
+  });
 }
 
 /** One line for the H100 card and the specimen: the last clearing, or why there is none. */
-export async function lastClearingLine(market: MarketId): Promise<string> {
-  const core = await getCore(market);
-  const params = valueOf(core.params);
-  if (isNotDeployed(core.params)) return "Market not deployed yet";
+export function lastClearingLine(d: HomeData): string {
+  const params = valueOf(d.core.params);
+  if (isNotDeployed(d.core.params)) return "Market not deployed yet";
   if (!params) return "No reading";
-  const { info, c } = await getClearing(market);
-  if (!c?.traded || !info) return "No round has cleared yet";
-  return `${fmtPrice(info.floor + (c.traded.result.price ?? 0), params.tick)} forward, round ${c.traded.round}${core.src.kind === "model" ? " (model)" : ""}`;
+  const { info, traded } = d.clearing;
+  if (!traded || !info) return "No round has cleared yet";
+  return `${fmtPrice(info.floor + (traded.result.price ?? 0), params.tick)} forward, round ${traded.round}${d.core.kind === "model" ? " (model)" : ""}`;
 }
 
 /** The sources in the latest bundle and the reports behind the print. */
-export async function IndexSources({ market }: { market: MarketId }) {
-  const { core, pv, hosted } = await getHead(market);
-  const problem = coreProblem(core, market, `/${q(market)}`, "index print");
+export function IndexSources({ d, sample }: HomeView & { sample: LoadedBundle | null }) {
+  const { core, pv, hosted, market } = d;
+  const problem = coreProblem(core, market, withMarket("/", market), "index print");
   if (problem) return problem;
   const tick = valueOf(core.params)?.tick;
   const hostedOk = hosted && hosted.ok ? hosted.value : null;
-  const sample = hostedOk ? null : recordedBundle(MARKET_INFO[market].chip);
   return (
     <div className="grid-2 sources-grid">
       <SourcesTable loaded={hostedOk ?? sample} hostedError={hosted && !hosted.ok ? hosted.error : null} reporterOfBundle={hostedOk ? (pv?.reporters[0]?.reporter ?? null) : null} tick={tick} />
@@ -234,31 +215,26 @@ function ReportersTable({ pv, tick }: { pv: NonNullable<ReturnType<typeof printV
 
 // Index chart
 
-const RANGE_SETS: Record<"weekly" | "fast", { id: string; label: string; secs: number }[]> = {
-  weekly: [
-    { id: "24h", label: "24 h", secs: 86_400 },
-    { id: "7d", label: "7 d", secs: 7 * 86_400 },
-    { id: "30d", label: "30 d", secs: 30 * 86_400 },
-  ],
-  fast: [
-    { id: "1h", label: "1 h", secs: 3600 },
-    { id: "6h", label: "6 h", secs: 6 * 3600 },
-    { id: "24h", label: "24 h", secs: 86_400 },
-  ],
-};
-
-export const RANGES = Object.fromEntries((Object.keys(MARKET_INFO) as MarketId[]).map((m) => [m, RANGE_SETS[MARKET_INFO[m].cadence === "Hourly" ? "fast" : "weekly"]])) as Record<MarketId, { id: string; label: string; secs: number }[]>;
-
-export const rangeOf = (market: MarketId, id: string | undefined) => RANGES[market].find((r) => r.id === id) ?? RANGES[market][1]!;
-
-export async function IndexChartBlock({ market, range, no }: { market: MarketId; range: string | undefined; no?: string }) {
-  const core = await getCore(market);
-  const r = rangeOf(market, range);
+export function IndexChartBlock({ d, no, onRange }: HomeView & { no?: string; onRange?: (id: string) => void }) {
+  const { core, market } = d;
+  const r = rangeOf(market, d.chart.range);
   const params = valueOf(core.params);
   const nav = (
     <nav aria-label="Chart range" className="switch">
       {RANGES[market].map((x) => (
-        <a key={x.id} href={`/${q(market, `range=${x.id}`)}#index`} aria-current={x.id === r.id ? "true" : undefined}>
+        <a
+          key={x.id}
+          href={`${withMarket("/", market, `range=${x.id}`)}#index`}
+          aria-current={x.id === r.id ? "true" : undefined}
+          onClick={
+            onRange
+              ? (e) => {
+                  e.preventDefault();
+                  onRange(x.id);
+                }
+              : undefined
+          }
+        >
           {x.label}
         </a>
       ))}
@@ -272,31 +248,26 @@ export async function IndexChartBlock({ market, range, no }: { market: MarketId;
       {nav}
     </div>
   );
-  const problem = coreProblem(core, market, `/${q(market)}`, "index history");
+  const problem = coreProblem(core, market, withMarket("/", market), "index history");
   if (problem || !params) return (
     <>
       {head}
       {problem}
     </>
   );
-  const from = core.now - r.secs;
-  const prints = await loadPrints(core.src, params, from, core.now);
+  const { from, prints, gaps } = d.chart;
   const list = valueOf(prints) ?? [];
-  const set = await getSeriesSet(market);
-  const delivering = set.find((s) => !s.live || (s.live.delivery_start <= core.now && core.now < s.live.delivery_end));
+  const delivering = d.set.find((s) => s.series === d.chart.delivering) ?? null;
   const dInfo = delivering ? valueOf(delivering.info) : null;
-  const acc = delivering ? valueOf(await core.src.view("get_accumulator", { series: delivering.series })) : null;
   const t = delivering ? timesOf(delivering.series, params) : null;
-  const avg = average(acc);
+  const avg = average(d.chart.acc);
   const indexPrints = list.map((p) => ({ bucket: p.bucket, price: p.price!, reports: p.reports.map((x) => ({ reporter: x.reporter, price: x.price })) }));
-  // Buckets without a final print: ask which ended with no print (one view each, so the model reads
-  // every one and the chain the newest 48).
-  const gaps = await loadGaps(core.src, params, list, from, core.now, core.src.kind === "model" ? 2000 : 48);
   const rows = [...list.map((p) => ({ bucket: p.bucket, price: p.price as number | null, reports: p.reports.length, open: false })), ...gaps.noPrint.map((b) => ({ bucket: b, price: null, reports: 0, open: false })), ...gaps.open.map((b) => ({ bucket: b, price: null, reports: 0, open: true }))].sort((a, b) => b.bucket - a.bucket);
+  const asked = gaps.noPrint.length + gaps.open.length;
   return (
     <>
       {head}
-      {!prints.ok ? <RpcError read={prints} href={`/${q(market)}`} model={core.src.kind === "model"} /> : null}
+      {!prints.ok ? <RpcError read={prints} href={withMarket("/", market)} model={core.kind === "model"} /> : null}
       <IndexChart
         tick={params.tick}
         summary={indexSummary(indexPrints, params.tick, from, core.now) + (gaps.noPrint.length ? ` ${gaps.noPrint.length} bucket${gaps.noPrint.length === 1 ? "" : "s"} ended with no print.` : "") + (dInfo && avg !== null ? ` Series ${dInfo.series} is in delivery with a band of ${fmtPrice(dInfo.floor, params.tick)} to ${fmtPrice(dInfo.floor + dInfo.band, params.tick)} and an average so far of ${fmtPrice(avg, params.tick)}.` : "")}
@@ -308,7 +279,7 @@ export async function IndexChartBlock({ market, range, no }: { market: MarketId;
         </span>
         <span className="key">
           <span style={{ color: "var(--flag)", fontWeight: 600 }}>×</span> No print: too few reports, or the two middle reports did not agree
-          {gaps.unread ? ` (the newest ${48} gaps are read)` : ""}
+          {gaps.unread ? ` (the newest ${asked} of ${asked + gaps.unread} buckets without a final print were read, one view each)` : ""}
         </span>
         <span className="key">
           <span className="swatch thin" style={{ color: "var(--ink-3)" }} /> Each reporter&rsquo;s reports
@@ -354,12 +325,11 @@ export async function IndexChartBlock({ market, range, no }: { market: MarketId;
 
 // 2. Series strip
 
-export async function SeriesStrips({ market }: { market: MarketId }) {
-  const core = await getCore(market);
+export function SeriesStrips({ d, wall }: HomeView) {
+  const { core, market, set } = d;
   const params = valueOf(core.params);
-  const problem = coreProblem(core, market, `/${q(market)}`, "series");
+  const problem = coreProblem(core, market, withMarket("/", market), "series");
   if (problem || !params) return problem;
-  const set = await getSeriesSet(market);
   if (set.length === 0) return <Empty>No series is in auction or delivery.</Empty>;
   return (
     <>
@@ -370,7 +340,7 @@ export async function SeriesStrips({ market }: { market: MarketId }) {
         const stage = seriesStage(times, core.now);
         const phaseText = live && live.phase !== "Closed" && live.phase_ends_at ? (
           <>
-            Round {live.round} {live.phase === "Commit" ? "commits" : "reveals"}, ends in <Countdown endsAt={live.phase_ends_at} serverNow={core.now} />
+            Round {live.round} {live.phase === "Commit" ? "commits" : "reveals"}, ends in <Countdown endsAt={live.phase_ends_at} serverNow={core.now} wall={wall} />
           </>
         ) : live ? (
           "Between rounds"
@@ -421,7 +391,7 @@ export async function SeriesStrips({ market }: { market: MarketId }) {
               )}
               {phaseText ? <span>{phaseText}</span> : null}
               {live ? (
-                <Link href={`/auction${q(market, `series=${s.series}`)}`}>Open the auction</Link>
+                <Link href={withMarket("/auction", market)}>Open the auction</Link>
               ) : null}
             </div>
           </div>
@@ -433,28 +403,14 @@ export async function SeriesStrips({ market }: { market: MarketId }) {
 
 // 3. Last clearing and 4. payoff
 
-async function pickClearing(market: MarketId) {
-  const core = await getCore(market);
-  const set = await getSeriesSet(market);
-  for (const s of [...set].sort((a, b) => Number(!!b.live) - Number(!!a.live))) {
-    const info = valueOf(s.info);
-    if (!info) continue;
-    const c = await loadLastClearing(core, s.series);
-    if (c.traded) return { core, series: s.series, info, c };
-  }
-  const first = set.find((s) => valueOf(s.info));
-  return { core, series: first?.series ?? set[0]?.series ?? null, info: first ? valueOf(first.info) : null, c: null };
-}
-const getClearing = cache(pickClearing);
-
-export async function LastClearing({ market }: { market: MarketId }) {
-  const core = await getCore(market);
+export function LastClearing({ d }: HomeView) {
+  const { core, market } = d;
   const params = valueOf(core.params);
-  const problem = coreProblem(core, market, `/${q(market)}`, "clearing");
+  const problem = coreProblem(core, market, withMarket("/", market), "clearing");
   if (problem || !params) return problem;
-  const { series, info, c } = await getClearing(market);
-  if (!c || !c.traded || !info) return <Empty>No round of {series === null ? "a live series" : `series ${series}`} has cleared with a trade yet.</Empty>;
-  const { round, result } = c.traded;
+  const { series, info, traded } = d.clearing;
+  if (!traded || !info) return <Empty>No round of {series === null ? "a live series" : `series ${series}`} has cleared with a trade yet.</Empty>;
+  const { round, result } = traded;
   const s = summarize(result, info.floor);
   const pp = priceParts(fmtPrice(s.price, params.tick));
   const fp = priceParts(fmtPrice(s.forward, params.tick));
@@ -470,36 +426,32 @@ export async function LastClearing({ market }: { market: MarketId }) {
           <Figure live label="Implied forward, floor + p*" value={fp.value} unit={fp.unit} source="The GPU-hour price this round locks" />
           <Figure live label="Volume" value={s.volume.toLocaleString("en-US")} unit="GPU-h" source={`${s.orders} orders of ${s.commits} commits took part`} />
         </div>
-        <Link className="button ghost" href={`/auction${q(market, `series=${series}&round=${round}`)}`}>
+        <a className="button ghost" href={withMarket("/auction", market, `series=${series}&round=${round}`)}>
           Open round {round}
-        </Link>
+        </a>
       </div>
     </div>
   );
 }
 
-export async function PayoffBlock({ market }: { market: MarketId }) {
-  const core = await getCore(market);
+export function PayoffBlock({ d }: HomeView) {
+  const { core, market } = d;
   const params = valueOf(core.params);
-  const problem = coreProblem(core, market, `/${q(market)}`, "band to draw");
+  const problem = coreProblem(core, market, withMarket("/", market), "band to draw");
   if (problem || !params) return problem;
-  const { series, info, c } = await getClearing(market);
+  const { series, info, traded } = d.clearing;
   if (!info || series === null) return <Empty>No series is open yet, so there is no band to draw. The first commit of a series sets it from the last print.</Empty>;
-  const traded = c?.traded;
   const half = Math.floor(info.band / 2 / params.tick) * params.tick;
   const p = traded?.result.price ?? half;
   const pSource = traded ? `the last clearing price, ${fmtPrice(p, params.tick)} (round ${traded.round})` : `the middle of the band, ${fmtPrice(p, params.tick)}: no round of this series has traded yet`;
-  return <PayoffSizer floor={info.floor} band={info.band} tick={params.tick} p={p} pSource={pSource} maxOrderSize={params.max_order_size} series={series} />;
+  return <PayoffSizer key={`${series}-${info.floor}-${p}`} floor={info.floor} band={info.band} tick={params.tick} p={p} pSource={pSource} maxOrderSize={params.max_order_size} series={series} />;
 }
 
 // 5. Facts and 6. limits
 
-export async function Facts({ market }: { market: MarketId }) {
-  const core = await getCore(market);
-  const params = valueOf(core.params);
-  const set = await getSeriesSet(market);
-  const opened = set.map((s) => valueOf(s.info)).find(Boolean) ?? null;
-  const f = funding();
+export function Facts({ d, fundingTag }: HomeView & { fundingTag: "recorded" | "quotes" }) {
+  const params = valueOf(d.core.params);
+  const opened = d.set.map((s) => valueOf(s.info)).find(Boolean) ?? null;
   return (
     <div className="facts">
       <div className="fact">
@@ -521,9 +473,9 @@ export async function Facts({ market }: { market: MarketId }) {
       </div>
       <div className="fact">
         <h3>
-          Funding from another chain <span className="tag flag">{f.tag === "recorded" ? "recorded" : "quotes only"}</span>
+          Funding from another chain <span className="tag flag">{fundingTag === "recorded" ? "recorded" : "quotes only"}</span>
         </h3>
-        <p className="small">USDC on Base, Arbitrum, Ethereum or Solana can reach NEAR through NEAR Intents and then be deposited into Weir. {f.tag === "recorded" ? "One transfer is on record." : "No transfer is on record yet; only quotes."}</p>
+        <p className="small">USDC on Base, Arbitrum, Ethereum or Solana can reach NEAR through NEAR Intents and then be deposited into Weir. {fundingTag === "recorded" ? "One transfer is on record." : "No transfer is on record yet; only quotes."}</p>
         <Link className="small" href="/how#funding">
           The funding path
         </Link>
@@ -558,19 +510,6 @@ export function LimitsList({ params, network }: { params: WireParams | null; net
       </li>
     </ul>
   );
-}
-
-export async function Limits({ market, network }: { market: MarketId; network: string }) {
-  const core = await getCore(market);
-  return <LimitsList params={valueOf(core.params)} network={network} />;
-}
-
-export async function HomeRefresh({ market }: { market: MarketId }) {
-  const core = await getCore(market);
-  const status = valueOf(core.status);
-  const next = status?.live.map((l) => l.phase_ends_at).filter((x): x is number => x !== null).sort((a, b) => a - b)[0] ?? null;
-  const { AutoRefresh } = await import("./auto-refresh.tsx");
-  return core.src.kind === "none" ? null : <AutoRefresh everySecs={MARKET_INFO[market].cadence === "Hourly" ? 15 : 30} at={next} serverNow={core.now} />;
 }
 
 export const marketLine = (market: MarketId) => `${MARKET_INFO[market].name}: ${MARKET_INFO[market].delivery}, ${MARKET_INFO[market].rounds}`;

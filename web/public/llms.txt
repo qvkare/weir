@@ -8,7 +8,7 @@ Read-only JSON for agents (CORS open, short cache, errors as {"error":{"code","m
 - [/api/round?m=<market>&series=N&round=R](/api/round): the sealed book of an open round, or the result and fills of a cleared one.
 - [/api/quote?from=arbitrum|ethereum|solana|base&amount=20](/api/quote): a dry NEAR Intents quote, USDC on another chain to USDC on NEAR. Nothing is signed.
 
-Markets: h100-weekly (the default), h100-fast (hourly demo), h200-weekly, a100-80-weekly; `weekly` and `fast` still mean the H100 markets. Forfeits and a per-commit fee are burned; get_totals is { free, locked, sets_backing, unredeemed, burned }; prints have state Open, Final or NoPrint ([/spec](/spec)).
+Markets: h100-weekly (the default), h100-fast (hourly demo), h200-weekly, a100-80-weekly; `weekly` and `fast` still mean the H100 markets. The default market's pages are at the plain path; the others at /m/<market>/<page> (for example /m/h200-weekly/proof), and ?m=<market> on a page redirects there. Pages are static: their figures are as of the build until the browser reads the chain again; the JSON endpoints read the chain on each request. Forfeits and a per-commit fee are burned; get_totals is { free, locked, sets_backing, unredeemed, burned }; prints have state Open, Final or NoPrint ([/spec](/spec)).
 
 Units: prices in micro-USD per GPU-hour (numbers), dollar amounts in micro-USDC (decimal strings), sizes in GPU-hours, times in Unix seconds UTC.
 
