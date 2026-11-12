@@ -69,8 +69,12 @@ The testnet endpoints in use are `https://test.rpc.fastnear.com` and
 deprecated and answers every call with HTTP 429, so it is not listed.
 
 **Finding, 2026-11-12, about 01:00 UTC.** On live testnet the keeper logged
-`report: RPC error: null`, `commit: RPC error: null` and `reveal: RPC error: null` (20 failed
-entries in 14 ticks), and agents forfeited orders they could not reveal. Two provider
+`report: RPC error: null`, `commit: RPC error: null` and `reveal: RPC error: null`: 24 failed
+log entries for 12 transactions in 5 ticks, 00:52 to 01:01 UTC (counted from the keeper's log;
+`keeper/README.md`, "First night on testnet"). Every one of them that was then looked up on
+chain had landed: both rounds held their 7 commits, nothing was forfeited, and the 01:00 prints
+held all 3 reports. So the transactions were accepted and the client reported a failure; that
+the refusal came after delivery is inferred from this, not observed. Two provider
 refusals that are not in NEAR's error shape were measured with curl:
 
 - fastnear, over its free limit (a second tool on the same IP was also calling it), HTTP 429:
