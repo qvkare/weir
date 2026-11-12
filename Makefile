@@ -104,7 +104,7 @@ quote-dry:
 # test: every suite that does not need a running node: the contract's and every TypeScript package's.
 test: test-contracts test-ts
 
-# test-contracts: unit, property, audit and vector tests of the contract, then clippy. About 90 s warm, 70 s of it the property tests.
+# test-contracts: unit, property, audit and vector tests of the contract, then rustfmt and clippy. About 85 s warm, 75 s of it the property tests.
 test-contracts:
 	$(CARGO) --lib
 	$(CARGO) --test properties
@@ -122,8 +122,9 @@ test-ts:
 	  echo "typecheck ok"; \
 	done
 
-# test-sandbox: the real wasm on a local near-sandbox node (macOS arm64 or Linux; the first run downloads
-# near-sandbox 2.14.0). The Rust sandbox suite took 641 s here, the integration e2e 393 s.
+# test-sandbox: the real wasm on a local near-sandbox node, macOS arm64 or Linux. About 20 min.
+# The first run downloads near-sandbox 2.14.0. On 2026-11-12 the Rust sandbox suite took 641 s and the
+# third integration e2e 549 s (integration/RESULTS.md).
 test-sandbox: build-contracts
 	$(CARGO) --test sandbox -- --nocapture
 	pnpm --dir integration run e2e

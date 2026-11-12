@@ -9,6 +9,9 @@ laptop, Node 22.23, near-sandbox 2.14.0 (protocol 88). `pnpm --filter @weir/inte
 **exited 0 in 549 s** (lifecycle 121 s, void series 32 s, full book 51 s, keeper 343 s). Record:
 `out/run.json`.
 
+The source was formatted after this run, which changed the wasm's hash and nothing else. The
+same command was run again on that build; see "Rerun on the formatted build" below.
+
 ## What a reader may conclude, and what not
 
 **May conclude:** the contract that will be deployed (these exact bytes) and the TypeScript
@@ -138,6 +141,28 @@ None in this run.
 - The weekly market ran 2.6 hours of its week: its pruning, settlement and redemption were not
   exercised on chain (they were on the fast market).
 - Two markets, not four; no live index source; no public network.
+
+## Rerun on the formatted build
+
+After the third run the Rust source was formatted with rustfmt (commit `afd0d03`, `cargo fmt`
+only) and the chain client's `reveal` was given 15 Tgas (commit `7adbdfb`). `weir.wasm` kept its
+size, 303,753 bytes. Its sha256 became
+`13536f3b32299da4b352d34931e6ef200d8f34b173a3865892441d76d640413c`, because the wasm carries
+source locations for its panics (`strings` finds the `src/*.rs` paths in it); `mock_usdc.wasm`
+became `c5604b24…1af3`.
+
+The same command, `pnpm --filter @weir/integration run e2e`, was run on that build on
+2026-11-12, with `WEIR_E2E_OUT` set and with other test suites running on the same machine. It
+**exited 0 in 533 s** (lifecycle 116 s, void series 33 s, full book 49 s, keeper 332 s):
+
+- 264 of 264 checks passed.
+- 1,315 calls and 2,315 views were compared between the contract and the model; none differed.
+- The keeper made 108 ticks and 521 transactions with no failed entry.
+- `reveal`: 306 calls, at most 4.61 Tgas (into a book of 128), now 3.25x under the 15 Tgas
+  attached. `clear` of 128 commits: 50.48 Tgas, 2.97x under 150. No method is under 2.9x.
+
+Everything above this section describes the third run as it was taken. The rerun's record is
+`out/run-formatted-build.json` on the authors' machine (`out/` is not committed).
 
 ## Second run, specification 0.4
 

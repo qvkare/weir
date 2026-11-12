@@ -21,6 +21,7 @@ below refer to it.
 | `weir/tests/audit_findings.rs` | The audit's first eight demonstrations, now asserting that each attack fails |
 | `weir/tests/audit2_findings.rs` | The audit's second pass: `audit2_*` tests assert a fix, `limit_*` tests show what is still possible |
 | `weir/tests/audit3_void.rs` | The audit's third pass, on the void settlement: the wash-trade attack now fails, and the limit that remains |
+| `weir/tests/audit4_void_centre.rs` | The audit's fourth pass, written and owned by the reviewer: nothing a trader who is not a reporter does moves the 0.6 void payout |
 | `weir/tests/sandbox.rs` | The real wasm in near-sandbox with `mock-usdc`: a whole life (with a position moved after settlement, and a void series that traded, cancelled at the centre of its band), a failed withdraw, an agent's function-call key (trades, settles and redeems; refused on `withdraw`, `set_guard`, `transfer_position`), gas of a full `clear` and of a `settle` that decides pending buckets |
 | `weir/tests/vectors.rs` | Writes or checks `../vectors/*.json`, the shared test vectors for the TypeScript engine |
 | `mock-usdc/src/lib.rs` | A NEP-141 test dollar, `tUSDC`, 6 decimals, with an open `mint` faucet. Testnet and tests only |
@@ -73,8 +74,10 @@ most four).
 
 The review was done by an AI reviewer that did not write the contract, working from
 the specification and the source, with tests it wrote. It is not an audit firm's
-audit and not a formal verification. It made three passes (against spec 0.3, 0.4 and
-0.5) and found the dollar accounting sound every time. Each finding is either closed by a rule, with
+audit and not a formal verification. It made four passes (against spec 0.3, 0.4, 0.5
+and 0.6) and found the dollar accounting sound every time. One fix between passes, the 0.5
+void rule, was itself found faulty by the third pass and replaced in 0.6; the fourth pass
+found the 0.6 rule sound against traders who are not reporters. Each finding is either closed by a rule, with
 a test that keeps the attack and asserts it fails, or stated in the spec as an open
 limit, with a test that shows exactly what is still possible and the number it shows.
 `docs/AUDIT.md` has the reviewer's reasoning; the numbers below come from the tests,
@@ -94,6 +97,7 @@ at the deployed presets' parameters unless a test's comment says otherwise.
 | 2 | A quorum of one in three let one reporter print alone | The quorum must be a majority (3) | `audit2_a_quorum_of_one_in_three_is_refused` |
 | 2 | (soundness check) a pruned bucket could come back | It cannot: reports close before pruning opens (3) | `audit2_a_pruned_bucket_cannot_come_back` |
 | 3 | Wash trades set the 0.5 void payout (0.397 against a fair 0.200; Bob lost 19.80 $) | A void series pays the centre of its band; nothing traded is read (10). Now Bob loses 0.10 $ and Mallory 0.30 $: their fees | `audit3_wash_trades_no_longer_set_the_void_payout` |
+| 4 | (soundness check) a trader who is not a reporter could move the 0.6 void payout | It cannot: wash trades at both extremes, mints, merges and transfers change nothing; free + burned = deposits after redemption (10) | `audit4_a_non_reporter_cannot_move_the_void_payout` |
 
 ### Open limits
 

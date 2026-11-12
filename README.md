@@ -24,7 +24,7 @@ make judge
 | `make sim` | 30 agents (20 buyers, 5 sellers, 2 makers, 3 noise traders) trading the hourly H100 demo market on the engine: 20 of 20 rounds traded, both series settled and redeemed, and a money check (deposits equal free balances plus locks plus backing plus unredeemed plus burned) that the target asserts |
 | `make backtest` | The backtest recomputed from `backtest/data/derived/`, its four result files compared byte for byte with the committed ones, then `backtest/scripts/verify.py` recomputing 900 numbers in Python with 0 mismatches |
 | `make quote-dry` | A live NEAR Intents dry quote for 20 USDC from Arbitrum to NEAR. Nothing is sent. If the service cannot be reached or does not quote the pair, it says which and still exits 0 |
-| `make audit` | Needs Rust. The 19 tests of the independent review and of the authors' answers to it, each with what it shows, then the state each one printed |
+| `make audit` | Needs Rust. The 20 tests from the four passes of the independent review (8, 9, 2 and 1 per file), each with what it shows, then the state each one printed |
 | `make web` | The site at http://localhost:3000 in model mode, with a ribbon on every page saying so |
 | `make index` | Needs the network. This hour's index for the three chips from six public, keyless sources (8 HTTP requests), written to a temporary directory and verified |
 
@@ -35,11 +35,11 @@ make judge
 | Claim | Checked by | Kind of evidence |
 |---|---|---|
 | The contract and the engine, written separately from [`docs/SPEC.md`](docs/SPEC.md), compute the same numbers | `make verify`: the engine reproduces 4,584 cases written by the Rust code (band, clearing, hash, print, settlement, time) | Recomputation from committed data |
-| On a local NEAR node, the real wasm and the engine agree on every result, event, view and refusal | `make test-sandbox` (integration `e2e`). The last recorded run ([`integration/RESULTS.md`](integration/RESULTS.md)) is on specification 0.4: 995 state changes and 1,542 views compared with no difference, 60 refusals compared word for word; 238 of 239 checks passed, the one failure a keeper configuration finding the keeper has since changed for. The rules have changed twice since (0.5, 0.6); a run on 0.6 is not recorded at the time of writing. The integration e2e took 393 s here | Test on the authors' machine, local sandbox only |
+| On a local NEAR node, the real wasm and the engine agree on every result, event, view and refusal | `make test-sandbox` (integration `e2e`). Third run, specification 0.6 ([`integration/RESULTS.md`](integration/RESULTS.md)): 264 of 264 checks passed; 1,315 state changes and 2,315 views compared with no difference, 61 refusals among them, word for word; 549 s. That run used the wasm built before the contracts were formatted with rustfmt (sha256 `40583288…110c`). The same command was rerun on the formatted, current build (`13536f3b…413c`, same size, 303,753 bytes): 264 of 264 checks, 1,315 calls and 2,315 views with no difference, 533 s | Test on the authors' machine, local sandbox only |
 | Solvency (the contract's USDC equals free balances, locks, backing, unredeemed payouts and burned dollars) and the other invariants of spec section 11 | `make test-contracts`: property tests over 2,000 random order books per clearing invariant and 96 random sequences of up to 300 calls, each ended by clearing, settling and redeeming everything; the engine's own 300 random sequences in `pnpm --dir engine test` | Test on this machine |
 | An index print can be recomputed by anyone | `make verify-index`: every provider value and the index re-derived from the offers and from the raw responses, and the bundle hash recomputed | Recomputation from committed data |
 | An agent's function-call key can trade but cannot withdraw, move positions or change its limits | `make test-sandbox`: the sandbox test `a_function_call_key_trades_but_cannot_move_money`, and the integration run (refused before any code runs: `withdraw`, `set_guard`, `transfer_position`, `register`, deposits) | Test on a local sandbox node. Not yet shown on a public network |
-| Clearing a full round fits in one transaction | `make test-sandbox`: `clearing_a_full_round_fits_in_one_transaction`. Measured on 2026-11-12: 26.56 Tgas for 64 commits (the presets' limit), 51.58 Tgas for 128 (the contract's limit); the chain client attaches 150 Tgas to `clear`. Every commit from a different account, revealed and filled | Test on a local sandbox node |
+| Clearing a full round fits in one transaction | `make test-sandbox`: `clearing_a_full_round_fits_in_one_transaction`. Measured on 2026-11-12: about 26.6 Tgas for 64 commits (the presets' limit) and 51.5 Tgas for 128 (the contract's limit) in this test ([`contracts/README.md`](contracts/README.md)); 50.48 Tgas for 128 in the third integration run. The chain client attaches 150 Tgas to `clear`. Every commit from a different account, revealed and filled | Test on a local sandbox node |
 | The backtest's numbers follow from its data | `make backtest`: byte-identical results and an independent Python recomputation of 900 numbers | Recomputation from committed data. The data itself was fetched once by the authors (`backtest/data/derived/provenance.json` lists every file with its sha256) |
 | The contract has no owner, no admin method and no upgrade method | Reading `contracts/weir/src/lib.rs`: the only `#[private]` method is the withdraw callback | Statement by the authors, checked by the review in [`docs/AUDIT.md`](docs/AUDIT.md) |
 
@@ -131,33 +131,33 @@ Method, sources, licences and every table: [`backtest/README.md`](backtest/READM
 - **Function-call access keys** are the agent boundary, enforced by the protocol, not by Weir's code. A key limited to the trading methods cannot attach a deposit, and `withdraw`, `set_guard` and `transfer_position` require exactly 1 yoctoNEAR, so an agent key cannot reach them. The contract adds two limits the key cannot change: the guard and the round lock limit. Shown on a local sandbox node; not yet on a public network.
 - **Named sub-accounts.** The deploy tool gives each agent and reporter its own account under one operator account (`h100-weekly-buyer-1.weir-ops-<suffix>.testnet`), each with its own key and allowance. Run on a sandbox only.
 - **A contract with no keys.** The contract has no owner or upgrade method. `node deploy/src/cli.ts seal` deletes the contract account's keys, after which its code cannot change; the sealed sandbox market still took reports and commits. Not done on a public network.
-- **Cheap, frequent transactions.** A weekly market has 168 rounds, so an active agent sends up to 336 commits and reveals a week. Measured on the sandbox, a commit burns about 3.0 Tgas and a reveal 2.5 Tgas. At the gas price read on testnet on 2026-11-12 (0.0001 NEAR per Tgas), that is about 0.0003 NEAR each.
+- **Cheap, frequent transactions.** A weekly market has 168 rounds, so an active agent sends up to 336 commits and reveals a week. Measured on the sandbox (third integration run), a commit burns 2.97 Tgas and a reveal 2.51 Tgas at the median. At the gas price read on testnet on 2026-11-12 (0.0001 NEAR per Tgas), that is about 0.0003 NEAR each.
 - **NEAR Intents.** `make quote-dry` and the site take live dry quotes from the 1Click API for moving USDC from Arbitrum, Base, Ethereum or Solana to NEAR. The client refuses anything but a dry quote. No transfer has been made through Intents.
 
 ## Audit
 
-An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in three passes on 2026-11-12, against specifications 0.3, 0.4 and 0.5, and kept its findings as tests. It covered `contracts/weir/src/` only: not the TypeScript packages, the reporters' code, deployment or real tokens. It is not an audit by a security firm and not a formal verification, and no person has signed it off. Its record is [`docs/AUDIT.md`](docs/AUDIT.md); `make audit` runs its tests and prints what each one shows.
+An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in four passes, all on 2026-11-12, against specifications 0.3, 0.4, 0.5 and 0.6, and kept its findings as tests. It covered `contracts/weir/src/` only: not the TypeScript packages, the reporters' code, deployment or real tokens. It did not run the real wasm. It is not an audit by a security firm and not a formal verification, and no person has signed it off. Its record is [`docs/AUDIT.md`](docs/AUDIT.md); `make audit` runs its tests and prints what each one shows.
 
-Found sound in all three passes: the dollar accounting on every path, the 0.5 void path included (no path creates or loses a micro-dollar, and burned dollars are never credited). Also found sound, by reading: clearing as the spec defines it, the commit hash, the access controls and the sets cap.
+Found sound in all four passes: the dollar accounting on every path, the 0.6 void path included (`audit4_a_non_reporter_cannot_move_the_void_payout` asserts free plus burned equals deposits after a full void redemption; burned dollars are never credited). Also found sound, by reading: clearing as the spec defines it, the commit hash, the access controls, the recorded guard, the round lock limit and the sets cap.
 
-One fix was itself found faulty. After the second pass, specification 0.5 settled a void series at its average traded price. The third pass showed that wash trades between two accounts one person controls set that average for the cost of commit fees: in its test a reporter forced a void and took 19.40 USD of a counterparty's 20 USD stake (finding 3.1). Specification 0.6 replaced the rule with an even split at the centre of the band, one of the two remedies the reviewer named. The 0.6 rule has not been reviewed, and it leaves a smaller gain open: a reporter who holds a side bought below half the band and forces a void is paid half the band for it.
+One fix was itself found faulty. After the second pass, specification 0.5 settled a void series at its average traded price. The third pass showed that wash trades between two accounts one person controls set that average anywhere in the band for the cost of commit fees: in its test a trading reporter took 19.40 USD of a counterparty's 20 USD (finding 3.1). Specification 0.6 replaced the rule: a void series pays half the band on each side and reads nothing that was traded. The fourth pass checked that rule and found it sound against traders who are not reporters: wash trades, mints, merges and transfers before a void changed nothing.
 
-| # | Finding | Status in the review's own table (under 0.5) | Test |
+The verdict, as the record states it: fit for a public testnet with test dollars, with its reporters run by one known operator and these limits stated. Not fit for real dollars until, at least, the reporters are independent parties, numerous enough that one absence does not leave two reporters each able to veto any hour; blocking a round costs something that scales with what it blocks; the round lock limit is on by default; and the contract's NEAR balance and pruning have a funded owner.
+
+What stays open, at the deployed parameters (weekly preset, 0.10 USD fee, a 0.60 USD band on a 2.00 USD index):
+
+| # | Open | Size | Test |
 |---|---|---|---|
-| 1.1, 1.2, 1.7 | One reporter could steer the index; one silent reporter could freeze it; reporting out of order bypassed the move limit | Closed: the median of all reports, no move limit | `audit_one_reporter_can_no_longer_steer_the_index` and two more |
-| 1.3 | Minting `u64::MAX` sets froze a series (critical on testnet) | Closed: the mint cap | `audit_open_sets_can_no_longer_overflow` |
-| 1.6 | Changing the guard after commit cancelled an order for free | Closed: the commit records the guard | `audit_guard_change_after_commit_no_longer_cancels` |
-| 1.4, 2.4 | An agent key can burn its account's balance at 1% plus the fee per round when no round lock limit is set | Theft closed (forfeits are burned); destruction a stated limit. The deploy tool sets the limit for the agents it creates | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
-| 1.8 | Storage grows unless someone prunes | Partly closed: anyone may prune; nobody is paid to | `audit_storage_bytes_per_object_and_pruning` |
-| 2.1 | With one reporter absent, one dishonest reporter chooses which hours print and leans each print by up to 1% (fixing 2.121 for a true 2.000 in the test) | **Open** | `limit_one_reporter_selects_which_buckets_print` |
-| 2.3 | Blocking a round costs `max_commits × commit_fee`: 6.40 USD a round at the ten-cent fee, about 1,075 USD a week | **Open** | `limit_blocking_a_round_costs_1_28_dollars` (a 0.02 USD fixture) |
-| 2.5 | Not revealing changes who else is filled: a last look for 1% of the lock plus the fee | Stated limit | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
-| 2.7 | `new` accepts unwise parameters | Quorum of 1 in 3 closed (a majority is required); the rest stated | `audit2_a_quorum_of_one_in_three_is_refused` |
-| 2.2, 3.1 | A forced void paid mid-band (0.4); under 0.5 the void payout could be set by wash trades | 3.1 **open** under 0.5. In 0.6 a void pays half the band and reads nothing traded; the authors' test shows the wash trade now costs only its fees. Not reviewed | `audit3_wash_trades_no_longer_set_the_void_payout` |
-| (0.6) | A reporter who holds a side bought cheaply can force a void and be paid half the band for it | Open, stated by the authors: up to 0.299 USD a unit at a 0.60 USD band (the presets' 15% on a 2.00 USD index) | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
-| 2.6, 2.8 to 2.11 | One account takes the mint cap; pending-bucket growth; early pruning; a lagging guard reference; a view limit | Stated limit or open, low or note | see the record |
+| 2.1 | With one reporter absent, one dishonest reporter chooses which hours print and leans each print | About 0.029 USD a unit, 4.8% of the band, at an hourly spread the reviewer assumed (1% of the index), not measured | `limit_one_reporter_selects_which_buckets_print` |
+| 3.2 (and 2.2) | A reporter holding a side bought cheaply forces a void and is paid half the band | Up to 0.299 USD a unit, 49.8% of the band. Needs 43 of 168 hours without a print | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
+| 2.3 (and 1.5) | Blocking a round | 6.40 USD a round, about 1,075 USD a week, plus capital above the largest honest lock | `limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee` |
+| 2.4 | An agent key burns an account with no round lock limit at 1% plus the fee a round | The deploy tool sets the limit for the agents it creates; the limit is off by default | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
+| 2.5 | Not revealing changes who else is filled: a last look | 1% of the lock plus 0.10 USD | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
+| 1.8 | Nobody is paid to prune or to send the contract NEAR | A low balance stops reports, and settlement then turns void | `audit_storage_bytes_per_object_and_pruning` |
+| 2.6, 2.7 | One account can take a series' mint cap; `new` still accepts unwise parameters (a 100% spread, two reporters, no fee and no forfeit) | Read `get_params` before trusting a deployment | `limit_one_account_can_take_the_whole_mint_cap`, `limit_unwise_parameters_are_still_accepted` |
+| 2.8 to 2.11, 4.1 | Pending-bucket growth; early pruning; a lagging guard reference; a view limit; a void caused only indirectly by draining the contract's NEAR | Low or note; found by reading, not tested | none |
 
-The review's verdict: fit for a public testnet with test dollars, not for real dollars in its 0.5 form.
+Closed, each with a test that keeps the attack and asserts it fails: one reporter steering, freezing or reordering the index (1.1, 1.2, 1.7); the mint overflow (1.3); forfeits paid to an accomplice (1.4, theft part); changing the guard after commit (1.6); a quorum below a majority (part of 2.7); the 0.5 void payout set by wash trades (3.1).
 
 ## Contracts and accounts
 
@@ -178,14 +178,14 @@ Nothing is deployed yet, on testnet or mainnet. `deployments.json` lists no mark
 
 - **The index has no print.** A chip with fewer than 6 providers or 3 rate cards gets no index for that hour. If Shadeform is down, every chip is. A series with too few prints is void and pays both sides half the band: the hedge is cancelled.
 - **Reporters disagree or are wrong.** One operator runs all three reporters from one fetch, so the quorum protects against a failed transaction, not a wrong price. Two reporters agreeing can set any price. Nothing on chain checks a report against its bundle.
-- **One reporter is absent and another is dishonest.** The dishonest one can choose which hours print and so move the fixing, or veto enough hours to make the series void, which pays half the band to a side it may have bought cheaply: up to 0.299 USD a GPU-hour at a 0.60 USD band, shown by `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` (finding 2.1, open).
+- **One reporter is absent and another is dishonest.** The dishonest one can choose which hours print and lean each print, about 0.029 USD a GPU-hour at an assumed hourly spread (finding 2.1, open). Or it can veto 43 of 168 hours to make the series void, which pays half the band to a side it may have bought cheaply: up to 0.299 USD a GPU-hour at a 0.60 USD band (finding 3.2, open).
 - **The index moves more than 15% in a week.** Payouts stop at the band; the rest is not hedged. This happened once in 69 backtest weeks.
 - **The buyer's provider does not follow the index.** The hedge then adds risk (Lambda in the backtest).
 - **Nobody bids on one side.** A round with no crossing orders does not trade.
 - **A bidder with capital blocks a round.** It fills all 64 slots with larger locks; it costs 6.40 USD a round in fees at the presets.
 - **A late revealer takes a last look.** Not revealing costs 1% of the lock and the fee, and can change who else is filled.
 - **The keeper stops.** Reveals are missed and each commit forfeits 1% of its lock. Rounds still clear and series still settle when anyone calls them.
-- **The contract runs short of NEAR for storage.** Reports, commits and settlement fail until someone sends it NEAR; no dollars are at risk. Nobody is paid to prune or to send NEAR.
+- **The contract runs short of NEAR for storage.** Reports, commits and settlement fail until someone sends it NEAR; no dollars are stolen, but a series whose hours go unreported settles void. Nobody is paid to prune or to send NEAR.
 - **An agent's account has no round lock limit.** A stolen agent key can then burn 1% of the balance plus the fee every round (finding 2.4).
 
 ## Not built yet
@@ -198,7 +198,7 @@ Nothing is deployed yet, on testnet or mainnet. `deployments.json` lists no mark
 - **No external audit firm, no formal verification and no reproducible build** (`contracts/build.sh` builds `non-reproducible-wasm`).
 - **The keeper needs a paid plan or a machine that stays on.** On the Cloudflare free plan, its index ticks exceed the 10 ms CPU limit and it needs about 11,600 store writes a day against 1,000 ([`keeper/README.md`](keeper/README.md), Cloudflare's published limits, not tried against an account).
 - **Funding through NEAR Intents.** Dry quotes only; no transfer.
-- **The weekly preset end to end.** The sandbox runs covered whole series of the hourly demo market; a weekly market ran for 90 minutes alongside.
+- **The weekly preset end to end.** The sandbox runs covered whole series of the hourly demo market; in the third run an H200 weekly market ran 2.6 hours of its week alongside, so its pruning, settlement and redemption were not exercised on chain.
 - **Raw source bodies are not published by the keeper.** The committed evidence has them; a live deployment would publish bundles only.
 
 ## Repository
