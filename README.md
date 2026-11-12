@@ -2,13 +2,15 @@
 
 Weir runs sealed-bid, single-price, week-ahead auctions on the price of one GPU-hour, on NEAR. It is for people who rent GPU time and want to fix next week's price today, and for people who own GPUs and want to fix what they will earn. There is one market per chip: H100 (weekly, plus an hourly demo market that runs 168 times faster), H200 weekly and A100 80 GB weekly. Buyers of compute buy LONG, owners of GPUs buy SHORT. Every position is paid in full when it opens, so nothing is ever liquidated. A series settles on the average of a public GPU price index over its delivery week. AI agents can bid with NEAR function-call keys that cannot withdraw.
 
+**Where it runs.** The four markets are deployed on NEAR testnet with a test dollar ([Contracts and accounts](#contracts-and-accounts)). Nothing is on mainnet. `make judge` checks the repository and reads the deployment back from testnet, with no keys.
+
 ## The problem
 
 GPU rental prices move, and the bill for next week is not known when the work is planned. In the backtest in this repository (69 delivery weeks of H100 on-demand prices, 2025-04-14 to 2026-11-02), the weekly average moved between -9.4% and +22.5% against the price known 8 to 10 days earlier, and the weekly average went from 2.63 USD (week of 2026-01-26) to 4.26 USD (week of 2026-10-26) per GPU-hour. For a team running 8 GPUs around the clock (1,344 GPU-hours a week), the part of the weekly bill that was not known when the auction would have opened had a standard deviation of 184.72 USD. These figures are list prices, not trades; see [Backtest](#backtest).
 
 ## Try it with no keys
 
-The site is not deployed yet. To run it locally in model mode (every view answered by the engine, no chain): `pnpm install`, then `make web`, then open http://localhost:3000.
+The site is not deployed publicly yet. To run it locally in model mode (every view answered by the engine, no chain): `pnpm install`, then `make web`, then open http://localhost:3000. Run as `pnpm --filter @weir/web dev`, without `WEIR_MODEL=1`, it reads the testnet markets listed in `deployments.json`.
 
 From a clone, with Node 22.18 or newer, pnpm 10 and Python 3:
 
@@ -19,8 +21,8 @@ make judge
 
 | Do | See |
 |---|---|
-| `make judge` | Everything below except the last three rows, then a summary of what was and was not checked. 2 s on an Apple-silicon laptop, plus one network call |
-| `make verify` | The four recorded index bundles (the first H100 print and the newest H100, H200 and A100 80 GB prints) recomputed from the raw source bodies and re-hashed: 113, 115, 76 and 90 checks. The engine reproducing all 4,584 cases the contract wrote to `vectors/`. "no deployment recorded yet" |
+| `make judge` | Everything below except the last three rows, then a summary of what was and was not checked. On 2026-11-12 on an Apple-silicon laptop it took 83 s, almost all of it the read-back from testnet, which waits out the public RPC's rate limits (the keeper was using the same endpoint from the same machine); the steps without the network take about 2 s |
+| `make verify` | The four recorded index bundles (the first H100 print and the newest H100, H200 and A100 80 GB prints) recomputed from the raw source bodies and re-hashed: 113, 115, 76 and 90 checks. The engine reproducing all 4,584 cases the contract wrote to `vectors/`. The testnet deployment record (`evidence/deploy/testnet-w1.json`) read back from the chain with read-only RPC calls: code hashes, parameters, reporters and every operator key, 41 of 41 checks matching, plus each market's last print and status |
 | `make sim` | 30 agents (20 buyers, 5 sellers, 2 makers, 3 noise traders) trading the hourly H100 demo market on the engine: 20 of 20 rounds traded, both series settled and redeemed, and a money check (deposits equal free balances plus locks plus backing plus unredeemed plus burned) that the target asserts |
 | `make backtest` | The backtest recomputed from `backtest/data/derived/`, its four result files compared byte for byte with the committed ones, then `backtest/scripts/verify.py` recomputing 900 numbers in Python with 0 mismatches |
 | `make quote-dry` | A live NEAR Intents dry quote for 20 USDC from Arbitrum to NEAR. Nothing is sent. If the service cannot be reached or does not quote the pair, it says which and still exits 0 |
@@ -38,7 +40,10 @@ make judge
 | On a local NEAR node, the real wasm and the engine agree on every result, event, view and refusal | `make test-sandbox` (integration `e2e`). Third run, specification 0.6 ([`integration/RESULTS.md`](integration/RESULTS.md)): 264 of 264 checks passed; 1,315 state changes and 2,315 views compared with no difference, 61 refusals among them, word for word; 549 s. That run used the wasm built before the contracts were formatted with rustfmt (sha256 `40583288…110c`). The same command was rerun on the formatted, current build (`13536f3b…413c`, same size, 303,753 bytes): 264 of 264 checks, 1,315 calls and 2,315 views with no difference, 533 s | Test on the authors' machine, local sandbox only |
 | Solvency (the contract's USDC equals free balances, locks, backing, unredeemed payouts and burned dollars) and the other invariants of spec section 11 | `make test-contracts`: property tests over 2,000 random order books per clearing invariant and 96 random sequences of up to 300 calls, each ended by clearing, settling and redeeming everything; the engine's own 300 random sequences in `pnpm --dir engine test` | Test on this machine |
 | An index print can be recomputed by anyone | `make verify-index`: every provider value and the index re-derived from the offers and from the raw responses, and the bundle hash recomputed | Recomputation from committed data |
-| An agent's function-call key can trade but cannot withdraw, move positions or change its limits | `make test-sandbox`: the sandbox test `a_function_call_key_trades_but_cannot_move_money`, and the integration run (refused before any code runs: `withdraw`, `set_guard`, `transfer_position`, `register`, deposits) | Test on a local sandbox node. Not yet shown on a public network |
+| An agent's function-call key can trade but cannot withdraw, move positions or change its limits | `make test-sandbox`: the sandbox test `a_function_call_key_trades_but_cannot_move_money`, and the integration run (refused before any code runs: `withdraw`, `set_guard`, `transfer_position`, `register`, deposits) | Test on a local sandbox node. On testnet the agents' function-call keys are in place as recorded (`make verify-deploy`); a refusal on testnet has not been shown |
+| The four markets on testnet run the code and parameters the record says | `make verify-deploy`: 41 of 41 checks matched at 2026-11-12 01:00 UTC (code hash `2JSY6cDZx8hVWUCy91w6BBUmJ49W4CZRAsT1DueHHaNw` on all four markets, `get_params` against the record, reporters, every operator's function-call keys) | Read from a public chain |
+| The three chips' indexes are reported on chain | `make verify-deploy` prints each market's last print: at 2026-11-12 01:00 UTC, H100 2.9175 USD (hourly market, bucket 00:55 UTC; weekly market, bucket 00:00 UTC), H200 4.47 USD and A100 80 GB 1.55125 USD (bucket 00:00 UTC) | Read from a public chain |
+| A round was committed, revealed and cleared on a public network | Transaction [`9vdpG85K…uNf3X`](https://testnet.nearblocks.io/txns/9vdpG85KFUP6RBVrrgi2vY4MpiDiPrPajV5B94SuNf3X): `keeper.weir-ops-w1.testnet` called `clear` on round 11 of series 0 of the hourly market; its event reads LONG price 0.394 USD, 91 GPU-hours, no forfeits, 0.70 USD of fees burned, and `get_results` reads 7 commits and 7 revealed orders (an RPC `tx` call and a view call, 2026-11-12). The keeper drives the agents with function-call keys only (`deploy/README.md`, `keeper.env`) | Read from a public chain; the key that signed each commit was not checked one by one |
 | Clearing a full round fits in one transaction | `make test-sandbox`: `clearing_a_full_round_fits_in_one_transaction`. Measured on 2026-11-12: about 26.6 Tgas for 64 commits (the presets' limit) and 51.5 Tgas for 128 (the contract's limit) in this test ([`contracts/README.md`](contracts/README.md)); 50.48 Tgas for 128 in the third integration run. The chain client attaches 150 Tgas to `clear`. Every commit from a different account, revealed and filled | Test on a local sandbox node |
 | The backtest's numbers follow from its data | `make backtest`: byte-identical results and an independent Python recomputation of 900 numbers | Recomputation from committed data. The data itself was fetched once by the authors (`backtest/data/derived/provenance.json` lists every file with its sha256) |
 | The contract has no owner, no admin method and no upgrade method | Reading `contracts/weir/src/lib.rs`: the only `#[private]` method is the withdraw callback | Statement by the authors, checked by the review in [`docs/AUDIT.md`](docs/AUDIT.md) |
@@ -128,9 +133,9 @@ Method, sources, licences and every table: [`backtest/README.md`](backtest/READM
 
 ## NEAR pieces
 
-- **Function-call access keys** are the agent boundary, enforced by the protocol, not by Weir's code. A key limited to the trading methods cannot attach a deposit, and `withdraw`, `set_guard` and `transfer_position` require exactly 1 yoctoNEAR, so an agent key cannot reach them. The contract adds two limits the key cannot change: the guard and the round lock limit. Shown on a local sandbox node; not yet on a public network.
-- **Named sub-accounts.** The deploy tool gives each agent and reporter its own account under one operator account (`h100-weekly-buyer-1.weir-ops-<suffix>.testnet`), each with its own key and allowance. Run on a sandbox only.
-- **A contract with no keys.** The contract has no owner or upgrade method. `node deploy/src/cli.ts seal` deletes the contract account's keys, after which its code cannot change; the sealed sandbox market still took reports and commits. Not done on a public network.
+- **Function-call access keys** are the agent boundary, enforced by the protocol, not by Weir's code. A key limited to the trading methods cannot attach a deposit, and `withdraw`, `set_guard` and `transfer_position` require exactly 1 yoctoNEAR, so an agent key cannot reach them. The contract adds two limits the key cannot change: the guard and the round lock limit. The refusals are shown on a local sandbox node. On testnet each agent holds one function-call key for its market's contract, read back by `make verify-deploy`; each agent account also has a full-access key, held by the operator.
+- **Named sub-accounts.** The deploy tool gives each agent and reporter its own account under one operator account (`h100-weekly-buyer-1.weir-ops-<suffix>.testnet`), each with its own key and allowance. On testnet: 3 reporters, 6 agents per market and 1 keeper account under `weir-ops-w1.testnet`.
+- **A contract with no keys.** The contract has no owner or upgrade method. `node deploy/src/cli.ts seal` deletes the contract account's keys, after which its code cannot change; the sealed sandbox market still took reports and commits. **Not done on testnet**: each testnet contract still has the deployer's full-access key.
 - **Cheap, frequent transactions.** A weekly market has 168 rounds, so an active agent sends up to 336 commits and reveals a week. Measured on the sandbox (third integration run), a commit burns 2.97 Tgas and a reveal 2.51 Tgas at the median. At the gas price read on testnet on 2026-11-12 (0.0001 NEAR per Tgas), that is about 0.0003 NEAR each.
 - **NEAR Intents.** `make quote-dry` and the site take live dry quotes from the 1Click API for moving USDC from Arbitrum, Base, Ethereum or Solana to NEAR. The client refuses anything but a dry quote. No transfer has been made through Intents.
 
@@ -161,18 +166,30 @@ Closed, each with a test that keeps the attack and asserts it fails: one reporte
 
 ## Contracts and accounts
 
-Nothing is deployed yet, on testnet or mainnet. `deployments.json` lists no market.
+Deployed on NEAR testnet on 2026-11-12, 00:25 to 00:46 UTC, by `node deploy/src/cli.ts apply --network testnet --suffix w1`: 34 accounts and 211 transactions. The public record, with every account, the parameters as read from chain, every public key with its allowance and every transaction hash, is [`evidence/deploy/testnet-w1.json`](evidence/deploy/testnet-w1.json). `make verify-deploy` reads it back from the chain with no keys. Nothing is deployed on mainnet.
 
-<!-- TO FILL after the testnet deployment: one row per account, from deploy/out/testnet/record.json. -->
+| Account | What it is | Code |
+|---|---|---|
+| [`weir-h100-fast-w1.testnet`](https://testnet.nearblocks.io/address/weir-h100-fast-w1.testnet) | H100 hourly demo market: one-hour series, 12 five-minute rounds each | `contracts/weir`, preset `fast` |
+| [`weir-h100-weekly-w1.testnet`](https://testnet.nearblocks.io/address/weir-h100-weekly-w1.testnet) | H100 weekly market | `contracts/weir`, preset `weekly` |
+| [`weir-h200-weekly-w1.testnet`](https://testnet.nearblocks.io/address/weir-h200-weekly-w1.testnet) | H200 weekly market | `contracts/weir`, preset `weekly` |
+| [`weir-a100-80-weekly-w1.testnet`](https://testnet.nearblocks.io/address/weir-a100-80-weekly-w1.testnet) | A100 80 GB weekly market | `contracts/weir`, preset `weekly` |
+| [`weir-usdc-w1.testnet`](https://testnet.nearblocks.io/address/weir-usdc-w1.testnet) | The test dollar tUSDC, with an open mint. Not real USDC | `contracts/mock-usdc`, code hash `EHUUn9v3ghp6p4UJUPVXF1U5jKsuDVT1LXnjAE87Pd5C` |
+| [`weir-ops-w1.testnet`](https://testnet.nearblocks.io/address/weir-ops-w1.testnet) | Operator account. Its sub-accounts: `reporter-a`, `reporter-b`, `reporter-c` (one function-call key per market, `report` and `finalize_print`), six agents per market such as `h100-fast-buyer-1` (one function-call key for their market's trading methods), and `keeper` (housekeeping key per market) | none |
 
-| Contract or account | Network | Account | What it is |
-|---|---|---|---|
-| H100 weekly market | NEAR testnet | (not deployed) | `contracts/weir`, preset `weekly` |
-| H100 hourly demo market | NEAR testnet | (not deployed) | `contracts/weir`, preset `fast` |
-| H200 weekly market | NEAR testnet | (not deployed) | `contracts/weir`, preset `weekly` |
-| A100 80 GB weekly market | NEAR testnet | (not deployed) | `contracts/weir`, preset `weekly` |
-| Test dollar tUSDC (open mint) | NEAR testnet | (not deployed) | `contracts/mock-usdc` |
-| Operator account (reporters, agents, keeper) | NEAR testnet | (not deployed) | parent of every operator account |
+All four markets run `weir.wasm` with sha256 `13536f3b32299da4b352d34931e6ef200d8f34b173a3865892441d76d640413c`, code hash `2JSY6cDZx8hVWUCy91w6BBUmJ49W4CZRAsT1DueHHaNw`. `make verify-deploy` checks the code hash on chain against the record, and the record against the local build when one exists; it cannot show that the code was built from this source, because the build is not reproducible.
+
+**The contracts are not sealed.** Each market account and the token account still holds the deployer's full-access key, so the deployer can replace their code. `make verify-deploy` prints this for each one.
+
+**What went wrong in the deployment.** The first `apply` stopped at step 8 on a balance check that was wrong, and was resumed with one day of operator gas instead of two. The operators on testnet are funded for about one day of gas. Details, and the other problems that run found (a gas estimate, a deprecated RPC endpoint, a rate limit), are in `deploy/README.md`, section "Run against testnet".
+
+### What is running now, and what is not
+
+- **The weekly markets** are in the auction window of series 0 (round 73 of 168 at 01:00 UTC, `make verify-deploy`); series 0 delivers from 2026-11-16 00:00 UTC to 2026-11-23 00:00 UTC, so no weekly series can settle before 2026-11-23.
+- **The hourly demo market** auctions a one-hour series every hour, and each can be settled about a minute after its hour of delivery ends. Its first cleared round is the transaction above. At 2026-11-12 01:00 UTC its series 0 (delivery 01:00 to 02:00 UTC) had not settled yet (`get_series` read on chain); no settlement on testnet is claimed here.
+- **The keeper** runs as a Node loop on the author's laptop (`keeper/README.md`, option 2), not on Cloudflare. It fetches the live index for the three chips, has the three reporters post it, runs the agents and clears rounds. It stops when the laptop sleeps or the process ends, and nothing restarts it. This is the authors' statement; what it has done is visible on chain (`make verify-deploy` prints each market's last print and how old it is).
+- **The three reporters are the keeper's own accounts,** run by one operator from one fetch, as everywhere else in this README.
+- **The site** is not deployed publicly.
 
 ## When it fails
 
@@ -190,7 +207,7 @@ Nothing is deployed yet, on testnet or mainnet. `deployments.json` lists no mark
 
 ## Not built yet
 
-- **No deployment.** Nothing runs on testnet or mainnet. The deploy tool has run on a local sandbox only.
+- **No mainnet deployment, and no sealed contract.** The testnet contracts can still be replaced by their deployer.
 - **No mainnet and no real USDC.** The test dollar has an open mint.
 - **No AMD market.** Of the six sources only RunPod lists an AMD chip (MI300X), and one provider cannot make an index. B200 meets the provider count but its values spread by a factor of 2.7, so it is not offered either ([`index/METHOD.md`](index/METHOD.md)).
 - **Independent reporters.** One operator runs all three.
@@ -205,13 +222,13 @@ Nothing is deployed yet, on testnet or mainnet. `deployments.json` lists no mark
 
 | Path | What |
 |---|---|
-| `docs/SPEC.md` | The rules, version 0.5. The source of truth |
+| `docs/SPEC.md` | The rules, version 0.6. The source of truth |
 | `docs/AUDIT.md` | The independent review's record |
 | `contracts/` | The NEAR contract `weir` and the test dollar `mock-usdc`, Rust, near-sdk 5.30.1 |
 | `engine/` | The second implementation of the spec, TypeScript, no runtime dependencies |
 | `vectors/` | Test cases written by the contract, reproduced by the engine |
 | `index/` | The GPU price indexes: sources, method, bundles, verifier |
-| `evidence/` | Recorded index bundles and their raw responses ([`evidence/README.md`](evidence/README.md)) |
+| `evidence/` | Recorded index bundles and their raw responses, and the testnet deployment record ([`evidence/README.md`](evidence/README.md)) |
 | `chain/` | NEAR JSON-RPC client that signs its own transactions; NEAR Intents dry quotes |
 | `agents/` | Trading strategies, the swarm runner and the simulation |
 | `keeper/` | The scheduled job: index reports, agents, clearing, settlement, pruning |

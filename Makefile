@@ -1,7 +1,8 @@
 # Weir. Run `pnpm install` first. Every target prints what it checked.
 #
-#   make judge      no keys, no funds, no Rust; 2 s on an Apple-silicon laptop, plus network calls: one quote, and
-#                   read-only RPC calls for each deployment record in evidence/deploy/
+#   make judge      no keys, no funds, no Rust. About 2 s without the network; with the testnet read-back it took
+#                   83 s on 2026-11-12 (the deploy tool's author reports 13 s), most of it waiting out public RPC rate limits.
+#                   Network calls: one dry quote, and read-only RPC calls for each record in evidence/deploy/
 #   make test       every suite without a running node; needs Rust 1.96 and cargo-near 0.23 (about 2 min warm)
 #   make audit      the review's tests, with what each one shows (needs Rust)
 #   make test-sandbox   the slow suites on a local NEAR node (about 20 min)
