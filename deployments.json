@@ -1,7 +1,39 @@
 {
   "network": "testnet",
-  "rpc": ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"],
+  "rpc": [
+    "https://test.rpc.fastnear.com",
+    "https://near-testnet.drpc.org"
+  ],
   "explorer": "https://testnet.nearblocks.io",
   "bundles_base": null,
-  "markets": []
+  "markets": [
+    {
+      "id": "h100-fast",
+      "label": "H100, hourly (demo)",
+      "chip": "h100",
+      "contract": "weir-h100-fast-w1.testnet",
+      "usdc": "weir-usdc-w1.testnet"
+    },
+    {
+      "id": "h100-weekly",
+      "label": "H100, weekly",
+      "chip": "h100",
+      "contract": "weir-h100-weekly-w1.testnet",
+      "usdc": "weir-usdc-w1.testnet"
+    },
+    {
+      "id": "h200-weekly",
+      "label": "H200, weekly",
+      "chip": "h200",
+      "contract": "weir-h200-weekly-w1.testnet",
+      "usdc": "weir-usdc-w1.testnet"
+    },
+    {
+      "id": "a100-80-weekly",
+      "label": "A100 80 GB, weekly",
+      "chip": "a100-80",
+      "contract": "weir-a100-80-weekly-w1.testnet",
+      "usdc": "weir-usdc-w1.testnet"
+    }
+  ]
 }
