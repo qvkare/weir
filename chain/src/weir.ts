@@ -59,7 +59,7 @@ export const GAS_TGAS: { readonly [M in PortChange]: number } = {
   withdraw: 50,
   set_guard: 10,
   commit: 15,
-  reveal: 10,
+  reveal: 15,
   clear: 150,
   mint: 10,
   merge: 10,

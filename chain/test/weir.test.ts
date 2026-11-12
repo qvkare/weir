@@ -49,7 +49,7 @@ const SPEC_CHANGES: Record<string, { args: Record<string, unknown>; receiver: "w
     args: { series: 1, round: 2, seq: 3, side: "Short", size: 4, price: 5000, salt: "cd".repeat(16) },
     receiver: "weir",
     method: "reveal",
-    gas: 10n * TGAS,
+    gas: 15n * TGAS,
     deposit: 0n,
   },
   clear: { args: { series: 1, round: 2 }, receiver: "weir", method: "clear", gas: 150n * TGAS, deposit: 0n },

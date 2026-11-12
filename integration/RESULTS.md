@@ -117,6 +117,8 @@ on). Deciding a bucket costs about 0.4 Tgas; six would be about 4.7 Tgas, 3.2x u
    of 128 commits burned 4.61 Tgas against 10. Still over 2x, so not failing, but the thinnest
    margin in the table; propose 15, as `commit` now has. Everything else is between 2.95x and 7x
    (the deposit 14.6x, deliberately, for the unmeasured real USDC).
+   Done after this run: `GAS_TGAS.reveal` is 15 in `chain/src/weir.ts` (3.25x of the 4.61 Tgas
+   measured here). The table above shows the run as it was, with 10.
 2. **Sandbox only:** the harness's settings still need the one-million-block epoch to avoid the
    stall of the first run. A second run of `e2e` on the same machine (another session's) held
    port 33031 during this work; the harness now takes the first free port pair and
