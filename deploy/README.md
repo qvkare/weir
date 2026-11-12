@@ -439,6 +439,21 @@ What went wrong, and what was done:
   replaced by the policy above, which uses the client's own options and retries only on top of
   them.
 
+**Top-up, 2026-11-12, 07:38 to 07:42 UTC.** `node deploy/src/cli.ts topup --network testnet --days 7
+--rpc https://near-testnet.drpc.org,https://test.rpc.fastnear.com`, the first `topup` on testnet and
+the first run of this tool with the paced RPC client. It sent 45 transactions, each in
+`deploy/out/testnet/state.json` with its hash: two faucet accounts created, `weir-fund-w1-1.testnet`
+and `weir-fund-w1-2.testnet`, and each swept into `weir-ops-w1.testnet` (9.985 NEAR each, 0.010 NEAR
+left behind; both read 0.0149 NEAR on chain at 07:43 UTC); 28 NEAR transfers to operators, bringing each to seven days of gas at the
+expected rate (for example 0.730 NEAR to each reporter, which held 0.127 NEAR); 4.449 NEAR to
+`weir-h100-fast-w1.testnet`, whose spare balance covered less than seven days of unpruned prints
+(1.487 NEAR a day); and test dollars minted to and deposited by the six agents of the hourly market
+(for example 195.00 tUSDC for `h100-fast-buyer-1`). No key was rotated. An earlier attempt at about
+01:00 UTC was stopped before it sent anything, because it competed with the running keeper for the
+same free RPC limit. So the operators are funded for about seven days from 07:42 UTC, not one.
+Still not shown: `apply` with the paced client, and what the faucet does after two accounts in a
+row.
+
 Not yet shown on testnet:
 
 - **`topup` against the faucet**: how many fund accounts in a row the faucet allows.
