@@ -63,10 +63,12 @@ export const BURNT_GGAS = {
   deposit: 6_850n,
   storage_deposit: 1_950n,
   mint: 2_040n,
-  /** Estimates for transactions of setup actions only (create, transfer, add key): their fees
-   * are fractions of a Tgas each; the sandbox run reports the real figures. */
+  /** Estimates for transactions of setup actions only (create, transfer, add key). `add_key`: the
+   * testnet run of 2026-11-12 burnt at most 0.644 Tgas over 40. `create_subaccount` was estimated
+   * at 1.0 Tgas; the same run burnt 8.573 Tgas at most over 28 (create, transfer 1 key, add key),
+   * so it is that, rounded up. */
   add_key: 500n,
-  create_subaccount: 1_000n,
+  create_subaccount: 8_600n,
 } as const;
 
 export const yocto = (ggas: bigint, gasPrice = MIN_GAS_PRICE): bigint => ggas * GGAS * gasPrice;
@@ -280,6 +282,34 @@ export function opsBudget(l: Layout, ops: readonly OperatorBudget[]): OpsBudget 
     `kept to send its last transaction (10 Tgas bought at ${GAS_PURCHASE_PRICE} yocto/gas, plus 0.02 NEAR attached): ${fmtNear(keep)}`,
   ];
   return { transfers, creation, storageDeposits, registrations, gasGgas, keep, total, lines };
+}
+
+/** What the ops account must hold before the steps it still signs, by the same reasoning as
+ * `opsBudget`: what each step really spends (attached NEAR, the account creation charge, gas burnt
+ * at `gasPrice`), plus the purchase price of the largest attached gas, which is held only while
+ * that one transaction is in flight and mostly comes back. `apply` checks this; it is at most
+ * `opsBudget(...).total` for the whole plan. Until 2026-11-12 the check summed the purchase price
+ * of every step's attached gas (1.23 NEAR for 112 steps) and refused a 10 NEAR grant that `plan`
+ * said fits (deploy/README.md, "Run against testnet"). */
+export function opsNeed(
+  steps: readonly { kind: string; attached: bigint; gasTgas: bigint }[],
+  gasPrice = MIN_GAS_PRICE,
+): { spend: bigint; held: bigint; total: bigint } {
+  const burnt: Record<string, bigint> = {
+    "create-sub": BURNT_GGAS.create_subaccount,
+    storage: BURNT_GGAS.storage_deposit,
+    mint: BURNT_GGAS.mint,
+    register: BURNT_GGAS.register,
+  };
+  let spend = 0n;
+  let held = 0n;
+  for (const s of steps) {
+    spend += s.attached + yocto(burnt[s.kind] ?? (s.gasTgas > 0n ? s.gasTgas * 1000n : 1_000n), gasPrice);
+    if (s.kind === "create-sub") spend += ACCOUNT_CREATION_CHARGE;
+    const p = purchase(s.gasTgas * 1000n);
+    if (p > held) held = p;
+  }
+  return { spend, held, total: spend + held };
 }
 
 /** What a contract account needs: its code's storage, plus the deploy transaction. The rest of

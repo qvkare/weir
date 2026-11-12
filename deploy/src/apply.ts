@@ -7,7 +7,7 @@ import { TOKEN_CALLS } from "../../chain/src/token.ts";
 import { utf8Encode, type KeyPair } from "../../chain/src/tx.ts";
 import type { WireAccount, WireParams } from "../../engine/src/mod.ts";
 import { MARKETS } from "../../agents/src/presets.ts";
-import { ACCOUNT_CREATION_CHARGE, contractNeed, fmtNear, GAS_PURCHASE_PRICE, purchase, STORAGE_PER_BYTE, TGAS } from "./budget.ts";
+import { ACCOUNT_CREATION_CHARGE, contractNeed, fmtNear, GAS_PURCHASE_PRICE, opsNeed, STORAGE_PER_BYTE, TGAS } from "./budget.ts";
 import { NO_CODE, type DeployAction, type DeployChain, type KeyView, type Sent } from "./chain.ts";
 import type { Keystore } from "./keys.ts";
 import { NEW_GAS_TGAS, type Plan, type Step } from "./steps.ts";
@@ -190,19 +190,20 @@ async function run(ctx: ApplyContext, step: Step): Promise<{ hash: string | null
   }
 }
 
-/** Before the first step the ops account pays for, checks it can pay for all the remaining ones. */
-async function checkOpsBalance(ctx: ApplyContext, pending: Step[]): Promise<void> {
+/** Before the first step the ops account pays for, checks it can pay for all the remaining ones:
+ * what they spend plus the largest single purchase of attached gas held at a time (`opsNeed`, the
+ * planner's own reasoning). */
+async function checkOpsBalance(ctx: ApplyContext, pending: Step[], gasPrice: bigint): Promise<void> {
   const l = ctx.plan.layout;
   const mine = pending.filter((s) => s.signer === l.ops);
   if (mine.length === 0) return;
   const acct = await ctx.chain.account(l.ops);
   if (!acct) return;
-  // Attached NEAR, attached gas at the purchase price (an upper bound on what it burns), and the
-  // creation charge of every account it creates.
-  const need = mine.reduce((s, x) => s + x.attached + (x.gasTgas > 0n ? purchase(x.gasTgas * 1000n) : 0n) + (x.kind === "create-sub" ? ACCOUNT_CREATION_CHARGE + 10n ** 21n : 0n), 0n);
-  if (BigInt(acct.amount) < need) {
+  const need = opsNeed(mine, gasPrice);
+  if (BigInt(acct.amount) < need.total) {
     throw new StepError(
-      `${l.ops} holds ${fmtNear(BigInt(acct.amount))} but the ${mine.length} steps it still has to pay for need up to ${fmtNear(need)}. ` +
+      `${l.ops} holds ${fmtNear(BigInt(acct.amount))} but the ${mine.length} steps it still has to pay for need ${fmtNear(need.total)} ` +
+        `(${fmtNear(need.spend)} spent, ${fmtNear(need.held)} held while its largest call is in flight). ` +
         "Send it the difference, or lower --days, then run apply again.",
     );
   }
@@ -248,7 +249,7 @@ export async function apply(ctx: ApplyContext): Promise<ApplyResult> {
       opsChecked = true;
       const pending: Step[] = [];
       for (const s of steps.slice(i)) if (s.signer === ctx.plan.layout.ops && !ctx.state.steps[s.id]) pending.push(s);
-      await checkOpsBalance(ctx, pending);
+      await checkOpsBalance(ctx, pending, pc.gasPrice);
     }
     const r = await run(ctx, step);
     ctx.state.steps[step.id] = {

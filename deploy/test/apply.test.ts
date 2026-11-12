@@ -12,6 +12,7 @@ import { seal } from "../src/seal.ts";
 import { newState, readState } from "../src/state.ts";
 import { renderStatus, status } from "../src/status.ts";
 import { buildPlan } from "../src/steps.ts";
+import { ASSUMED_GRANT, DEFAULT_DAYS, opsBudget, opsNeed, purchase } from "../src/budget.ts";
 import { FakeChain, fakeWasm, Killed } from "./fake.ts";
 
 const dirs: string[] = [];
@@ -134,6 +135,33 @@ test("the ops account is checked before it pays for anything", async () => {
   const s = setup(chain);
   await assert.rejects(apply(s.ctx), /holds 2\.000 NEAR but the \d+ steps it still has to pay for need/);
   assert.equal(chain.sends.filter((x) => x.signer === s.l.ops).length, 0);
+});
+
+test("the ops check agrees with plan: a 10 NEAR grant pays for the default four-market plan; one yocto short is refused", async () => {
+  // The first testnet run (2026-11-12, --days 2) stopped here: the old check summed the purchase
+  // price of every step's attached gas and asked 11.010 NEAR of a 10 NEAR grant that plan said fits.
+  const l4 = layout(sandboxNetwork("http://fake"), "g1", ["h100-fast", "h100-weekly", "h200-weekly", "a100-80-weekly"]);
+  const plan4 = buildPlan(l4, DEFAULT_DAYS);
+  const opsSteps = plan4.steps.filter((x) => x.signer === l4.ops);
+  const need = opsNeed(opsSteps);
+  const planned = opsBudget(l4, plan4.budgets).total;
+  assert.ok(need.total <= planned, `the check (${need.total}) asks no more than plan's budget (${planned})`);
+  assert.ok(planned <= ASSUMED_GRANT);
+  assert.equal(need.held, purchase(10_000n), "held: the largest attached gas of an ops step, 10 Tgas (register), plus 5 Tgas of fees, at the purchase price");
+  const run = async (grant: bigint) => {
+    const chain = new FakeChain(wasm);
+    chain.grant = grant;
+    const keys = new Keystore(tmp(), { seed: recognisableSeeds(), redactor: new Redactor() });
+    keys.loadAll(l4.accounts.map((a) => a.id), "g1");
+    const state = newState("sandbox", "g1", l4.markets, "2026-11-12T00:00:00.000Z");
+    return { chain, p: apply({ chain, keys, plan: plan4, wasm, out: tmp(), state, log: () => {} }) };
+  };
+  const ten = await run(ASSUMED_GRANT);
+  const r = await ten.p;
+  assert.equal(r.sent, plan4.steps.length);
+  const short = await run(need.total - 1n);
+  await assert.rejects(short.p, /weir-ops-g1\.test\.near holds 9\.\d{3} NEAR but the \d+ steps it still has to pay for need .* held while its largest call is in flight/);
+  assert.equal(short.chain.sends.filter((x) => x.signer === l4.ops).length, 0, "refused before ops sends anything");
 });
 
 test("no secret in any log line, the state file, the record or deployments.json; all of them in keeper.env", async () => {

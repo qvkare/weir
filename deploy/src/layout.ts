@@ -22,7 +22,9 @@ export interface Network {
 
 export const TESTNET: Network = {
   id: "testnet",
-  rpc: ["https://test.rpc.fastnear.com", "https://rpc.testnet.near.org"],
+  // Not rpc.testnet.near.org: on 2026-11-12 it answered HTTP 429 "THIS ENDPOINT IS DEPRECATED" to
+  // every request (deploy/README.md, "Run against testnet").
+  rpc: ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"],
   explorer: "https://testnet.nearblocks.io",
   root: "testnet",
   creation: "faucet",

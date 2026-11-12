@@ -10,7 +10,7 @@ What Weir has recorded, kept so that anyone can check it without trusting the au
 | `bundles/1794423600-1c0e2cb8b9c8.raw/` | The six raw responses behind that print, one file per source | the same run | the same: each file's sha256 against the bundle, then re-parsed |
 | `bundles/<chip>/<bucket>-<hash12>.json` | One bundle per chip per run, method `weir-gpu-od/2`. `<chip>` is `h100`, `h200` or `a100-80` | `node index/src/cli.ts fetch --chip all --out evidence/bundles`, or `make index OUT=evidence/bundles` | `make verify-index`, or `node index/src/cli.ts verify <file>` |
 | `bundles/raw/<sha256>.json` | Every raw response body of version-2 runs, stored once by its own sha256, however many chips share it | the same fetch | the verifier finds each body by the `raw_sha256` in the bundle and checks it |
-| `deploy/` | Not present yet. Deployment records from `node deploy/src/cli.ts apply` (`record.json`: accounts, code hashes, parameters as read from chain, public keys, transaction hashes) | the deploy tool, then copied here by hand | `make verify-deploy`, which today prints "no deployment recorded yet" and fails if a record appears before a read-back is wired in |
+| `deploy/<network>-<suffix>.json` | A deployment record (below) | `node deploy/src/cli.ts apply`, which writes `deploy/out/<network>/record.json`; copied here by hand | `make verify-deploy`, or `node deploy/src/cli.ts verify <file>`: read back from the public chain with no keys |
 
 Recorded today: the version-1 H100 print and one version-2 run of all three chips (bucket 1794430800, 2026-11-11 21:00 UTC, fetched 21:54 UTC): H100-OD 2.90 USD, H200-OD 4.25 USD, A100-80-OD 1.55125 USD, with 8 raw bodies (1.2 MB).
 
@@ -24,7 +24,27 @@ A bundle is the canonical JSON of one index computation: every provider with its
 
 It cannot show that the raw bodies are what the sources really served at that time: they were fetched by the authors. Re-fetching gives today's prices, not the recorded ones. What makes a past print checkable is that its bundle hash, once posted on chain, fixes these files.
 
+## deploy/: deployment records
+
+A record is the `record.json` the deploy tool writes when `apply` finishes: the tool version, the
+sha256 and NEAR code hash of each wasm it deployed, every account it created and why, each market's
+parameters as read from the chain, every public key with its kind (full access, or function call
+with its receiver contract, method list and allowance), the agents' deposits and limits, and
+every transaction hash with its purpose. It holds no secret key (`apply` refuses to write one).
+
+```sh
+node deploy/src/cli.ts verify evidence/deploy/<file>.json          # what make verify-deploy runs for each file
+node deploy/src/cli.ts verify evidence/deploy/<file>.json --txs    # also looks up every transaction hash
+```
+
+`verify` reads the chain and checks code hashes, parameters, reporters and every function-call key
+against the record, and says whether each contract is sealed. It does not show that the reporters
+are honest, that the keeper is running, or that the code was built from this source unless you
+build the wasm yourself; `deploy/README.md`, "Reading a record back", says what it shows and what
+it does not. A record is a snapshot: after a key rotation or a seal, the new `record.json` must be
+copied here again.
+
 ## What is not here yet
 
-- Deployment records and run records from a public network: nothing is deployed.
-- Records of transactions. When they exist, the site reads any JSON file under `evidence/` outside `bundles/` that lists objects with a transaction hash (`web/lib/evidence.ts`).
+- Run records (trading, settlement) from a public network.
+- Records of transactions beyond those in the deployment records. When they exist, the site reads any JSON file under `evidence/` outside `bundles/` that lists objects with a transaction hash (`web/lib/evidence.ts`).

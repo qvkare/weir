@@ -1,6 +1,7 @@
 # Weir. Run `pnpm install` first. Every target prints what it checked.
 #
-#   make judge      no keys, no funds, no Rust; 2 s on an Apple-silicon laptop, plus one network call
+#   make judge      no keys, no funds, no Rust; 2 s on an Apple-silicon laptop, plus network calls: one quote, and
+#                   read-only RPC calls for each deployment record in evidence/deploy/
 #   make test       every suite without a running node; needs Rust 1.96 and cargo-near 0.23 (about 2 min warm)
 #   make audit      the review's tests, with what each one shows (needs Rust)
 #   make test-sandbox   the slow suites on a local NEAR node (about 20 min)
@@ -34,10 +35,16 @@ judge:
 	echo "Not checked by make judge:"; \
 	echo "  - the Rust contract itself (make test, make audit: need Rust and cargo-near)"; \
 	echo "  - the contract against the engine on a local NEAR node (make test-sandbox: about 20 min)"; \
-	echo "  - anything on a public NEAR network: nothing is deployed yet"; \
+	if ls evidence/deploy/*.json >/dev/null 2>&1; then \
+	  echo "  - on NEAR testnet: that the reporters report honestly, that the keeper keeps running, and that the code on"; \
+	  echo "    chain was built from this source (verify-deploy compares code hashes with the record: deploy/README.md, 'Reading a record back')"; \
+	  echo "  - each recorded transaction hash (node deploy/src/cli.ts verify <record> --txs: one RPC call each)"; \
+	else \
+	  echo "  - anything on a public NEAR network: no deployment is recorded in evidence/deploy/"; \
+	fi; \
 	echo "  - today's index from the live sources (make index) and the site (make web)"
 
-# verify: recorded index bundles recomputed, engine against the contract's vectors, deployment records.
+# verify: recorded index bundles recomputed, engine against the contract's vectors, deployment records read back from chain.
 verify: verify-index verify-vectors verify-deploy
 
 # verify-index: each recorded bundle recomputed from its offers and its raw source bodies, and re-hashed.
@@ -57,15 +64,29 @@ verify-vectors:
 	@n=$$(node -e "let t=0; for (const f of ['band','clearing','hash','print','settlement','time']) t+=require('./vectors/'+f+'.json').cases.length; console.log(t)"); \
 	$(NOTE) "ok  verify-vectors: the engine reproduced all $$n shared vector cases"
 
-# verify-deploy: deployment records read back from the public chain. None exist yet.
+# verify-deploy: every deployment record in evidence/deploy/ read back from the public chain, no keys (deploy/README.md, "Reading a record back").
+# A chain that cannot be reached is "not checked", not a failure, as quote-dry treats its service; a difference fails.
+# DEPLOY_RPC=<url,...> reads from other endpoints than the record's network's public ones.
+DEPLOY_RPC ?=
 verify-deploy:
-	@echo "== Deployment records (evidence/deploy/)"
-	@if ls evidence/deploy/*.json >/dev/null 2>&1; then \
-	  echo "  evidence/deploy/ holds records, but no read-back is wired here yet: fix the verify-deploy target"; exit 1; \
-	else \
+	@echo "== Deployment records (evidence/deploy/): read back from the public chain, no keys"
+	@files=$$(ls evidence/deploy/*.json 2>/dev/null || true); \
+	if [ -z "$$files" ]; then \
 	  echo "  no deployment recorded yet"; \
-	fi
-	@$(NOTE) "--  verify-deploy: no deployment recorded yet; nothing read from a public chain"
+	  $(NOTE) "--  verify-deploy: no deployment recorded yet; nothing read from a public chain"; exit 0; \
+	fi; \
+	bad=0; for f in $$files; do \
+	  code=0; out=$$($(NODE) deploy/src/cli.ts verify "$$f" $(if $(DEPLOY_RPC),--rpc "$(DEPLOY_RPC)") 2>&1) || code=$$?; \
+	  echo "$$out" | sed -E 's/^(Deployment record|RESULT)/  \1/'; \
+	  result=$$(echo "$$out" | grep '^RESULT' | sed 's/^RESULT //' || true); \
+	  case $$code in \
+	    0) $(NOTE) "ok  verify-deploy: $$f: $$result" ;; \
+	    3) echo "  The chain could not be reached: $$f was not checked, and nothing is claimed about it."; \
+	       $(NOTE) "--  verify-deploy: $$f NOT checked: the chain could not be reached; not counted as a failure" ;; \
+	    *) bad=1; $(NOTE) "FAIL verify-deploy: $$f: $${result:-the verify command failed, exit $$code}" ;; \
+	  esac; \
+	done; \
+	if [ $$bad -ne 0 ]; then echo "  FAIL a deployment record does not match the chain"; exit 1; fi
 
 # sim: the agents trade the h100-fast market on the engine: 20 rounds, settlement, money check.
 sim:

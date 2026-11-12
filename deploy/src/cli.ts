@@ -1,4 +1,5 @@
-// node deploy/src/cli.ts <plan|apply|status|seal> --network sandbox|testnet [options]
+// node deploy/src/cli.ts <plan|apply|status|seal|topup> --network sandbox|testnet [options]
+// node deploy/src/cli.ts verify <record.json> [--rpc url,...] [--json] [--txs]   (keyless read-back, src/verify.ts)
 //
 //   --markets h100-fast,h100-weekly   markets to deploy (default: those in the state file, else all four)
 //   --suffix <text>                   names are weir-<market>-<suffix>.testnet etc. (kept in the state file)
@@ -30,9 +31,12 @@ import { newState, readState, writeState } from "./state.ts";
 import { renderStatus, status } from "./status.ts";
 import { buildPlan } from "./steps.ts";
 import { DEFAULT_TOPUP_DAYS, planTopup, readTopupInputs, renderTopup, topup } from "./topup.ts";
+import { verifyCli } from "./verify.ts";
 import { loadWasm } from "./wasm.ts";
 
-const USAGE = "usage: node deploy/src/cli.ts <plan|apply|status|seal|topup> --network sandbox|testnet [--markets a,b] [--suffix s] [--out dir] [--keys dir] [--days n] [--rpc url] [--root-key file] [--confirm account]... [--json]";
+const USAGE =
+  "usage: node deploy/src/cli.ts <plan|apply|status|seal|topup> --network sandbox|testnet [--markets a,b] [--suffix s] [--out dir] [--keys dir] [--days n] [--rpc url] [--root-key file] [--confirm account]... [--json]\n" +
+  "       node deploy/src/cli.ts verify <record.json> [--rpc url,...] [--json] [--txs]";
 
 const redactor = new Redactor();
 const say = (line: string) => console.log(redactor.redact(line));
@@ -55,9 +59,14 @@ async function main(): Promise<number> {
       "dry-run": { type: "boolean" },
       "max-fund-accounts": { type: "string" },
       now: { type: "string" },
+      txs: { type: "boolean" },
     },
   });
   const command = positionals[0];
+  if (command === "verify") {
+    const rpc = values.rpc?.split(",").map((s) => s.trim()).filter(Boolean);
+    return verifyCli(positionals.slice(1), { ...(rpc ? { rpc } : {}), json: values.json ?? false, txs: values.txs ?? false }, say);
+  }
   if (!command || !["plan", "apply", "status", "seal", "topup"].includes(command) || positionals.length > 1) {
     console.error(USAGE);
     return 2;

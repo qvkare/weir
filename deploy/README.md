@@ -2,7 +2,9 @@
 
 One command that takes the built contracts to NEAR testnet and leaves running markets with
 reporters and trading agents ready for the keeper. Built and proven on a local near-sandbox
-node; **never run against testnet by its author** (see the last section).
+node, then run once against testnet by its author on 2026-11-12: suffix `w1`, four markets, 34
+accounts, 211 transactions from 00:25:11 to 00:46:04 UTC, recorded in `deploy/out/testnet/record.json`
+and read back by `verify` (see the last section, which also keeps what went wrong).
 
 ```sh
 contracts/build.sh                                                     # the wasm it deploys
@@ -11,6 +13,7 @@ node deploy/src/cli.ts apply  --network testnet --suffix <s>           # do it (
 node deploy/src/cli.ts status --network testnet                        # read the chain, compare
 node deploy/src/cli.ts seal   --network testnet --markets h100-fast --confirm weir-h100-fast-<s>.testnet
 node deploy/src/cli.ts topup  --network testnet --days 14 [--dry-run]  # keep it funded (below)
+node deploy/src/cli.ts verify evidence/deploy/<record>.json [--txs]    # no keys: a record against the chain (below)
 ```
 
 Options: `--markets h100-fast,h100-weekly,h200-weekly,a100-80-weekly` (default: those in the
@@ -31,7 +34,7 @@ attaches):
 |---|---|---|---|
 | `weir-<market>-<s>.testnet` | faucet | the market contract, deployed and initialised with `new(params)` in one transaction | the faucet grant (10 NEAR assumed, read by `apply`); weir.wasm is about 304 kB = 3.04 NEAR of storage (`plan` prints the exact size of the local build), plus 0.105 NEAR of attached gas to deploy; the remaining ~6.86 NEAR pays for the state it accumulates |
 | `weir-usdc-<s>.testnet` | faucet | the test dollar `tUSDC` (`mock_usdc.wasm`, open `mint`). **Real USDC is out of scope.** | grant; 146,689 B = 1.47 NEAR of storage |
-| `weir-ops-<s>.testnet` | faucet | parent of every operator; pays their NEAR, their token storage and their registrations | grant; pays 9.78 NEAR for the four markets (6.83 for the two H100 ones) |
+| `weir-ops-<s>.testnet` | faucet | parent of every operator; pays their NEAR, their token storage and their registrations | grant; pays 9.80 NEAR for the four markets (6.84 for the two H100 ones) |
 | `reporter-{a,b,c}.weir-ops-<s>.testnet` | ops | three reporters for every market, each with one function-call key per market contract | 0.240 each for the four markets |
 | `<market>-{buyer-1,buyer-2,seller-1,seller-2,maker-1,noise-1}.weir-ops-<s>.testnet` | ops | six agents (two buyers, two sellers, a maker, a noise trader), sized by the agents package's rule: test dollars = working balance + `--days` of commit fees (fast H100 buyer $60 + 288 x $0.10 x 2 = $117.60; weekly working balances x8.4 and x the chip's price) | fast 0.568 to 0.967, weekly 0.190 to 0.223 |
 | `keeper.weir-ops-<s>.testnet` | ops | the keeper's housekeeping account (clear, settle, finalize, prune), one function-call key per market contract | 0.880 for the four markets |
@@ -98,8 +101,13 @@ spent comes from the account's balance.
 **Funding.** Each operator gets its setup gas plus `--days` of gas at the expected load (worst
 measured gas, `clear` at our agents' book), plus what it must keep: the purchase price of its
 largest call and any storage stake above 770 bytes (NEP-448). With the default 2 days, the four
-markets cost the ops account 9.78 NEAR of a 10 NEAR grant, so a faucet grant runs the markets
+markets cost the ops account 9.80 NEAR of a 10 NEAR grant, so a faucet grant runs the markets
 for about two days; `topup` keeps them running after that. Re-running `apply` never sends more NEAR.
+Before the first step ops pays for, `apply` checks its balance by the same reasoning (`opsNeed` in
+`src/budget.ts`): what the remaining steps spend, plus the purchase price of the largest attached
+gas, held only while that one transaction is in flight (9.78 NEAR for the default four-market plan,
+of which 0.015 held). Until 2026-11-12 it summed the purchase price of every step's attached gas and
+refused a 10 NEAR grant that `plan` said fits (last section).
 
 ### What each market costs a day
 
@@ -138,7 +146,7 @@ file for every secret it generated.
 
 | File | |
 |---|---|
-| `deployments.json` | the repository root's shape; on testnet `rpc` = fastnear and rpc.testnet.near.org, `explorer` = nearblocks, `bundles_base` null |
+| `deployments.json` | the repository root's shape; on testnet `rpc` = fastnear (`test.rpc.fastnear.com`) and dRPC (`near-testnet.drpc.org`), `explorer` = nearblocks, `bundles_base` null |
 | `keeper.env` | mode 600, function-call keys only, each under the contract it is for: `REPORTERS=[{account_id, keys: {<contract>: <key>, ...}}]`, `AGENTS=[{account_id, market, role, <settings>, keys: {<contract>: <key>}}]`, `KEEPER={account_id, keys: {<contract>: <key>, ...}}`, `SWARM_SECRET`. Checked against the key files before it is written |
 | `state.json` | every step with its transaction hash and when; `t0` per market with the reason; seals. No secrets |
 | `record.json` | the public record to commit: tool version, wasm sha256 and code hashes, accounts and why, parameters as read from chain, public keys with allowances and arithmetic, agents' deposits and limits, every transaction hash with its purpose and explorer link |
@@ -162,6 +170,78 @@ parameters against `MARKETS`; each contract must be typed back with `--confirm <
 **A sealed account can never be upgraded or recovered**: no new code, no new keys, its NEAR stays
 in it for good (it pays for the contract's storage). The contract keeps working: reporters,
 agents and the keeper use keys on their own accounts.
+
+## Reading a record back: `verify`
+
+```sh
+node deploy/src/cli.ts verify evidence/deploy/testnet-w1.json              # what make verify-deploy runs
+node deploy/src/cli.ts verify evidence/deploy/testnet-w1.json --txs        # also every recorded transaction hash
+node deploy/src/cli.ts verify <record> --rpc <url,...> [--json]            # other endpoints; the report as JSON
+```
+
+It takes a `record.json` and nothing else: no keys, no `deploy/out/`, no state file, no Rust. It
+reads from the record's network's public endpoints (testnet: fastnear, then dRPC, with failover;
+a sandbox record needs `--rpc`), one read-only call at a time. A rate limit is waited out on the
+same endpoint (`src/pace.ts`: `retry-after`, else 1, 2, 4 s ..., at most 30 s per call per endpoint)
+before failing over, and a call no endpoint answers is tried once more after 5 s. `apply`, `status`
+and `topup` use the same paced client (`rpcFor`, with up to 90 s of waiting per call). Source:
+`src/verify.ts`. One line per check:
+
+| Check | Fails when |
+|---|---|
+| each market contract account exists and its `code_hash` is the record's weir.wasm hash | the account is missing or runs other code |
+| `get_params` on chain against the record's parameters, field by field | any field differs; the line names each one, chain value and record value |
+| the reporters in the on-chain parameters against the record's `reporter` accounts | the sets differ |
+| a contract the record says was sealed has no access keys | it still has keys |
+| the test token's `code_hash` is the record's mock_usdc.wasm hash | missing or other code |
+| every function-call key the record lists (reporters, agents, keeper): on chain, a function-call key, the record's receiver, the record's method list | any of the four; the line names the key and the difference |
+| with `--txs` only: each recorded transaction hash is known to the chain and succeeded, and where the step name says who signs it (`steps.ts`, `topup.ts`, `seal.ts`) that it was signed by that account. Testnet lookups go to fastnear's archival node, then dRPC (`TESTNET_ARCHIVAL`), since a regular node forgets transactions after about five epochs | unknown, failed, or another signer |
+
+Information lines (`--`), never failures:
+
+- **Sealed or not**, for each market contract and the token: "sealed: no access keys", or how many
+  full-access keys it still has and whether they are the ones the record lists. A contract
+  account with a full-access key can have its code replaced by whoever holds that key; until
+  `seal` has run, that is the deployer.
+- **The local build**: if `contracts/target/near/weir/weir.wasm` exists, whether its code hash is the
+  one on chain; if it does not, a line saying so.
+- **What each market is doing**: `get_status` (each live series, its round and phase, at chain
+  time), `get_last_print` (bucket, index in USD per GPU-hour, minutes before chain time, against
+  the market's print interval; older than two intervals plus the report grace reads "no recent
+  print"), and `get_totals` in tUSDC. From these a reader can tell whether the reporters and the
+  keeper are running now; a quiet market is not a failed deployment.
+
+Three outcomes, each with its own last line and exit code:
+
+| Last line | Exit | Meaning |
+|---|---|---|
+| `RESULT match: all N checks against testnet agree with <file>` | 0 | every check passed |
+| `RESULT DIFFERS: k of N checks found testnet different from <file>` | 1 | the chain answered and something differs (also when the chain stopped answering partway after a difference was found: the line says so) |
+| `RESULT NOT CHECKED: testnet could not be reached after N checks; nothing is claimed either way` | 3 | network errors, timeouts or rate limits on every endpoint, three times |
+
+Exit 2 is a usage error or a file that is not a record written by `apply`. `make verify-deploy`
+runs `verify` on every `evidence/deploy/*.json` (`DEPLOY_RPC=<url,...>` for other endpoints):
+a difference fails it, and so `make judge`; an unreachable chain prints "not checked" and does not
+fail it, as `quote-dry` treats an unreachable quote service, and the judge summary then says the
+record was **not** checked.
+
+What it does not show:
+
+- **That the reporters are honest.** It checks which accounts may report, not what they report.
+  The index each print rests on is checked by `make verify-index` for the recorded bundles only.
+- **That the keeper is running.** The status and last-print lines show what the chain holds at the
+  moment of the run; nothing is promised about the next hour.
+- **That the code on chain was built from this source**, unless the reader builds the wasm
+  themselves (`contracts/build.sh`) and the local-build line shows the same hash. The build is
+  `cargo near build non-reproducible-wasm`: another machine, toolchain or path may produce
+  different bytes from the same source. A different local hash therefore does not show different
+  source; the same hash does show the same bytes. Matching the record's hash shows only that the
+  code has not changed since the record was written.
+- **That the record is current.** It is a snapshot. A later `topup` that rotates a key, or a
+  `seal`, changes the chain; copy the new `record.json` into `evidence/deploy/` after either, or
+  `verify` reports the difference.
+- **Balances, allowances, deposits and guards.** `status` checks those, with the deployer's keys
+  and state file; the record holds no balance to compare against.
 
 ## Keeping it funded: `topup`
 
@@ -227,7 +307,7 @@ after a rotation.
 ## Tests
 
 ```sh
-pnpm --filter @weir/deploy test        # offline, node:test: 31 tests
+pnpm --filter @weir/deploy test        # offline, node:test: 46 tests
 pnpm --filter @weir/deploy typecheck   # tsc --noEmit
 pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 (WEIR_DEPLOY_E2E_PORT), about 3 minutes
 ```
@@ -255,6 +335,16 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   swept, the run is killed partway and resumed, nothing is short afterwards, the new key is on
   chain and the old one gone, keeper.env holds the new one, a second run sends nothing, and no
   secret is logged.
+- `verify.test.ts`: a record written by `buildRecord` after `apply` on the fake chain, read back
+  through the real `NearRpc` from a fake JSON-RPC endpoint serving that chain. The matching record
+  passes with every kind of line; a wrong code hash, a changed parameter (two fields, both named),
+  a foreign reporter, a missing account, a missing key, a key for another receiver, a key with
+  another method list (extra and missing methods named), a function-call key turned full-access,
+  and a record saying "sealed" over a contract with keys each fail with a line naming the
+  difference; a sealed and an unsealed contract are described and neither fails; an endpoint
+  that refuses connections, and one that answers HTTP 429 without end, give "not checked"
+  (exit 3), a brief 429 is waited through; `--txs` catches an unknown hash, a failed transaction
+  and a wrong signer; the CLI's exit codes 0, 1, 3 and 2.
 - `encode.test.ts`: `DeleteKey` (the one action this package encodes) and a 400 kB deploy, byte
   for byte against `@near-js/transactions`.
 - `faucet.test.ts`: the faucet client through 429 and 503, an existing account, a refusal, a
@@ -276,20 +366,57 @@ pnpm --filter @weir/deploy run e2e     # near-sandbox 2.14.0 on 127.0.0.1:33051 
   run sends nothing), then the keeper restarted on the new keeper.env reports with the rotated key;
   a fresh apply killed with SIGKILL halfway and re-run to completion; no secret in any output.
 
-## Not run against testnet by this tool's author
+## Run against testnet
 
-Everything above ran on near-sandbox 2.14.0 (protocol 88) only. Only testnet will show:
+One run, by the author, on 2026-11-12: `node deploy/src/cli.ts apply --network testnet --suffix w1`,
+the four markets. What `deploy/out/testnet/record.json` shows: 34 accounts, 211 transactions, each
+with its hash, the first at 00:25:11 UTC and the last at 00:46:04 UTC; weir.wasm 303,753 bytes,
+code hash `2JSY6cDZx8hVWUCy91w6BBUmJ49W4CZRAsT1DueHHaNw`; no market sealed. `verify` on that record
+(`node deploy/src/cli.ts verify deploy/out/testnet/record.json`, 00:46 UTC, 5 s): `RESULT match: all
+41 checks against testnet agree`; every market and the token not sealed, one full-access key each,
+the one the record lists; no print yet on any market at that time.
 
-- **The faucet.** The endpoint and request are near-cli-rs's (`src/chain.ts`, `FAUCET_URL`,
-  with the source cited); its grant per account (10 NEAR assumed; `apply` reads the balance
-  instead), its rate limits and how it answers when limited, whether it accepts the six
-  top-level accounts of a deployment in a row from one address, and the exact shape of its reply (the client falls back to waiting for
-  the account if the reply is not the outcome near-cli-rs expects).
-- **Real latency and finality**: 211 transactions one after another.
-- **`topup` against the faucet**: how many fund accounts in a row the faucet allows, and its
-  grant per account (the sandbox root gives 10 NEAR).
-- **RPC limits** of fastnear and rpc.testnet.near.org under that load, and their failover.
+What went wrong, and what was done:
+
+- **The ops balance check refused the plan's own budget.** The first `apply` (`--days 2`, the
+  default) created the six faucet accounts and deployed the token, then stopped at step 8:
+  "weir-ops-w1.testnet holds 10.000 NEAR but the 112 steps it still has to pay for need up to
+  11.010 NEAR", while `plan` for the same inputs printed "pays 9.778 NEAR of its grant (fits)". The
+  check summed the purchase price of every remaining step's attached gas (about 1.23 NEAR), which
+  is held only while one transaction is in flight. The run was resumed with `--days 1` and
+  completed (204 transactions sent, 7 steps already on chain), so the operators on testnet are
+  funded for one day of gas, not two. Fixed afterwards: the check now uses `opsNeed`, the
+  planner's reasoning; `apply.test.ts` checks that a 10 NEAR grant passes the default four-market
+  plan and that one yoctoNEAR less is refused before ops sends anything.
+- **`create_subaccount` gas was underestimated.** Budgeted at 1.0 Tgas; the run burnt at most
+  8.573 Tgas over 28 sub-accounts (`gas_burnt` in the state file). `BURNT_GGAS.create_subaccount`
+  is now 8.6 Tgas, which moves the ops account's cost from 9.78 to 9.80 NEAR. Measured on the same
+  run and under 4% above the budget: `storage_deposit` 2.000 (budget 1.95), `mint` 2.107 (2.04),
+  `register` 2.309 (2.23) Tgas; not changed.
+- **rpc.testnet.near.org is deprecated.** It answered one `tx` probe with 200 at about 00:28 UTC;
+  from then on it answered HTTP 429 with
+  "THIS ENDPOINT IS DEPRECATED ... Switch to https://fastnear.com or alternative RPC providers", so
+  every failover from fastnear went to an endpoint that always refuses; `status --network testnet`
+  failed with "https://rpc.testnet.near.org answered HTTP 429". archival-rpc.testnet.near.org
+  answered a `tx` probe the same way at about 00:50 UTC. Both are replaced by dRPC (`https://near-testnet.drpc.org`), which on
+  2026-11-12 answered `query` (view_account, view_access_key, view_access_key_list,
+  call_function), `tx`, `block`, `gas_price` and `EXPERIMENTAL_protocol_config` with the shapes the
+  client expects (an unknown account as `UNKNOWN_ACCOUNT`, an unknown transaction as
+  `UNKNOWN_TRANSACTION`). `send_tx` on dRPC has not been tried: nothing was sent to check it.
+- **A burst limit turned into failures.** archival-rpc.testnet.fastnear.com answered 5 `tx`
+  lookups in a row, then HTTP 429 with `retry-after: 0`, and answered again within 5 s.
+  `NearRpc` fails over at the first 429, so the first `verify --txs` ended "NOT CHECKED" after
+  210 s. The deploy package's RPC client now waits a rate limit out (`src/pace.ts`,
+  `pace.test.ts`). Rerun at 00:53 UTC with the paced client, fastnear archival then dRPC:
+  `RESULT match: all 42 checks against testnet agree`, "all 211 recorded hashes are known to the
+  chain and succeeded", 49 s. By then the fast market had its first print (bucket 00:50 UTC,
+  2.9175 USD/GPU-hour) and 159.956 tUSDC locked in a round.
+
+Not yet shown on testnet:
+
+- **`topup` against the faucet**: how many fund accounts in a row the faucet allows.
 - **Gas price above the minimum** under congestion (status would show fewer days left).
 - **Name collisions**: a suffix someone already used (apply stops and says so).
+- **`send_tx` through dRPC** (the second endpoint) under load.
 - The keeper on testnet with these accounts, the index sources live, and the site reading the
   copied `deployments.json`.
