@@ -91,7 +91,11 @@ pub enum WeirEvent {
     },
     /// `reports` is how many reports the print was made from.
     #[event_version("1.0.0")]
-    Print { bucket: u64, price: u64, reports: u32 },
+    Print {
+        bucket: u64,
+        price: u64,
+        reports: u32,
+    },
     /// A bucket decided without a print.
     #[event_version("1.0.0")]
     NoPrint { bucket: u64, reports: u32 },

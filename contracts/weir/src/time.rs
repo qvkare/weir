@@ -165,7 +165,10 @@ mod tests {
 
     #[test]
     fn a_zero_cutoff_runs_auctions_until_delivery() {
-        let s = Schedule { cutoff_secs: 0, ..S };
+        let s = Schedule {
+            cutoff_secs: 0,
+            ..S
+        };
         assert_eq!(s.auction_close(0), 10_000);
         assert_eq!(s.current(0, 9_999), (Some(10), Phase::Reveal));
         assert_eq!(s.current(0, 10_000), (None, Phase::Closed));
@@ -176,7 +179,10 @@ mod tests {
         assert!(S.round_exists(0, 9));
         assert!(!S.round_exists(0, 10));
         assert!(!S.round_exists(0, u64::MAX));
-        let ragged = Schedule { cutoff_secs: 150, ..S };
+        let ragged = Schedule {
+            cutoff_secs: 150,
+            ..S
+        };
         assert!(ragged.round_exists(0, 8));
         assert!(!ragged.round_exists(0, 9));
     }
@@ -196,7 +202,10 @@ mod tests {
 
     #[test]
     fn the_tail_after_the_last_whole_round_is_closed() {
-        let ragged = Schedule { cutoff_secs: 150, ..S };
+        let ragged = Schedule {
+            cutoff_secs: 150,
+            ..S
+        };
         assert_eq!(ragged.current(0, 9_799), (Some(8), Phase::Reveal));
         assert_eq!(ragged.current(0, 9_800), (None, Phase::Closed));
         assert_eq!(ragged.current(0, 9_849), (None, Phase::Closed));
@@ -208,18 +217,32 @@ mod tests {
         assert_eq!(S.live_series(8_900), vec![0]);
         assert_eq!(S.live_series(9_899), vec![0]);
         assert_eq!(S.live_series(9_900), vec![1]);
-        let gap = Schedule { lead_secs: 500, ..S };
+        let gap = Schedule {
+            lead_secs: 500,
+            ..S
+        };
         assert_eq!(gap.live_series(9_000), Vec::<u32>::new());
-        let long_lead = Schedule { lead_secs: 2_500, ..S };
+        let long_lead = Schedule {
+            lead_secs: 2_500,
+            ..S
+        };
         assert_eq!(long_lead.live_series(9_000), vec![0, 1]);
-        let tiny = Schedule { period_secs: 1, lead_secs: 1_000, cutoff_secs: 0, ..S };
+        let tiny = Schedule {
+            period_secs: 1,
+            lead_secs: 1_000,
+            cutoff_secs: 0,
+            ..S
+        };
         assert_eq!(tiny.live_series(20_000).len(), MAX_LIVE_SERIES);
     }
 
     #[test]
     #[should_panic(expected = "arithmetic overflow")]
     fn a_series_past_the_end_of_time_overflows() {
-        let s = Schedule { period_secs: u64::MAX / 2, ..S };
+        let s = Schedule {
+            period_secs: u64::MAX / 2,
+            ..S
+        };
         s.delivery_start(3);
     }
 }

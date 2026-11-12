@@ -35,7 +35,9 @@ pub fn commit_hash(
 
 pub fn is_lower_hex(value: &str, min_len: usize, max_len: usize) -> bool {
     (min_len..=max_len).contains(&value.len())
-        && value.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// `hash` and `bundle`: a sha256 in lowercase hex.

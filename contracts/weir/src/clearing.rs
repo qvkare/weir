@@ -26,11 +26,13 @@ pub struct Clearing {
 
 /// `D(p)` and `S(p)`. Sizes are summed in `u128`, so this cannot overflow.
 pub fn depth(orders: &[Order], price: u64) -> (u128, u128) {
-    orders.iter().fold((0, 0), |(demand, supply), order| match order.side {
-        Side::Long if order.price >= price => (demand + u128::from(order.size), supply),
-        Side::Short if order.price <= price => (demand, supply + u128::from(order.size)),
-        _ => (demand, supply),
-    })
+    orders
+        .iter()
+        .fold((0, 0), |(demand, supply), order| match order.side {
+            Side::Long if order.price >= price => (demand + u128::from(order.size), supply),
+            Side::Short if order.price <= price => (demand, supply + u128::from(order.size)),
+            _ => (demand, supply),
+        })
 }
 
 /// `V(p)`.
@@ -132,11 +134,21 @@ mod tests {
     const TICK: u64 = 1_000;
 
     fn long(seq: u32, size: u64, ticks: u64) -> Order {
-        Order { seq, side: Side::Long, size, price: ticks * TICK }
+        Order {
+            seq,
+            side: Side::Long,
+            size,
+            price: ticks * TICK,
+        }
     }
 
     fn short(seq: u32, size: u64, ticks: u64) -> Order {
-        Order { seq, side: Side::Short, size, price: ticks * TICK }
+        Order {
+            seq,
+            side: Side::Short,
+            size,
+            price: ticks * TICK,
+        }
     }
 
     fn run(orders: &[Order]) -> (Option<u64>, u64, Vec<u64>) {
@@ -148,14 +160,23 @@ mod tests {
     fn nothing_trades_without_both_sides_crossing() {
         assert_eq!(run(&[]), (None, 0, vec![]));
         assert_eq!(run(&[long(0, 5, 10)]), (None, 0, vec![0]));
-        assert_eq!(run(&[short(0, 5, 10), short(1, 5, 9)]), (None, 0, vec![0, 0]));
+        assert_eq!(
+            run(&[short(0, 5, 10), short(1, 5, 9)]),
+            (None, 0, vec![0, 0])
+        );
         // The SHORT wants at least 11; the LONG pays at most 10.
-        assert_eq!(run(&[long(0, 5, 10), short(1, 5, 11)]), (None, 0, vec![0, 0]));
+        assert_eq!(
+            run(&[long(0, 5, 10), short(1, 5, 11)]),
+            (None, 0, vec![0, 0])
+        );
     }
 
     #[test]
     fn crossing_at_one_price() {
-        assert_eq!(run(&[long(0, 5, 10), short(1, 5, 10)]), (Some(10), 5, vec![5, 5]));
+        assert_eq!(
+            run(&[long(0, 5, 10), short(1, 5, 10)]),
+            (Some(10), 5, vec![5, 5])
+        );
     }
 
     #[test]
@@ -196,7 +217,12 @@ mod tests {
 
     #[test]
     fn better_prices_fill_first() {
-        let orders = [long(0, 4, 10), long(1, 4, 12), short(2, 5, 9), short(3, 5, 8)];
+        let orders = [
+            long(0, 4, 10),
+            long(1, 4, 12),
+            short(2, 5, 9),
+            short(3, 5, 8),
+        ];
         // D(8..=10)=8, S(8)=5, S(9)=10, S(10)=10, S(12)=10, D(12)=4.
         // V(8)=5, V(9)=8, V(10)=8, V(12)=4. V*=8 at 9 and 10, |D-S|=2 both, D<S -> lo=9.
         assert_eq!(run(&orders), (Some(9), 8, vec![4, 4, 3, 5]));

@@ -51,8 +51,7 @@ pub const ERR_FORFEIT_BPS: &str = "forfeit_bps must be at most 10000";
 pub const ERR_MAX_COMMITS: &str = "max_commits must be 1 to 128";
 pub const ERR_MAX_ORDER_SIZE: &str = "max_order_size must be at least 1";
 pub const ERR_CUTOFF: &str = "cutoff_secs must be below lead_secs";
-pub const ERR_BUCKET_GRID: &str =
-    "t0 and period_secs must be multiples of print_interval_secs";
+pub const ERR_BUCKET_GRID: &str = "t0 and period_secs must be multiples of print_interval_secs";
 pub const ERR_MIN_PRINTS: &str = "min_prints must be at least 1";
 pub const ERR_MIN_PRINTS_TOO_MANY: &str =
     "min_prints must be at most period_secs / print_interval_secs";
@@ -136,11 +135,13 @@ fn or_panic<T>(result: Result<T, &'static str>) -> T {
 }
 
 fn add(a: u128, b: u128) -> u128 {
-    a.checked_add(b).unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
+    a.checked_add(b)
+        .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
 }
 
 fn sub(a: u128, b: u128) -> u128 {
-    a.checked_sub(b).unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
+    a.checked_sub(b)
+        .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
 }
 
 fn mul(a: u64, b: u64) -> u128 {
@@ -148,7 +149,8 @@ fn mul(a: u64, b: u64) -> u128 {
 }
 
 fn add_units(a: u64, b: u64) -> u64 {
-    a.checked_add(b).unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
+    a.checked_add(b)
+        .unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
 }
 
 fn now() -> u64 {
@@ -180,7 +182,10 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
     }
     let checks = [
         (params.tick > 0, ERR_TICK),
-        (params.band_bps > 0 && params.band_bps < 10_000, ERR_BAND_BPS),
+        (
+            params.band_bps > 0 && params.band_bps < 10_000,
+            ERR_BAND_BPS,
+        ),
         (params.forfeit_bps <= 10_000, ERR_FORFEIT_BPS),
         ((1..=128).contains(&params.max_commits), ERR_MAX_COMMITS),
         (params.max_order_size >= 1, ERR_MAX_ORDER_SIZE),
@@ -190,9 +195,15 @@ pub fn check_params(params: &Params) -> Result<(), &'static str> {
             u64::from(params.min_prints) <= params.period_secs / params.print_interval_secs,
             ERR_MIN_PRINTS_TOO_MANY,
         ),
-        (params.void_after_secs >= params.report_grace_secs, ERR_VOID_AFTER),
+        (
+            params.void_after_secs >= params.report_grace_secs,
+            ERR_VOID_AFTER,
+        ),
         (params.report_grace_secs <= params.period_secs, ERR_GRACE),
-        (params.max_spread_bps > 0 && params.max_spread_bps <= 10_000, ERR_MAX_SPREAD),
+        (
+            params.max_spread_bps > 0 && params.max_spread_bps <= 10_000,
+            ERR_MAX_SPREAD,
+        ),
     ];
     if let Some(&(_, err)) = checks.iter().find(|(ok, _)| !ok) {
         return Err(err);
@@ -493,10 +504,7 @@ impl Weir {
             .find(|c| c.seq == seq)
             .unwrap_or_else(|| env::panic_str(ERR_NO_COMMIT));
         require!(commit.owner == caller, ERR_NOT_OWNER);
-        require!(
-            commit.state == CommitState::Committed,
-            ERR_ALREADY_REVEALED
-        );
+        require!(commit.state == CommitState::Committed, ERR_ALREADY_REVEALED);
         require!(
             schedule.reveal_start(series, round) <= now && now < schedule.round_end(series, round),
             ERR_NOT_REVEAL_PHASE
@@ -768,7 +776,10 @@ impl Weir {
         let reporter = env::predecessor_account_id();
         let params = &self.params;
         require!(params.reporters.contains(&reporter), ERR_NOT_REPORTER);
-        require!(bucket.is_multiple_of(params.print_interval_secs), ERR_BUCKET);
+        require!(
+            bucket.is_multiple_of(params.print_interval_secs),
+            ERR_BUCKET
+        );
         let now = now();
         require!(
             bucket <= now && now < self.window_end(bucket),
@@ -865,7 +876,10 @@ impl Weir {
     pub fn settle(&mut self, series: u32) {
         let now = now();
         let schedule = self.params.schedule();
-        let (start, end) = (schedule.delivery_start(series), schedule.delivery_end(series));
+        let (start, end) = (
+            schedule.delivery_start(series),
+            schedule.delivery_end(series),
+        );
         let (grace, void_after, min_prints) = (
             self.params.report_grace_secs,
             self.params.void_after_secs,
@@ -1102,7 +1116,10 @@ impl Weir {
         let limit = limit.min(MAX_PRINTS) as usize;
         let mut prints = Vec::new();
         let mut word = from / 64;
-        while word <= last / 64 && word < (from / 64).saturating_add(MAX_PRINT_CHUNKS) && prints.len() < limit {
+        while word <= last / 64
+            && word < (from / 64).saturating_add(MAX_PRINT_CHUNKS)
+            && prints.len() < limit
+        {
             let mut bits = self.print_index.get(&word).copied().unwrap_or(0);
             if word == from / 64 {
                 bits &= u64::MAX << (from % 64);

@@ -120,7 +120,12 @@ impl H {
         install(STRANGER, now, 0, storage);
         self
     }
-    fn run<R>(&mut self, caller: &str, deposit: u128, f: impl FnOnce(&mut Weir) -> R) -> Result<R, String> {
+    fn run<R>(
+        &mut self,
+        caller: &str,
+        deposit: u128,
+        f: impl FnOnce(&mut Weir) -> R,
+    ) -> Result<R, String> {
         let storage = with_mocked_blockchain(|b| b.take_storage());
         install(caller, self.now, deposit, storage.clone());
         let outcome = catch_unwind(AssertUnwindSafe(|| {
@@ -135,7 +140,8 @@ impl H {
         })
     }
     fn ok<R>(&mut self, caller: &str, f: impl FnOnce(&mut Weir) -> R) -> R {
-        self.run(caller, 0, f).unwrap_or_else(|e| panic!("{caller}: {e}"))
+        self.run(caller, 0, f)
+            .unwrap_or_else(|e| panic!("{caller}: {e}"))
     }
     fn view<R>(&mut self, f: impl FnOnce(&Weir) -> R) -> R {
         let storage = with_mocked_blockchain(|b| b.take_storage());
@@ -144,8 +150,11 @@ impl H {
         f(&weir)
     }
     fn fund(&mut self, name: &str, amount: u128) {
-        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None)).unwrap();
-        let refund = self.ok(USDC, |w| w.ft_on_transfer(id(name), U128(amount), String::new()));
+        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None))
+            .unwrap();
+        let refund = self.ok(USDC, |w| {
+            w.ft_on_transfer(id(name), U128(amount), String::new())
+        });
         assert_eq!(refund, U128(0));
     }
     fn balance(&mut self, name: &str) -> u128 {
@@ -158,12 +167,30 @@ impl H {
             self.ok(r, |w| w.report(bucket, price, BUNDLE.into()));
         }
     }
-    fn commit(&mut self, round: u64, name: &str, side: Side, size: u64, price: u64, lock: u128) -> Result<u32, String> {
+    fn commit(
+        &mut self,
+        round: u64,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+        lock: u128,
+    ) -> Result<u32, String> {
         let hash = hex::encode(hash::commit_hash(0, round, name, side, size, price, SALT));
         self.run(name, 0, |w| w.commit(0, hash, U128(lock)))
     }
-    fn reveal(&mut self, round: u64, seq: u32, name: &str, side: Side, size: u64, price: u64) -> Result<(), String> {
-        self.run(name, 0, |w| w.reveal(0, round, seq, side, size, price, SALT.into()))
+    fn reveal(
+        &mut self,
+        round: u64,
+        seq: u32,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+    ) -> Result<(), String> {
+        self.run(name, 0, |w| {
+            w.reveal(0, round, seq, side, size, price, SALT.into())
+        })
     }
     fn open_series(&mut self) {
         self.at(round_start(0) - 5);
@@ -181,34 +208,69 @@ impl H {
 fn audit4_a_non_reporter_cannot_move_the_void_payout() {
     let mut h = H::with(params());
     h.open_series();
-    for (who, amt) in [("bob.near", 100 * DOLLAR), ("m1.near", 5_000 * DOLLAR), ("m2.near", 5_000 * DOLLAR)] {
+    for (who, amt) in [
+        ("bob.near", 100 * DOLLAR),
+        ("m1.near", 5_000 * DOLLAR),
+        ("m2.near", 5_000 * DOLLAR),
+    ] {
         h.fund(who, amt);
     }
     let deposits = 10_100 * DOLLAR;
     // Round 0: m1 buys 100 LONG from Bob at 0.150 (below half the band, 0.200).
-    let b = h.commit(0, "bob.near", Side::Short, 100, 150_000, 30 * DOLLAR).unwrap();
-    let m = h.commit(0, "m1.near", Side::Long, 100, 150_000, 15 * DOLLAR).unwrap();
+    let b = h
+        .commit(0, "bob.near", Side::Short, 100, 150_000, 30 * DOLLAR)
+        .unwrap();
+    let m = h
+        .commit(0, "m1.near", Side::Long, 100, 150_000, 15 * DOLLAR)
+        .unwrap();
     h.ok("m1.near", |w| w.mint(0, 500));
     h.at(reveal_start(0));
-    h.reveal(0, b, "bob.near", Side::Short, 100, 150_000).unwrap();
+    h.reveal(0, b, "bob.near", Side::Short, 100, 150_000)
+        .unwrap();
     h.reveal(0, m, "m1.near", Side::Long, 100, 150_000).unwrap();
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
     // Rounds 1 and 2: wash trades at the extremes, 10,000 each.
     for (round, price) in [(1u64, 399_000u64), (2, 1_000)] {
         h.at(round_start(round));
-        let l = h.commit(round, "m1.near", Side::Long, 10_000, price, u128::from(price) * 10_000).unwrap();
-        let s = h.commit(round, "m2.near", Side::Short, 10_000, price, u128::from(400_000 - price) * 10_000).unwrap();
+        let l = h
+            .commit(
+                round,
+                "m1.near",
+                Side::Long,
+                10_000,
+                price,
+                u128::from(price) * 10_000,
+            )
+            .unwrap();
+        let s = h
+            .commit(
+                round,
+                "m2.near",
+                Side::Short,
+                10_000,
+                price,
+                u128::from(400_000 - price) * 10_000,
+            )
+            .unwrap();
         h.at(reveal_start(round));
-        h.reveal(round, l, "m1.near", Side::Long, 10_000, price).unwrap();
-        h.reveal(round, s, "m2.near", Side::Short, 10_000, price).unwrap();
+        h.reveal(round, l, "m1.near", Side::Long, 10_000, price)
+            .unwrap();
+        h.reveal(round, s, "m2.near", Side::Short, 10_000, price)
+            .unwrap();
         h.at(round_end(round));
         h.ok(STRANGER, |w| w.clear(0, round));
     }
     // Merge some, move positions around.
     h.ok("m1.near", |w| w.merge(0, 200));
-    h.run("m1.near", 1, |w| w.transfer_position(0, id("m2.near"), 5_000, 0)).unwrap();
-    h.run("m2.near", 1, |w| w.transfer_position(0, id("m1.near"), 0, 3_000)).unwrap();
+    h.run("m1.near", 1, |w| {
+        w.transfer_position(0, id("m2.near"), 5_000, 0)
+    })
+    .unwrap();
+    h.run("m2.near", 1, |w| {
+        w.transfer_position(0, id("m1.near"), 0, 3_000)
+    })
+    .unwrap();
     // No reports in the delivery window: the series goes void.
     h.at(END + 20);
     let early = h.run(STRANGER, 0, |w| w.settle(0));

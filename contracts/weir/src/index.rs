@@ -24,7 +24,13 @@ pub fn decide(reports: &[u64], quorum: u32, max_spread_bps: u32) -> Option<u64> 
 
 /// The state a bucket is in: undecided until every reporter has reported or its
 /// report window has closed and someone decides it.
-pub fn state(reports: &[u64], quorum: u32, reporters: u32, max_spread_bps: u32, window_closed: bool) -> (PrintState, Option<u64>) {
+pub fn state(
+    reports: &[u64],
+    quorum: u32,
+    reporters: u32,
+    max_spread_bps: u32,
+    window_closed: bool,
+) -> (PrintState, Option<u64>) {
     if reports.len() as u64 != u64::from(reporters) && !window_closed {
         return (PrintState::Open, None);
     }
@@ -49,7 +55,10 @@ mod tests {
     fn an_odd_count_takes_the_middle_report() {
         assert_eq!(decide(&[9, 1, 5], 2, 0), Some(5));
         // One wild report out of three cannot move it.
-        assert_eq!(decide(&[2_000_000, 2_000_000, 400_000_000], 2, 1), Some(2_000_000));
+        assert_eq!(
+            decide(&[2_000_000, 2_000_000, 400_000_000], 2, 1),
+            Some(2_000_000)
+        );
     }
 
     #[test]
@@ -64,8 +73,14 @@ mod tests {
     #[test]
     fn a_bucket_stays_open_until_everyone_reports_or_its_window_closes() {
         assert_eq!(state(&[5, 5], 2, 3, 100, false), (PrintState::Open, None));
-        assert_eq!(state(&[5, 5, 6], 2, 3, 100, false), (PrintState::Final, Some(5)));
-        assert_eq!(state(&[5, 5], 2, 3, 100, true), (PrintState::Final, Some(5)));
+        assert_eq!(
+            state(&[5, 5, 6], 2, 3, 100, false),
+            (PrintState::Final, Some(5))
+        );
+        assert_eq!(
+            state(&[5, 5], 2, 3, 100, true),
+            (PrintState::Final, Some(5))
+        );
         assert_eq!(state(&[5], 2, 3, 100, true), (PrintState::NoPrint, None));
     }
 }

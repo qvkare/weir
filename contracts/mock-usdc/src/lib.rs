@@ -7,9 +7,7 @@
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::{self, json};
 use near_sdk::store::LookupMap;
-use near_sdk::{
-    env, ext_contract, near, require, AccountId, Gas, NearToken, PromiseOrValue,
-};
+use near_sdk::{env, ext_contract, near, require, AccountId, Gas, NearToken, PromiseOrValue};
 
 /// What one account record costs to store, with room to spare.
 pub const STORAGE_DEPOSIT: NearToken = NearToken::from_micronear(1_250);
@@ -148,7 +146,8 @@ impl MockUsdc {
         let receiver_balance = self.balances.get(&receiver_id).copied().unwrap_or(0);
         let refund = unused.min(receiver_balance);
         if refund > 0 {
-            self.balances.insert(receiver_id.clone(), receiver_balance - refund);
+            self.balances
+                .insert(receiver_id.clone(), receiver_balance - refund);
             match self.balances.get_mut(&sender_id) {
                 Some(balance) => {
                     *balance = balance
@@ -237,7 +236,13 @@ impl MockUsdc {
         }
     }
 
-    fn transfer(&mut self, sender_id: &AccountId, receiver_id: &AccountId, amount: u128, memo: Option<String>) {
+    fn transfer(
+        &mut self,
+        sender_id: &AccountId,
+        receiver_id: &AccountId,
+        amount: u128,
+        memo: Option<String>,
+    ) {
         require!(amount > 0, ERR_ZERO_AMOUNT);
         require!(sender_id != receiver_id, ERR_SELF_TRANSFER);
         require!(self.balances.contains_key(receiver_id), ERR_NOT_REGISTERED);

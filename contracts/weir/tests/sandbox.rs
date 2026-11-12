@@ -78,7 +78,10 @@ impl Timing {
     }
     /// The same schedule seen from series `s`: every time moves by `s` periods.
     fn shifted(&self, s: u64) -> Timing {
-        Timing { t0: self.t0 + s * self.period, ..*self }
+        Timing {
+            t0: self.t0 + s * self.period,
+            ..*self
+        }
     }
     fn end(&self) -> u64 {
         self.t0 + self.period
@@ -96,7 +99,9 @@ struct Chain {
 impl Chain {
     async fn start() -> anyhow::Result<Self> {
         let worker = near_workspaces::sandbox().await?;
-        let usdc = worker.dev_deploy(&wasm("mock-usdc", "mock_usdc/mock_usdc.wasm")).await?;
+        let usdc = worker
+            .dev_deploy(&wasm("mock-usdc", "mock_usdc/mock_usdc.wasm"))
+            .await?;
         let mut reporters = Vec::new();
         for _ in 0..3 {
             reporters.push(worker.dev_create_account().await?);
@@ -131,8 +136,15 @@ impl Chain {
     }
 
     /// A Weir deployment whose series 0 auction opens `open_in` seconds from now.
-    async fn deploy_weir(&self, timing: impl Fn(u64) -> Timing, max_commits: u32) -> anyhow::Result<(Contract, Timing)> {
-        let weir = self.worker.dev_deploy(&wasm("weir", "weir/weir.wasm")).await?;
+    async fn deploy_weir(
+        &self,
+        timing: impl Fn(u64) -> Timing,
+        max_commits: u32,
+    ) -> anyhow::Result<(Contract, Timing)> {
+        let weir = self
+            .worker
+            .dev_deploy(&wasm("weir", "weir/weir.wasm"))
+            .await?;
         let t = timing(self.now().await?);
         let params = json!({
             "usdc": self.usdc.id(), "underlying": "H100-USD-HR", "t0": t.t0,
@@ -145,7 +157,11 @@ impl Chain {
             "reporters": self.reporters.iter().map(|r| r.id().clone()).collect::<Vec<_>>(),
             "quorum": 2,
         });
-        weir.call("new").args_json(json!({ "params": params })).transact().await?.into_result()?;
+        weir.call("new")
+            .args_json(json!({ "params": params }))
+            .transact()
+            .await?
+            .into_result()?;
         // The contract needs a storage record at the token to receive it.
         weir.as_account()
             .call(self.usdc.id(), "storage_deposit")
@@ -158,7 +174,12 @@ impl Chain {
     }
 
     async fn usdc_balance(&self, account: &near_workspaces::AccountId) -> anyhow::Result<u128> {
-        let balance: Value = self.usdc.view("ft_balance_of").args_json(json!({ "account_id": account })).await?.json()?;
+        let balance: Value = self
+            .usdc
+            .view("ft_balance_of")
+            .args_json(json!({ "account_id": account }))
+            .await?
+            .json()?;
         Ok(balance.as_str().unwrap().parse()?)
     }
 
@@ -190,8 +211,19 @@ impl Chain {
 }
 
 /// Registers `account` at `weir` and deposits `amount` freshly minted dollars there.
-async fn fund(account: &Account, usdc: &Contract, weir: &Contract, amount: u128) -> anyhow::Result<()> {
-    account.call(weir.id(), "register").args_json(json!({})).deposit(REGISTRATION).transact().await?.into_result()?;
+async fn fund(
+    account: &Account,
+    usdc: &Contract,
+    weir: &Contract,
+    amount: u128,
+) -> anyhow::Result<()> {
+    account
+        .call(weir.id(), "register")
+        .args_json(json!({}))
+        .deposit(REGISTRATION)
+        .transact()
+        .await?
+        .into_result()?;
     account
         .call(usdc.id(), "mint")
         .args_json(json!({ "account_id": account.id(), "amount": amount.to_string() }))
@@ -210,21 +242,52 @@ async fn fund(account: &Account, usdc: &Contract, weir: &Contract, amount: u128)
 }
 
 fn side_letter(side: &str) -> &str {
-    if side == "Long" { "L" } else { "S" }
+    if side == "Long" {
+        "L"
+    } else {
+        "S"
+    }
 }
 
 /// The hash of spec section 6.2, computed here independently of the contract.
-fn commit_hash(series: u32, round: u64, account: &str, side: &str, size: u64, price: u64) -> String {
-    let preimage = format!("weir:v1|{series}|{round}|{account}|{}|{size}|{price}|{SALT}", side_letter(side));
+fn commit_hash(
+    series: u32,
+    round: u64,
+    account: &str,
+    side: &str,
+    size: u64,
+    price: u64,
+) -> String {
+    let preimage = format!(
+        "weir:v1|{series}|{round}|{account}|{}|{size}|{price}|{SALT}",
+        side_letter(side)
+    );
     hex::encode(Sha256::digest(preimage.as_bytes()))
 }
 
-async fn commit(account: &Account, weir: &Contract, round: u64, side: &str, size: u64, price: u64, lock: u128) -> anyhow::Result<u32> {
+async fn commit(
+    account: &Account,
+    weir: &Contract,
+    round: u64,
+    side: &str,
+    size: u64,
+    price: u64,
+    lock: u128,
+) -> anyhow::Result<u32> {
     commit_in(0, account, weir, round, side, size, price, lock).await
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn commit_in(series: u32, account: &Account, weir: &Contract, round: u64, side: &str, size: u64, price: u64, lock: u128) -> anyhow::Result<u32> {
+async fn commit_in(
+    series: u32,
+    account: &Account,
+    weir: &Contract,
+    round: u64,
+    side: &str,
+    size: u64,
+    price: u64,
+    lock: u128,
+) -> anyhow::Result<u32> {
     let hash = commit_hash(series, round, account.id().as_str(), side, size, price);
     let seq = account
         .call(weir.id(), "commit")
@@ -236,12 +299,29 @@ async fn commit_in(series: u32, account: &Account, weir: &Contract, round: u64, 
     Ok(seq)
 }
 
-async fn reveal(account: &Account, weir: &Contract, round: u64, seq: u32, side: &str, size: u64, price: u64) -> anyhow::Result<ExecutionFinalResult> {
+async fn reveal(
+    account: &Account,
+    weir: &Contract,
+    round: u64,
+    seq: u32,
+    side: &str,
+    size: u64,
+    price: u64,
+) -> anyhow::Result<ExecutionFinalResult> {
     reveal_in(0, account, weir, round, seq, side, size, price).await
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn reveal_in(series: u32, account: &Account, weir: &Contract, round: u64, seq: u32, side: &str, size: u64, price: u64) -> anyhow::Result<ExecutionFinalResult> {
+async fn reveal_in(
+    series: u32,
+    account: &Account,
+    weir: &Contract,
+    round: u64,
+    seq: u32,
+    side: &str,
+    size: u64,
+    price: u64,
+) -> anyhow::Result<ExecutionFinalResult> {
     Ok(account
         .call(weir.id(), "reveal")
         .args_json(json!({ "series": series, "round": round, "seq": seq, "side": side, "size": size, "price": price, "salt": SALT }))
@@ -259,7 +339,12 @@ async fn free(weir: &Contract, account: &Account) -> anyhow::Result<u128> {
 }
 
 async fn position(weir: &Contract, account: &Account) -> anyhow::Result<(u64, u64)> {
-    let p = view(weir, "get_position", json!({ "series": 0, "account_id": account.id() })).await?;
+    let p = view(
+        weir,
+        "get_position",
+        json!({ "series": 0, "account_id": account.id() }),
+    )
+    .await?;
     Ok((p["long"].as_u64().unwrap(), p["short"].as_u64().unwrap()))
 }
 
@@ -343,25 +428,52 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     let ours: String = view(&weir, "commit_hash", json!({
         "series": 0, "round": round, "account_id": alice.id(), "side": "Long", "size": 10, "price": 210_000, "salt": SALT,
     })).await?.as_str().unwrap().into();
-    assert_eq!(ours, commit_hash(0, round, alice.id().as_str(), "Long", 10, 210_000));
+    assert_eq!(
+        ours,
+        commit_hash(0, round, alice.id().as_str(), "Long", 10, 210_000)
+    );
     assert_eq!(free(&weir, &alice).await?, 497 * DOLLAR - FEE);
     assert_eq!(free(&weir, &carol).await?, 497 * DOLLAR - 2 * FEE);
     let series = view(&weir, "get_series", json!({ "series": 0 })).await?;
-    assert_eq!((series["floor"].as_u64(), series["band"].as_u64()), (Some(1_800_000), Some(BAND)));
+    assert_eq!(
+        (series["floor"].as_u64(), series["band"].as_u64()),
+        (Some(1_800_000), Some(BAND))
+    );
     assert_books_balance(&chain, &weir).await?;
 
     chain.warp_to(t.reveal_start(round)).await?;
-    for (who, seq, side, size, price) in [(&alice, a, "Long", 10, 210_000), (&bob, b, "Long", 5, 200_000), (&carol, c, "Short", 8, 190_000)] {
-        reveal(who, &weir, round, seq, side, size, price).await?.into_result()?;
+    for (who, seq, side, size, price) in [
+        (&alice, a, "Long", 10, 210_000),
+        (&bob, b, "Long", 5, 200_000),
+        (&carol, c, "Short", 8, 190_000),
+    ] {
+        reveal(who, &weir, round, seq, side, size, price)
+            .await?
+            .into_result()?;
     }
     chain.warp_to(t.round_end(round)).await?;
-    bob.call(weir.id(), "clear").args_json(json!({ "series": 0, "round": round })).gas(CALL_GAS).transact().await?.into_result()?;
+    bob.call(weir.id(), "clear")
+        .args_json(json!({ "series": 0, "round": round }))
+        .gas(CALL_GAS)
+        .transact()
+        .await?
+        .into_result()?;
     let result = view(&weir, "get_result", json!({ "series": 0, "round": round })).await?;
-    assert_eq!((result["price"].as_u64(), result["volume"].as_u64(), result["forfeited"].as_str()), (Some(210_000), Some(8), Some("100000")));
+    assert_eq!(
+        (
+            result["price"].as_u64(),
+            result["volume"].as_u64(),
+            result["forfeited"].as_str()
+        ),
+        (Some(210_000), Some(8), Some("100000"))
+    );
     assert_eq!(result["fees"].as_str(), Some("4000"));
     assert_eq!(free(&weir, &alice).await?, 500 * DOLLAR - 8 * 210_000 - FEE);
     assert_eq!(free(&weir, &bob).await?, 500 * DOLLAR - FEE);
-    assert_eq!(free(&weir, &carol).await?, 500 * DOLLAR - 8 * 190_000 - 100_000 - 2 * FEE);
+    assert_eq!(
+        free(&weir, &carol).await?,
+        500 * DOLLAR - 8 * 190_000 - 100_000 - 2 * FEE
+    );
     let burned = view(&weir, "get_totals", json!({})).await?["burned"].clone();
     assert_eq!(burned, json!((100_000 + 4 * FEE).to_string()));
     assert_eq!(position(&weir, &alice).await?, (8, 0));
@@ -378,11 +490,20 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     assert_eq!(acc, json!({ "sum": "4100000", "count": 2 }));
 
     chain.warp_to(t.end() + t.grace).await?;
-    bob.call(weir.id(), "settle").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
+    bob.call(weir.id(), "settle")
+        .args_json(json!({ "series": 0 }))
+        .transact()
+        .await?
+        .into_result()?;
     let s = view(&weir, "get_series", json!({ "series": 0 })).await?["settlement"].clone();
     // Carol's forfeit was burned: payouts are the band and nothing more.
     assert_eq!(
-        (s["fixing"].as_u64(), s["long_payout"].as_u64(), s["short_payout"].as_u64(), s["void"].as_bool()),
+        (
+            s["fixing"].as_u64(),
+            s["long_payout"].as_u64(),
+            s["short_payout"].as_u64(),
+            s["void"].as_bool()
+        ),
         (Some(2_050_000), Some(250_000), Some(150_000), Some(false))
     );
     assert_books_balance(&chain, &weir).await?;
@@ -399,9 +520,22 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     assert_eq!(position(&weir, &bob).await?, (0, 2));
 
     // Bob redeems for Alice and for himself; Carol for herself.
-    bob.call(weir.id(), "redeem").args_json(json!({ "series": 0, "account_id": alice.id() })).transact().await?.into_result()?;
-    bob.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
-    carol.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
+    bob.call(weir.id(), "redeem")
+        .args_json(json!({ "series": 0, "account_id": alice.id() }))
+        .transact()
+        .await?
+        .into_result()?;
+    bob.call(weir.id(), "redeem")
+        .args_json(json!({ "series": 0 }))
+        .transact()
+        .await?
+        .into_result()?;
+    carol
+        .call(weir.id(), "redeem")
+        .args_json(json!({ "series": 0 }))
+        .transact()
+        .await?
+        .into_result()?;
     let alice_free = 500 * DOLLAR - 8 * 210_000 - FEE + 8 * 250_000;
     let carol_free = 500 * DOLLAR - 8 * 190_000 - 100_000 - 2 * FEE + 6 * 150_000;
     assert_eq!(free(&weir, &alice).await?, alice_free);
@@ -423,7 +557,10 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
         .into_result()?;
     assert_eq!(free(&weir, &alice).await?, 0);
     assert_eq!(chain.usdc_balance(alice.id()).await?, alice_free);
-    assert_eq!(chain.usdc_balance(weir.id()).await?, 1_500 * DOLLAR - alice_free);
+    assert_eq!(
+        chain.usdc_balance(weir.id()).await?,
+        1_500 * DOLLAR - alice_free
+    );
     assert_books_balance(&chain, &weir).await?;
 
     // A void series that traded. Series 2's auction is open now; Bob buys 5 LONG at
@@ -435,28 +572,67 @@ async fn a_whole_life_with_exact_balances() -> anyhow::Result<()> {
     let b = commit_in(2, &bob, &weir, round, "Long", 5, 220_000, 2 * DOLLAR).await?;
     let c = commit_in(2, &carol, &weir, round, "Short", 5, 220_000, 2 * DOLLAR).await?;
     chain.warp_to(t2.reveal_start(round)).await?;
-    reveal_in(2, &bob, &weir, round, b, "Long", 5, 220_000).await?.into_result()?;
-    reveal_in(2, &carol, &weir, round, c, "Short", 5, 220_000).await?.into_result()?;
+    reveal_in(2, &bob, &weir, round, b, "Long", 5, 220_000)
+        .await?
+        .into_result()?;
+    reveal_in(2, &carol, &weir, round, c, "Short", 5, 220_000)
+        .await?
+        .into_result()?;
     chain.warp_to(t2.round_end(round)).await?;
-    bob.call(weir.id(), "clear").args_json(json!({ "series": 2, "round": round })).gas(CALL_GAS).transact().await?.into_result()?;
+    bob.call(weir.id(), "clear")
+        .args_json(json!({ "series": 2, "round": round }))
+        .gas(CALL_GAS)
+        .transact()
+        .await?
+        .into_result()?;
     let series = view(&weir, "get_series", json!({ "series": 2 })).await?;
-    assert_eq!((series["traded_units"].as_u64(), series["traded_value"].as_str()), (Some(5), Some("1100000")));
+    assert_eq!(
+        (
+            series["traded_units"].as_u64(),
+            series["traded_value"].as_str()
+        ),
+        (Some(5), Some("1100000"))
+    );
     assert_eq!(free(&weir, &bob).await?, bob_before - FEE - 5 * 220_000);
     assert_eq!(free(&weir, &carol).await?, carol_before - FEE - 5 * 180_000);
 
     chain.warp_to(t2.end() + t.grace).await?;
-    let early = bob.call(weir.id(), "settle").args_json(json!({ "series": 2 })).transact().await?;
+    let early = bob
+        .call(weir.id(), "settle")
+        .args_json(json!({ "series": 2 }))
+        .transact()
+        .await?;
     assert!(format!("{:?}", early.failures()).contains("not enough prints yet"));
     chain.warp_to(t2.end() + 3_600).await?;
-    bob.call(weir.id(), "settle").args_json(json!({ "series": 2 })).transact().await?.into_result()?;
+    bob.call(weir.id(), "settle")
+        .args_json(json!({ "series": 2 }))
+        .transact()
+        .await?
+        .into_result()?;
     let s = view(&weir, "get_series", json!({ "series": 2 })).await?["settlement"].clone();
     // Cancelled at the centre of the band: 0.20 to each side, whatever was traded.
     assert_eq!(
-        (s["fixing"].as_u64(), s["long_payout"].as_u64(), s["short_payout"].as_u64(), s["prints"].as_u64(), s["void"].as_bool()),
-        (Some(2_000_000), Some(200_000), Some(200_000), Some(0), Some(true))
+        (
+            s["fixing"].as_u64(),
+            s["long_payout"].as_u64(),
+            s["short_payout"].as_u64(),
+            s["prints"].as_u64(),
+            s["void"].as_bool()
+        ),
+        (
+            Some(2_000_000),
+            Some(200_000),
+            Some(200_000),
+            Some(0),
+            Some(true)
+        )
     );
     for who in [&bob, &carol] {
-        bob.call(weir.id(), "redeem").args_json(json!({ "series": 2, "account_id": who.id() })).transact().await?.into_result()?;
+        bob.call(weir.id(), "redeem")
+            .args_json(json!({ "series": 2, "account_id": who.id() }))
+            .transact()
+            .await?
+            .into_result()?;
     }
     // Bob paid 0.22 a LONG and gets 0.20: -0.10 $ on 5. Carol paid 0.18 a SHORT and
     // gets 0.20: +0.10 $. Each also paid its commit fee.
@@ -474,8 +650,19 @@ async fn a_failed_withdraw_credits_back() -> anyhow::Result<()> {
     // Dave is registered at Weir but has no storage at the token, so a transfer to
     // him fails.
     let dave = chain.worker.dev_create_account().await?;
-    dave.call(weir.id(), "register").args_json(json!({})).deposit(REGISTRATION).transact().await?.into_result()?;
-    chain.usdc.call("mint").args_json(json!({ "account_id": funder.id(), "amount": "7000000" })).transact().await?.into_result()?;
+    dave.call(weir.id(), "register")
+        .args_json(json!({}))
+        .deposit(REGISTRATION)
+        .transact()
+        .await?
+        .into_result()?;
+    chain
+        .usdc
+        .call("mint")
+        .args_json(json!({ "account_id": funder.id(), "amount": "7000000" }))
+        .transact()
+        .await?
+        .into_result()?;
     funder
         .call(chain.usdc.id(), "ft_transfer_call")
         .args_json(json!({ "receiver_id": weir.id(), "amount": "7000000", "msg": dave.id() }))
@@ -486,7 +673,13 @@ async fn a_failed_withdraw_credits_back() -> anyhow::Result<()> {
         .into_result()?;
     assert_eq!(free(&weir, &dave).await?, 7 * DOLLAR);
     // Only the funder has a record at the token.
-    assert!(view(&chain.usdc, "storage_balance_of", json!({ "account_id": dave.id() })).await?.is_null());
+    assert!(view(
+        &chain.usdc,
+        "storage_balance_of",
+        json!({ "account_id": dave.id() })
+    )
+    .await?
+    .is_null());
 
     let outcome = dave
         .call(weir.id(), "withdraw")
@@ -497,7 +690,10 @@ async fn a_failed_withdraw_credits_back() -> anyhow::Result<()> {
         .await?;
     println!("the failed ft_transfer: {:?}", outcome.failures());
     assert_eq!(event(&outcome, "withdraw")["data"]["amount"], "3000000");
-    assert_eq!(event(&outcome, "withdraw_failed")["data"]["amount"], "3000000");
+    assert_eq!(
+        event(&outcome, "withdraw_failed")["data"]["amount"],
+        "3000000"
+    );
     assert_eq!(free(&weir, &dave).await?, 7 * DOLLAR);
     assert_eq!(chain.usdc_balance(weir.id()).await?, 17 * DOLLAR);
     assert_books_balance(&chain, &weir).await?;
@@ -512,11 +708,16 @@ async fn a_function_call_key_trades_but_cannot_move_money() -> anyhow::Result<()
     let other = chain.trader(&weir, 10 * DOLLAR).await?;
 
     // The agent's key, limited as section 15 says.
-    let methods = ["commit", "reveal", "clear", "mint", "merge", "settle", "redeem"];
+    let methods = [
+        "commit", "reveal", "clear", "mint", "merge", "settle", "redeem",
+    ];
     let key = SecretKey::from_random(KeyType::ED25519);
     owner
         .batch(owner.id())
-        .add_key(key.public_key(), AccessKey::function_call_access(weir.id(), &methods, Some(NearToken::from_near(1))))
+        .add_key(
+            key.public_key(),
+            AccessKey::function_call_access(weir.id(), &methods, Some(NearToken::from_near(1))),
+        )
         .transact()
         .await?
         .into_result()?;
@@ -527,51 +728,114 @@ async fn a_function_call_key_trades_but_cannot_move_money() -> anyhow::Result<()
     let round = a_fresh_commit_phase(&chain, &t, 60).await?;
     let long = commit(&agent, &weir, round, "Long", 3, 200_000, DOLLAR).await?;
     let short = commit(&agent, &weir, round, "Short", 3, 200_000, DOLLAR).await?;
-    agent.call(weir.id(), "mint").args_json(json!({ "series": 0, "sets": 2 })).transact().await?.into_result()?;
-    agent.call(weir.id(), "merge").args_json(json!({ "series": 0, "sets": 1 })).transact().await?.into_result()?;
+    agent
+        .call(weir.id(), "mint")
+        .args_json(json!({ "series": 0, "sets": 2 }))
+        .transact()
+        .await?
+        .into_result()?;
+    agent
+        .call(weir.id(), "merge")
+        .args_json(json!({ "series": 0, "sets": 1 }))
+        .transact()
+        .await?
+        .into_result()?;
     chain.warp_to(t.reveal_start(round)).await?;
-    reveal(&agent, &weir, round, long, "Long", 3, 200_000).await?.into_result()?;
-    reveal(&agent, &weir, round, short, "Short", 3, 200_000).await?.into_result()?;
+    reveal(&agent, &weir, round, long, "Long", 3, 200_000)
+        .await?
+        .into_result()?;
+    reveal(&agent, &weir, round, short, "Short", 3, 200_000)
+        .await?
+        .into_result()?;
     chain.warp_to(t.round_end(round)).await?;
-    agent.call(weir.id(), "clear").args_json(json!({ "series": 0, "round": round })).gas(CALL_GAS).transact().await?.into_result()?;
+    agent
+        .call(weir.id(), "clear")
+        .args_json(json!({ "series": 0, "round": round }))
+        .gas(CALL_GAS)
+        .transact()
+        .await?
+        .into_result()?;
     assert_eq!(position(&weir, &owner).await?, (4, 4));
     // 2 sets minted, 1 merged, and 3 units each side bought at 0.20 + 0.20.
-    assert_eq!(free(&weir, &owner).await?, 100 * DOLLAR - u128::from(BAND) - 3 * u128::from(BAND) - 2 * FEE);
+    assert_eq!(
+        free(&weir, &owner).await?,
+        100 * DOLLAR - u128::from(BAND) - 3 * u128::from(BAND) - 2 * FEE
+    );
     // `redeem` reaches the contract, which refuses only because nothing is settled.
-    let redeem = agent.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?;
+    let redeem = agent
+        .call(weir.id(), "redeem")
+        .args_json(json!({ "series": 0 }))
+        .transact()
+        .await?;
     assert!(format!("{:?}", redeem.failures()).contains("series is not settled"));
 
     // The rest fail before any code runs.
     let refused = [
         ("withdraw", json!({ "amount": "1" })),
         ("set_guard", json!({ "guard": 1 })),
-        ("transfer_position", json!({ "series": 0, "to": other.id(), "long": 1, "short": 0 })),
+        (
+            "transfer_position",
+            json!({ "series": 0, "to": other.id(), "long": 1, "short": 0 }),
+        ),
     ];
     for (method, args) in &refused {
-        let error = agent.call(weir.id(), method).args_json(args).transact().await.expect_err(method);
+        let error = agent
+            .call(weir.id(), method)
+            .args_json(args)
+            .transact()
+            .await
+            .expect_err(method);
         println!("limited key, {method}: {error:?}");
-        assert!(format!("{error:?}").contains("MethodNameMismatch"), "{method}: {error:?}");
+        assert!(
+            format!("{error:?}").contains("MethodNameMismatch"),
+            "{method}: {error:?}"
+        );
     }
 
     // Even a key allowed every method cannot attach the 1 yoctoNEAR these need.
     let any_key = SecretKey::from_random(KeyType::ED25519);
     owner
         .batch(owner.id())
-        .add_key(any_key.public_key(), AccessKey::function_call_access(weir.id(), &[], Some(NearToken::from_near(1))))
+        .add_key(
+            any_key.public_key(),
+            AccessKey::function_call_access(weir.id(), &[], Some(NearToken::from_near(1))),
+        )
         .transact()
         .await?
         .into_result()?;
     let open_agent = Account::from_secret_key(owner.id().clone(), any_key, &chain.worker);
     for (method, args) in &refused {
-        let error = open_agent.call(weir.id(), method).args_json(args).deposit(ONE_YOCTO).transact().await.expect_err(method);
+        let error = open_agent
+            .call(weir.id(), method)
+            .args_json(args)
+            .deposit(ONE_YOCTO)
+            .transact()
+            .await
+            .expect_err(method);
         println!("any-method key with 1 yocto, {method}: {error:?}");
-        assert!(format!("{error:?}").contains("DepositWithFunctionCall"), "{method}: {error:?}");
-        let outcome = open_agent.call(weir.id(), method).args_json(args).transact().await?;
-        println!("any-method key without deposit, {method}: {:?}", outcome.failures());
-        assert!(format!("{:?}", outcome.failures()).contains("requires exactly 1 yoctoNEAR attached"), "{method}");
+        assert!(
+            format!("{error:?}").contains("DepositWithFunctionCall"),
+            "{method}: {error:?}"
+        );
+        let outcome = open_agent
+            .call(weir.id(), method)
+            .args_json(args)
+            .transact()
+            .await?;
+        println!(
+            "any-method key without deposit, {method}: {:?}",
+            outcome.failures()
+        );
+        assert!(
+            format!("{:?}", outcome.failures()).contains("requires exactly 1 yoctoNEAR attached"),
+            "{method}"
+        );
     }
     assert_eq!(position(&weir, &other).await?, (0, 0));
-    assert_eq!(free(&weir, &owner).await?, 100 * DOLLAR - 4 * u128::from(BAND) - 2 * FEE);
+    assert_eq!(
+        free(&weir, &owner).await?,
+        100 * DOLLAR - 4 * u128::from(BAND) - 2 * FEE
+    );
 
     // The same key settles the series once delivery is over, and redeems. The last
     // buckets of the window get two reports of three and nobody finalizes them, so
@@ -594,17 +858,44 @@ async fn a_function_call_key_trades_but_cannot_move_money() -> anyhow::Result<()
         }
         tail.push(bucket);
     }
-    let pending: Vec<u64> = serde_json::from_value(view(&weir, "get_pending_prints", json!({})).await?)?;
+    let pending: Vec<u64> =
+        serde_json::from_value(view(&weir, "get_pending_prints", json!({})).await?)?;
     chain.warp_to(t.end() + t.grace).await?;
-    let settled = agent.call(weir.id(), "settle").args_json(json!({ "series": 0 })).gas(Gas::from_tgas(300)).transact().await?;
+    let settled = agent
+        .call(weir.id(), "settle")
+        .args_json(json!({ "series": 0 }))
+        .gas(Gas::from_tgas(300))
+        .transact()
+        .await?;
     let settle_tgas = settled.total_gas_burnt.as_gas() as f64 / 1e12;
     settled.into_result()?;
-    println!("GAS settle deciding {} pending buckets {pending:?}: {settle_tgas:.2} Tgas", pending.len());
-    assert!(pending.len() >= 2 && pending.iter().all(|b| tail.contains(b)), "{pending:?}");
-    assert_eq!(view(&weir, "get_pending_prints", json!({})).await?, json!([]));
+    println!(
+        "GAS settle deciding {} pending buckets {pending:?}: {settle_tgas:.2} Tgas",
+        pending.len()
+    );
+    assert!(
+        pending.len() >= 2 && pending.iter().all(|b| tail.contains(b)),
+        "{pending:?}"
+    );
+    assert_eq!(
+        view(&weir, "get_pending_prints", json!({})).await?,
+        json!([])
+    );
     let s = view(&weir, "get_series", json!({ "series": 0 })).await?["settlement"].clone();
-    assert_eq!((s["fixing"].as_u64(), s["prints"].as_u64(), s["void"].as_bool()), (Some(PRICE), Some(4), Some(false)));
-    agent.call(weir.id(), "redeem").args_json(json!({ "series": 0 })).transact().await?.into_result()?;
+    assert_eq!(
+        (
+            s["fixing"].as_u64(),
+            s["prints"].as_u64(),
+            s["void"].as_bool()
+        ),
+        (Some(PRICE), Some(4), Some(false))
+    );
+    agent
+        .call(weir.id(), "redeem")
+        .args_json(json!({ "series": 0 }))
+        .transact()
+        .await?
+        .into_result()?;
     // 4 sets at 0.40 each, nothing forfeited: every dollar is back but the two fees.
     assert_eq!(free(&weir, &owner).await?, 100 * DOLLAR - 2 * FEE);
     assert_eq!(position(&weir, &owner).await?, (0, 0));
@@ -639,12 +930,22 @@ async fn full_round_gas(chain: &Chain, n: u32) -> anyhow::Result<f64> {
             anyhow::Ok(account)
         });
     }
-    let traders: Vec<Account> = tasks.join_all().await.into_iter().collect::<Result<_, _>>()?;
+    let traders: Vec<Account> = tasks
+        .join_all()
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()?;
 
     chain.warp_to(t.open()).await?;
     chain.print(&weir, &t, PRICE).await?;
     let round = a_fresh_commit_phase(chain, &t, 600).await?;
-    let order = |i: usize| if i.is_multiple_of(2) { ("Long", 210_000u64) } else { ("Short", 190_000u64) };
+    let order = |i: usize| {
+        if i.is_multiple_of(2) {
+            ("Long", 210_000u64)
+        } else {
+            ("Short", 190_000u64)
+        }
+    };
     let mut tasks = tokio::task::JoinSet::new();
     for (i, trader) in traders.iter().enumerate() {
         let (trader, weir) = (trader.clone(), weir.clone());
@@ -654,16 +955,36 @@ async fn full_round_gas(chain: &Chain, n: u32) -> anyhow::Result<f64> {
             anyhow::Ok((trader, seq, side, price))
         });
     }
-    let commits: Vec<_> = tasks.join_all().await.into_iter().collect::<Result<_, _>>()?;
-    assert_eq!(view(&weir, "get_round", json!({ "series": 0, "round": round })).await?["commits"].as_array().unwrap().len(), n as usize);
+    let commits: Vec<_> = tasks
+        .join_all()
+        .await
+        .into_iter()
+        .collect::<Result<_, _>>()?;
+    assert_eq!(
+        view(&weir, "get_round", json!({ "series": 0, "round": round })).await?["commits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        n as usize
+    );
 
     chain.warp_to(t.reveal_start(round)).await?;
     let mut tasks = tokio::task::JoinSet::new();
     for (trader, seq, side, price) in commits {
         let weir = weir.clone();
-        tasks.spawn(async move { reveal(&trader, &weir, round, seq, side, 10, price).await?.into_result().map(|_| ()).map_err(anyhow::Error::from) });
+        tasks.spawn(async move {
+            reveal(&trader, &weir, round, seq, side, 10, price)
+                .await?
+                .into_result()
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+        });
     }
-    tasks.join_all().await.into_iter().collect::<Result<Vec<_>, _>>()?;
+    tasks
+        .join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
     chain.warp_to(t.round_end(round)).await?;
     let outcome = traders[0]
@@ -672,7 +993,13 @@ async fn full_round_gas(chain: &Chain, n: u32) -> anyhow::Result<f64> {
         .gas(Gas::from_tgas(300))
         .transact()
         .await?;
-    let receipt_tgas = outcome.receipt_outcomes().iter().map(|r| r.gas_burnt.as_gas()).max().unwrap_or(0) as f64 / 1e12;
+    let receipt_tgas = outcome
+        .receipt_outcomes()
+        .iter()
+        .map(|r| r.gas_burnt.as_gas())
+        .max()
+        .unwrap_or(0) as f64
+        / 1e12;
     let total_tgas = outcome.total_gas_burnt.as_gas() as f64 / 1e12;
     outcome.into_result()?;
     let result = view(&weir, "get_result", json!({ "series": 0, "round": round })).await?;

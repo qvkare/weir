@@ -82,7 +82,13 @@ fn round_end(round: u64) -> u64 {
     round_start(round) + 100
 }
 
-fn install(caller: &str, now: u64, deposit: u128, results: Vec<PromiseResult>, storage: HashMap<Vec<u8>, Vec<u8>>) {
+fn install(
+    caller: &str,
+    now: u64,
+    deposit: u128,
+    results: Vec<PromiseResult>,
+    storage: HashMap<Vec<u8>, Vec<u8>>,
+) {
     let context = VMContextBuilder::new()
         .current_account_id(id(CONTRACT))
         .signer_account_id(id(caller))
@@ -180,10 +186,16 @@ impl H {
     }
 
     fn ok<R>(&mut self, caller: &str, f: impl FnOnce(&mut Weir) -> R) -> R {
-        self.call(caller, f).unwrap_or_else(|err| panic!("{caller}: {err}"))
+        self.call(caller, f)
+            .unwrap_or_else(|err| panic!("{caller}: {err}"))
     }
 
-    fn refused<R: std::fmt::Debug>(&mut self, caller: &str, err: &str, f: impl FnOnce(&mut Weir) -> R) {
+    fn refused<R: std::fmt::Debug>(
+        &mut self,
+        caller: &str,
+        err: &str,
+        f: impl FnOnce(&mut Weir) -> R,
+    ) {
         self.refused_with(caller, 0, err, f)
     }
 
@@ -206,12 +218,16 @@ impl H {
     }
 
     fn register(&mut self, name: &str) {
-        self.run(name, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(None))
-            .unwrap();
+        self.run(name, REGISTRATION_FEE.as_yoctonear(), vec![], |w| {
+            w.register(None)
+        })
+        .unwrap();
     }
 
     fn deposit(&mut self, name: &str, amount: u128) {
-        let refund = self.ok(USDC, |w| w.ft_on_transfer(id(name), U128(amount), String::new()));
+        let refund = self.ok(USDC, |w| {
+            w.ft_on_transfer(id(name), U128(amount), String::new())
+        });
         assert_eq!(refund, U128(0));
     }
 
@@ -237,19 +253,46 @@ impl H {
         self.try_commit(name, side, size, price, lock).unwrap()
     }
 
-    fn try_commit(&mut self, name: &str, side: Side, size: u64, price: u64, lock: u128) -> Result<u32, String> {
+    fn try_commit(
+        &mut self,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+        lock: u128,
+    ) -> Result<u32, String> {
         self.try_commit_in(0, name, side, size, price, lock)
     }
 
-    fn try_commit_in(&mut self, series: u32, name: &str, side: Side, size: u64, price: u64, lock: u128) -> Result<u32, String> {
+    fn try_commit_in(
+        &mut self,
+        series: u32,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+        lock: u128,
+    ) -> Result<u32, String> {
         let schedule = params().schedule();
         let round = self.now.saturating_sub(schedule.auction_open(series)) / schedule.round_secs();
-        let hash = hex::encode(hash::commit_hash(series, round, name, side, size, price, SALT));
+        let hash = hex::encode(hash::commit_hash(
+            series, round, name, side, size, price, SALT,
+        ));
         self.call(name, |w| w.commit(series, hash, U128(lock)))
     }
 
-    fn reveal(&mut self, name: &str, round: u64, seq: u32, side: Side, size: u64, price: u64) -> Result<(), String> {
-        self.call(name, |w| w.reveal(0, round, seq, side, size, price, SALT.into()))
+    fn reveal(
+        &mut self,
+        name: &str,
+        round: u64,
+        seq: u32,
+        side: Side,
+        size: u64,
+        price: u64,
+    ) -> Result<(), String> {
+        self.call(name, |w| {
+            w.reveal(0, round, seq, side, size, price, SALT.into())
+        })
     }
 
     fn balance(&self, name: &str) -> u128 {
@@ -312,25 +355,37 @@ fn new_refuses_bad_params() {
         (|p| p.min_prints = 0, ERR_MIN_PRINTS),
         (|p| p.min_prints = 101, ERR_MIN_PRINTS_TOO_MANY),
         (|p| p.void_after_secs = 19, ERR_VOID_AFTER),
-        (|p| {
-            p.report_grace_secs = 1_001;
-            p.void_after_secs = 2_000;
-        }, ERR_GRACE),
+        (
+            |p| {
+                p.report_grace_secs = 1_001;
+                p.void_after_secs = 2_000;
+            },
+            ERR_GRACE,
+        ),
         (|p| p.max_spread_bps = 0, ERR_MAX_SPREAD),
         (|p| p.max_spread_bps = 10_001, ERR_MAX_SPREAD),
         (|p| p.max_order_size = 1 << 47, ERR_CAPACITY),
         (|p| p.t0 += 5, ERR_BUCKET_GRID),
         (|p| p.period_secs = 1_005, ERR_BUCKET_GRID),
         (|p| p.reporters.clear(), ERR_REPORTERS),
-        (|p| p.reporters = (0..10).map(|i| id(&format!("r{i}.near"))).collect(), ERR_REPORTERS),
-        (|p| p.reporters = vec![id(R1), id(R2), id(R1)], ERR_REPORTERS),
+        (
+            |p| p.reporters = (0..10).map(|i| id(&format!("r{i}.near"))).collect(),
+            ERR_REPORTERS,
+        ),
+        (
+            |p| p.reporters = vec![id(R1), id(R2), id(R1)],
+            ERR_REPORTERS,
+        ),
         (|p| p.quorum = 0, ERR_QUORUM),
         (|p| p.quorum = 4, ERR_QUORUM),
         (|p| p.quorum = 1, ERR_QUORUM_MAJORITY),
-        (|p| {
-            p.reporters = vec![id(R1), id(R2)];
-            p.quorum = 1;
-        }, ERR_QUORUM_MAJORITY),
+        (
+            |p| {
+                p.reporters = vec![id(R1), id(R2)];
+                p.quorum = 1;
+            },
+            ERR_QUORUM_MAJORITY,
+        ),
     ];
     for (edit, err) in cases {
         let mut p = params();
@@ -368,8 +423,13 @@ fn new_refuses_bad_params() {
 fn register_for_self_or_another_and_refund_the_excess() {
     let mut h = H::new();
     let extra = 5_000;
-    h.run(ALICE, REGISTRATION_FEE.as_yoctonear() + extra, vec![], |w| w.register(None))
-        .unwrap();
+    h.run(
+        ALICE,
+        REGISTRATION_FEE.as_yoctonear() + extra,
+        vec![],
+        |w| w.register(None),
+    )
+    .unwrap();
     assert_eq!(event("register")["data"]["account_id"], ALICE);
     let refunds: Vec<_> = get_created_receipts()
         .into_iter()
@@ -380,11 +440,23 @@ fn register_for_self_or_another_and_refund_the_excess() {
         matches!(refunds.as_slice(), [MockAction::Transfer { deposit, .. }] if deposit.as_yoctonear() == extra),
         "{refunds:?}"
     );
-    assert_eq!(h.view(|w| w.get_account(id(ALICE))), Some(AccountView { balance: U128(0), guard: None, max_round_lock: None }));
+    assert_eq!(
+        h.view(|w| w.get_account(id(ALICE))),
+        Some(AccountView {
+            balance: U128(0),
+            guard: None,
+            max_round_lock: None
+        })
+    );
 
-    h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(Some(id(BOB))))
-        .unwrap();
-    assert!(get_created_receipts().is_empty(), "no refund for an exact fee");
+    h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| {
+        w.register(Some(id(BOB)))
+    })
+    .unwrap();
+    assert!(
+        get_created_receipts().is_empty(),
+        "no refund for an exact fee"
+    );
     assert!(h.view(|w| w.get_account(id(BOB))).is_some());
 
     let fee = REGISTRATION_FEE.as_yoctonear();
@@ -399,17 +471,46 @@ fn deposit_credits_the_sender_or_the_account_in_msg() {
     let mut h = H::new();
     h.register(ALICE);
     h.register(BOB);
-    assert_eq!(h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(700), String::new())), U128(0));
-    assert_eq!(event("deposit")["data"], serde_json::json!({ "account_id": ALICE, "amount": "700" }));
-    assert_eq!(h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(300), BOB.into())), U128(0));
+    assert_eq!(
+        h.ok(USDC, |w| w.ft_on_transfer(
+            id(ALICE),
+            U128(700),
+            String::new()
+        )),
+        U128(0)
+    );
+    assert_eq!(
+        event("deposit")["data"],
+        serde_json::json!({ "account_id": ALICE, "amount": "700" })
+    );
+    assert_eq!(
+        h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(300), BOB.into())),
+        U128(0)
+    );
     assert_eq!((h.balance(ALICE), h.balance(BOB)), (700, 300));
 
     // Not registered, or not an account id at all: the whole amount goes back.
-    assert_eq!(h.ok(USDC, |w| w.ft_on_transfer(id(CAROL), U128(50), String::new())), U128(50));
-    assert_eq!(h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(50), "Not An Account!".into())), U128(50));
+    assert_eq!(
+        h.ok(USDC, |w| w.ft_on_transfer(
+            id(CAROL),
+            U128(50),
+            String::new()
+        )),
+        U128(50)
+    );
+    assert_eq!(
+        h.ok(USDC, |w| w.ft_on_transfer(
+            id(ALICE),
+            U128(50),
+            "Not An Account!".into()
+        )),
+        U128(50)
+    );
     assert!(events().is_empty());
 
-    h.refused(STRANGER, ERR_WRONG_TOKEN, |w| w.ft_on_transfer(id(ALICE), U128(1), String::new()));
+    h.refused(STRANGER, ERR_WRONG_TOKEN, |w| {
+        w.ft_on_transfer(id(ALICE), U128(1), String::new())
+    });
     assert_eq!(h.totals().free, 1_000);
 }
 
@@ -420,7 +521,9 @@ fn withdraw_needs_exactly_one_yocto() {
     h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.withdraw(U128(1)));
     h.refused_with(ALICE, 2, ERR_ONE_YOCTO, |w| w.withdraw(U128(1)));
     h.refused_with(ALICE, 1, ERR_ZERO_AMOUNT, |w| w.withdraw(U128(0)));
-    h.refused_with(ALICE, 1, ERR_BALANCE, |w| w.withdraw(U128(100 * DOLLAR + 1)));
+    h.refused_with(ALICE, 1, ERR_BALANCE, |w| {
+        w.withdraw(U128(100 * DOLLAR + 1))
+    });
     h.refused_with(CAROL, 1, ERR_NOT_REGISTERED, |w| w.withdraw(U128(1)));
 }
 
@@ -428,13 +531,22 @@ fn withdraw_needs_exactly_one_yocto() {
 fn withdraw_sends_and_a_failed_transfer_credits_back() {
     let mut h = H::new();
     h.funded(&[ALICE]);
-    h.run(ALICE, 1, vec![], |w| w.withdraw(U128(30 * DOLLAR))).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.withdraw(U128(30 * DOLLAR)))
+        .unwrap();
     assert_eq!(h.balance(ALICE), 70 * DOLLAR);
     assert_eq!(event("withdraw")["data"]["amount"], "30000000");
     let receipts = get_created_receipts();
-    let transfer = receipts.iter().find(|r| r.receiver_id == id(USDC)).expect("ft_transfer");
+    let transfer = receipts
+        .iter()
+        .find(|r| r.receiver_id == id(USDC))
+        .expect("ft_transfer");
     match &transfer.actions[0] {
-        MockAction::FunctionCallWeight { method_name, args, attached_deposit, .. } => {
+        MockAction::FunctionCallWeight {
+            method_name,
+            args,
+            attached_deposit,
+            ..
+        } => {
             assert_eq!(method_name, b"ft_transfer");
             assert_eq!(attached_deposit.as_yoctonear(), 1);
             let args: Value = serde_json::from_slice(args).unwrap();
@@ -443,7 +555,10 @@ fn withdraw_sends_and_a_failed_transfer_credits_back() {
         }
         other => panic!("{other:?}"),
     }
-    assert!(receipts.iter().any(|r| r.receiver_id == id(CONTRACT)), "callback");
+    assert!(
+        receipts.iter().any(|r| r.receiver_id == id(CONTRACT)),
+        "callback"
+    );
 
     h.run(CONTRACT, 0, vec![PromiseResult::Successful(vec![])], |w| {
         w.on_withdraw(id(ALICE), U128(30 * DOLLAR))
@@ -452,7 +567,8 @@ fn withdraw_sends_and_a_failed_transfer_credits_back() {
     assert!(events().is_empty());
     assert_eq!(h.balance(ALICE), 70 * DOLLAR);
 
-    h.run(ALICE, 1, vec![], |w| w.withdraw(U128(20 * DOLLAR))).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.withdraw(U128(20 * DOLLAR)))
+        .unwrap();
     h.run(CONTRACT, 0, vec![PromiseResult::Failed], |w| {
         w.on_withdraw(id(ALICE), U128(20 * DOLLAR))
     })
@@ -468,10 +584,15 @@ fn set_guard_needs_exactly_one_yocto() {
     h.register(ALICE);
     h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.set_guard(Some(5), None));
     h.refused_with(CAROL, 1, ERR_NOT_REGISTERED, |w| w.set_guard(Some(5), None));
-    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(5), None)).unwrap();
-    assert_eq!(event("guard")["data"], serde_json::json!({ "account_id": ALICE, "guard": 5, "max_round_lock": null }));
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(5), None))
+        .unwrap();
+    assert_eq!(
+        event("guard")["data"],
+        serde_json::json!({ "account_id": ALICE, "guard": 5, "max_round_lock": null })
+    );
     assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().guard, Some(5));
-    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None)).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None))
+        .unwrap();
     assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().guard, None);
 }
 
@@ -482,7 +603,10 @@ fn opening_needs_a_fresh_print() {
     let mut h = H::new();
     h.funded(&[ALICE]);
     h.at(OPEN);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_STALE.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_STALE.into())
+    );
     h.refused(ALICE, ERR_STALE, |w| w.mint(0, 1));
 
     // A print at OPEN - 300 is exactly max_anchor_age_secs old at OPEN.
@@ -490,7 +614,10 @@ fn opening_needs_a_fresh_print() {
     let bucket = h.print(PRICE);
     assert_eq!(bucket, OPEN - 300);
     h.at(OPEN + 1);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_STALE.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_STALE.into())
+    );
     h.at(OPEN);
     h.commit(ALICE, Side::Long, 1, 1_000, 1_000);
     assert_eq!(
@@ -498,7 +625,10 @@ fn opening_needs_a_fresh_print() {
         serde_json::json!({ "series": 0, "anchor": PRICE, "floor": FLOOR, "band": BAND })
     );
     let s = h.series(0);
-    assert_eq!((s.anchor, s.floor, s.band, s.opened_at, s.pending_rounds), (PRICE, FLOOR, BAND, OPEN, vec![0]));
+    assert_eq!(
+        (s.anchor, s.floor, s.band, s.opened_at, s.pending_rounds),
+        (PRICE, FLOOR, BAND, OPEN, vec![0])
+    );
 }
 
 #[test]
@@ -518,19 +648,36 @@ fn commit_phase_boundaries_at_the_exact_second() {
     h.funded(&[ALICE]);
     h.at(OPEN - 1);
     h.print(PRICE);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_NOT_COMMIT_PHASE.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_NOT_COMMIT_PHASE.into())
+    );
     h.at(OPEN);
     assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Ok(0));
     h.at(OPEN + 59);
     assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Ok(1));
     h.at(OPEN + 60);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_NOT_COMMIT_PHASE.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_NOT_COMMIT_PHASE.into())
+    );
     h.at(OPEN + 100);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Ok(0), "round 1 starts at seq 0");
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Ok(0),
+        "round 1 starts at seq 0"
+    );
     h.at(CLOSE - 100);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Ok(0), "the last round");
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Ok(0),
+        "the last round"
+    );
     h.at(CLOSE);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_NOT_COMMIT_PHASE.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_NOT_COMMIT_PHASE.into())
+    );
     assert_eq!(h.series(0).pending_rounds, vec![0, 1, 9]);
 }
 
@@ -540,12 +687,25 @@ fn commit_checks_its_inputs() {
     h.funded(&[ALICE]);
     h.open_at_round(0);
     let hash = "ab".repeat(32);
-    h.refused(CAROL, ERR_NOT_REGISTERED, |w| w.commit(0, "ab".repeat(32), U128(1_000)));
-    h.refused(ALICE, ERR_BAD_HASH, |w| w.commit(0, "AB".repeat(32), U128(1_000)));
-    h.refused(ALICE, ERR_BAD_HASH, |w| w.commit(0, "ab".repeat(31), U128(1_000)));
-    h.refused(ALICE, ERR_LOCK_TOO_SMALL, |w| w.commit(0, "ab".repeat(32), U128(999)));
-    h.refused(ALICE, ERR_BALANCE, |w| w.commit(0, "ab".repeat(32), U128(100 * DOLLAR + 1)));
-    assert_eq!(h.ok(ALICE, |w| w.commit(0, hash.clone(), U128(100 * DOLLAR))), 0);
+    h.refused(CAROL, ERR_NOT_REGISTERED, |w| {
+        w.commit(0, "ab".repeat(32), U128(1_000))
+    });
+    h.refused(ALICE, ERR_BAD_HASH, |w| {
+        w.commit(0, "AB".repeat(32), U128(1_000))
+    });
+    h.refused(ALICE, ERR_BAD_HASH, |w| {
+        w.commit(0, "ab".repeat(31), U128(1_000))
+    });
+    h.refused(ALICE, ERR_LOCK_TOO_SMALL, |w| {
+        w.commit(0, "ab".repeat(32), U128(999))
+    });
+    h.refused(ALICE, ERR_BALANCE, |w| {
+        w.commit(0, "ab".repeat(32), U128(100 * DOLLAR + 1))
+    });
+    assert_eq!(
+        h.ok(ALICE, |w| w.commit(0, hash.clone(), U128(100 * DOLLAR))),
+        0
+    );
     assert_eq!(
         event("commit")["data"],
         serde_json::json!({ "series": 0, "round": 0, "seq": 0, "account_id": ALICE, "hash": "ab".repeat(32), "lock": "100000000", "fee": "0" })
@@ -579,8 +739,15 @@ fn a_full_round_evicts_the_smallest_lock_latest_first() {
     let before = h.balance(CAROL);
 
     // Equal to the smallest is not enough.
-    assert_eq!(h.try_commit(DAVE, Side::Long, 1, 1_000, 3_000), Err(ERR_ROUND_FULL.into()));
-    assert_eq!(h.balance(DAVE), 100 * DOLLAR, "a refused commit takes nothing");
+    assert_eq!(
+        h.try_commit(DAVE, Side::Long, 1, 1_000, 3_000),
+        Err(ERR_ROUND_FULL.into())
+    );
+    assert_eq!(
+        h.balance(DAVE),
+        100 * DOLLAR,
+        "a refused commit takes nothing"
+    );
 
     // Larger: the latest of the two smallest (Carol's, seq 2) goes, in full.
     assert_eq!(h.try_commit(DAVE, Side::Long, 1, 1_000, 3_001), Ok(4));
@@ -589,7 +756,13 @@ fn a_full_round_evicts_the_smallest_lock_latest_first() {
         serde_json::json!({ "series": 0, "round": 0, "seq": 2, "account_id": CAROL, "lock": "3000", "fee": "0" })
     );
     assert_eq!(h.balance(CAROL), before + 3_000);
-    let seqs: Vec<u32> = h.view(|w| w.get_round(0, 0)).unwrap().commits.iter().map(|c| c.seq).collect();
+    let seqs: Vec<u32> = h
+        .view(|w| w.get_round(0, 0))
+        .unwrap()
+        .commits
+        .iter()
+        .map(|c| c.seq)
+        .collect();
     assert_eq!(seqs, vec![0, 1, 3, 4]);
     assert_eq!(h.totals().locked, 5_000 + 3_000 + 4_000 + 3_001);
 }
@@ -604,11 +777,17 @@ fn reveal_phase_boundaries_at_the_exact_second() {
     let a = h.commit(ALICE, Side::Long, 1, 1_000, 1_000);
     let b = h.commit(ALICE, Side::Long, 1, 1_000, 1_000);
     h.at(reveal_start(0) - 1);
-    assert_eq!(h.reveal(ALICE, 0, a, Side::Long, 1, 1_000), Err(ERR_NOT_REVEAL_PHASE.into()));
+    assert_eq!(
+        h.reveal(ALICE, 0, a, Side::Long, 1, 1_000),
+        Err(ERR_NOT_REVEAL_PHASE.into())
+    );
     h.at(reveal_start(0));
     assert_eq!(h.reveal(ALICE, 0, a, Side::Long, 1, 1_000), Ok(()));
     h.at(round_end(0));
-    assert_eq!(h.reveal(ALICE, 0, b, Side::Long, 1, 1_000), Err(ERR_NOT_REVEAL_PHASE.into()));
+    assert_eq!(
+        h.reveal(ALICE, 0, b, Side::Long, 1, 1_000),
+        Err(ERR_NOT_REVEAL_PHASE.into())
+    );
     h.at(round_end(0) - 1);
     assert_eq!(h.reveal(ALICE, 0, b, Side::Long, 1, 1_000), Ok(()));
 }
@@ -628,32 +807,92 @@ fn reveal_refuses_and_leaves_the_commit_unrevealed() {
     let reveal = |h: &mut H, who: &str, seq: u32, side: Side, size: u64, price: u64, salt: &str| {
         h.call(who, |w| w.reveal(0, 0, seq, side, size, price, salt.into()))
     };
-    assert_eq!(reveal(&mut h, ALICE, 9, Side::Long, 10, 200_000, SALT), Err(ERR_NO_COMMIT.into()));
-    assert_eq!(h.call(ALICE, |w| w.reveal(0, 1, 0, Side::Long, 10, 200_000, SALT.into())), Err(ERR_NO_COMMIT.into()));
-    assert_eq!(reveal(&mut h, BOB, long, Side::Long, 10, 200_000, SALT), Err(ERR_NOT_OWNER.into()));
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, "00"), Err(ERR_BAD_SALT.into()));
+    assert_eq!(
+        reveal(&mut h, ALICE, 9, Side::Long, 10, 200_000, SALT),
+        Err(ERR_NO_COMMIT.into())
+    );
+    assert_eq!(
+        h.call(ALICE, |w| w.reveal(
+            0,
+            1,
+            0,
+            Side::Long,
+            10,
+            200_000,
+            SALT.into()
+        )),
+        Err(ERR_NO_COMMIT.into())
+    );
+    assert_eq!(
+        reveal(&mut h, BOB, long, Side::Long, 10, 200_000, SALT),
+        Err(ERR_NOT_OWNER.into())
+    );
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, "00"),
+        Err(ERR_BAD_SALT.into())
+    );
     // Wrong hash: any field differs.
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Short, 10, 200_000, SALT), Err(ERR_HASH_MISMATCH.into()));
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 11, 200_000, SALT), Err(ERR_HASH_MISMATCH.into()));
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 10, 201_000, SALT), Err(ERR_HASH_MISMATCH.into()));
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Short, 10, 200_000, SALT),
+        Err(ERR_HASH_MISMATCH.into())
+    );
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 11, 200_000, SALT),
+        Err(ERR_HASH_MISMATCH.into())
+    );
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 10, 201_000, SALT),
+        Err(ERR_HASH_MISMATCH.into())
+    );
     let other_salt = "ff".repeat(16);
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, &other_salt), Err(ERR_HASH_MISMATCH.into()));
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, &other_salt),
+        Err(ERR_HASH_MISMATCH.into())
+    );
     // Under-locked by one micro-dollar on each side.
-    assert_eq!(reveal(&mut h, ALICE, small, Side::Long, 10, 200_000, SALT), Err(ERR_UNDER_LOCKED.into()));
-    assert_eq!(reveal(&mut h, ALICE, small_short, Side::Short, 10, 150_000, SALT), Err(ERR_UNDER_LOCKED.into()));
-    let states: Vec<_> = h.view(|w| w.get_round(0, 0)).unwrap().commits.iter().map(|c| c.state).collect();
+    assert_eq!(
+        reveal(&mut h, ALICE, small, Side::Long, 10, 200_000, SALT),
+        Err(ERR_UNDER_LOCKED.into())
+    );
+    assert_eq!(
+        reveal(&mut h, ALICE, small_short, Side::Short, 10, 150_000, SALT),
+        Err(ERR_UNDER_LOCKED.into())
+    );
+    let states: Vec<_> = h
+        .view(|w| w.get_round(0, 0))
+        .unwrap()
+        .commits
+        .iter()
+        .map(|c| c.state)
+        .collect();
     assert!(states.iter().all(|s| *s == CommitStateName::Committed));
 
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, SALT), Ok(()));
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, SALT),
+        Ok(())
+    );
     assert_eq!(
         event("reveal")["data"],
         serde_json::json!({ "series": 0, "round": 0, "seq": long, "account_id": ALICE, "side": "Long", "size": 10, "price": 200_000, "void": false })
     );
-    assert_eq!(reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, SALT), Err(ERR_ALREADY_REVEALED.into()));
-    assert_eq!(reveal(&mut h, ALICE, short, Side::Short, 10, 150_000, SALT), Ok(()));
+    assert_eq!(
+        reveal(&mut h, ALICE, long, Side::Long, 10, 200_000, SALT),
+        Err(ERR_ALREADY_REVEALED.into())
+    );
+    assert_eq!(
+        reveal(&mut h, ALICE, short, Side::Short, 10, 150_000, SALT),
+        Ok(())
+    );
     let commit = &h.view(|w| w.get_round(0, 0)).unwrap().commits[0];
     assert_eq!(commit.state, CommitStateName::Revealed);
-    assert_eq!(commit.order, Some(OrderSpec { side: Side::Long, size: 10, price: 200_000 }));
+    assert_eq!(
+        commit.order,
+        Some(OrderSpec {
+            side: Side::Long,
+            size: 10,
+            price: 200_000
+        })
+    );
 }
 
 #[test]
@@ -677,9 +916,16 @@ fn reveal_checks_size_and_price() {
     let edge_size = h.commit(ALICE, Side::Long, 1_000, 1_000, 10 * DOLLAR);
     h.at(reveal_start(0));
     for (&(size, price, err), seq) in cases.iter().zip(seqs) {
-        assert_eq!(h.reveal(ALICE, 0, seq, Side::Long, size, price), Err(err.into()), "{size} @ {price}");
+        assert_eq!(
+            h.reveal(ALICE, 0, seq, Side::Long, size, price),
+            Err(err.into()),
+            "{size} @ {price}"
+        );
     }
-    assert_eq!(h.reveal(ALICE, 0, edge_size, Side::Long, 1_000, 1_000), Ok(()));
+    assert_eq!(
+        h.reveal(ALICE, 0, edge_size, Side::Long, 1_000, 1_000),
+        Ok(())
+    );
 }
 
 // ---- Section 6.4 ----
@@ -689,7 +935,8 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
     let mut h = H::new();
     h.funded(&[ALICE, BOB]);
     for who in [ALICE, BOB] {
-        h.run(who, 1, vec![], |w| w.set_guard(Some(10_000), None)).unwrap();
+        h.run(who, 1, vec![], |w| w.set_guard(Some(10_000), None))
+            .unwrap();
     }
     h.open_at_round(0);
     // ref = 2_000_000 - 1_800_000 = 200_000. LONG void above 210_000, SHORT below 190_000.
@@ -703,13 +950,25 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
     let (alice, bob) = (h.balance(ALICE), h.balance(BOB));
     h.reveal(ALICE, 0, long_ok, Side::Long, 1, 210_000).unwrap();
     assert_eq!(event("reveal")["data"]["void"], false);
-    h.reveal(ALICE, 0, long_void, Side::Long, 1, 211_000).unwrap();
+    h.reveal(ALICE, 0, long_void, Side::Long, 1, 211_000)
+        .unwrap();
     assert_eq!(event("reveal")["data"]["void"], true);
-    assert_eq!(h.balance(ALICE), alice + DOLLAR, "the void lock returns at once");
+    assert_eq!(
+        h.balance(ALICE),
+        alice + DOLLAR,
+        "the void lock returns at once"
+    );
     h.reveal(BOB, 0, short_ok, Side::Short, 1, 190_000).unwrap();
-    h.reveal(BOB, 0, short_void, Side::Short, 1, 189_000).unwrap();
+    h.reveal(BOB, 0, short_void, Side::Short, 1, 189_000)
+        .unwrap();
     assert_eq!(h.balance(BOB), bob + DOLLAR);
-    let states: Vec<_> = h.view(|w| w.get_round(0, 0)).unwrap().commits.iter().map(|c| c.state).collect();
+    let states: Vec<_> = h
+        .view(|w| w.get_round(0, 0))
+        .unwrap()
+        .commits
+        .iter()
+        .map(|c| c.state)
+        .collect();
     use CommitStateName::*;
     assert_eq!(states, vec![Revealed, Void, Revealed, Void]);
     assert_eq!(h.totals().locked, 2 * DOLLAR);
@@ -718,7 +977,10 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
     let result = h.view(|w| w.get_result(0, 0)).unwrap();
-    assert_eq!((result.orders, result.commits, result.price, result.volume), (2, 4, Some(200_000), 1));
+    assert_eq!(
+        (result.orders, result.commits, result.price, result.volume),
+        (2, 4, Some(200_000), 1)
+    );
     assert_eq!(result.forfeited, U128(0));
 }
 
@@ -726,28 +988,41 @@ fn guard_voids_a_long_above_and_a_short_below_the_reference() {
 fn guard_and_reference_are_fixed_when_the_commit_is_made() {
     let mut h = H::new();
     h.funded(&[ALICE, BOB]);
-    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None))
+        .unwrap();
     h.open_at_round(0);
     // Committed with ref 0.20 and guard 0: a LONG at 0.001 is inside it.
     let kept = h.commit(ALICE, Side::Long, 1, 1_000, DOLLAR);
     h.at(round_start(0) + 10);
     // The index crashes below the floor: ref would clamp to 0 now.
     for reporter in [R1, R2, R3] {
-        h.ok(reporter, |w| w.report(round_start(0) + 10, 1_000_000, BUNDLE.into()));
+        h.ok(reporter, |w| {
+            w.report(round_start(0) + 10, 1_000_000, BUNDLE.into())
+        });
     }
     // A commit made now records ref 0, and Bob's guard does not exist yet.
     let late = h.commit(ALICE, Side::Long, 1, 1_000, DOLLAR);
     let unguarded = h.commit(BOB, Side::Long, 1, 1_000, DOLLAR);
     // Guards changed after commit change nothing.
-    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None)).unwrap();
-    h.run(BOB, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(None, None))
+        .unwrap();
+    h.run(BOB, 1, vec![], |w| w.set_guard(Some(0), None))
+        .unwrap();
     h.at(reveal_start(0));
     h.reveal(ALICE, 0, kept, Side::Long, 1, 1_000).unwrap();
     assert_eq!(event("reveal")["data"]["void"], false);
     h.reveal(ALICE, 0, late, Side::Long, 1, 1_000).unwrap();
-    assert_eq!(event("reveal")["data"]["void"], true, "0.001 > 0 + 0 against the recorded ref");
+    assert_eq!(
+        event("reveal")["data"]["void"],
+        true,
+        "0.001 > 0 + 0 against the recorded ref"
+    );
     h.reveal(BOB, 0, unguarded, Side::Long, 1, 1_000).unwrap();
-    assert_eq!(event("reveal")["data"]["void"], false, "no guard when committed");
+    assert_eq!(
+        event("reveal")["data"]["void"],
+        false,
+        "no guard when committed"
+    );
 }
 
 #[test]
@@ -756,7 +1031,8 @@ fn a_void_order_gets_its_lock_back_but_its_fee_stays_with_the_round() {
     params.commit_fee = U128(500);
     let mut h = H::with(params);
     h.funded(&[ALICE]);
-    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None)).unwrap();
+    h.run(ALICE, 1, vec![], |w| w.set_guard(Some(0), None))
+        .unwrap();
     h.open_at_round(0);
     let seq = h.commit(ALICE, Side::Long, 1, 300_000, DOLLAR);
     assert_eq!(h.balance(ALICE), 100 * DOLLAR - DOLLAR - 500);
@@ -809,7 +1085,10 @@ fn clear_prices_fills_and_accounts_for_every_commit() {
     let filled: Vec<(u32, u64)> = result.fills.iter().map(|f| (f.seq, f.filled)).collect();
     // Only filled orders are kept: Bob's LONG at 0.20 took no part in the trade.
     assert_eq!(filled, vec![(0, 8), (2, 8)]);
-    assert!(h.view(|w| w.get_round(0, 0)).is_none(), "the book is deleted");
+    assert!(
+        h.view(|w| w.get_round(0, 0)).is_none(),
+        "the book is deleted"
+    );
 
     // Alice paid 8 * 0.21; Bob nothing; Carol 8 * (0.40 - 0.21); Dave forfeited 10%.
     assert_eq!(h.balance(ALICE), 100 * DOLLAR - 8 * 210_000);
@@ -852,7 +1131,10 @@ fn clear_without_a_cross_refunds_every_revealed_lock() {
     h.at(round_end(0));
     h.ok(BOB, |w| w.clear(0, 0));
     assert_eq!(event("clear")["data"]["price"], Value::Null);
-    assert_eq!((h.balance(ALICE), h.balance(BOB)), (100 * DOLLAR, 100 * DOLLAR));
+    assert_eq!(
+        (h.balance(ALICE), h.balance(BOB)),
+        (100 * DOLLAR, 100 * DOLLAR)
+    );
     assert_eq!(h.series(0).open_sets, 0);
 }
 
@@ -884,17 +1166,37 @@ fn mint_merge_and_transfer() {
     h.refused(ALICE, ERR_ZERO_SETS, |w| w.mint(0, 0));
     h.refused(ALICE, ERR_BALANCE, |w| w.mint(0, 251));
     h.ok(ALICE, |w| w.mint(0, 10));
-    assert_eq!(event("mint")["data"], serde_json::json!({ "series": 0, "account_id": ALICE, "sets": 10 }));
+    assert_eq!(
+        event("mint")["data"],
+        serde_json::json!({ "series": 0, "account_id": ALICE, "sets": 10 })
+    );
     assert_eq!(h.balance(ALICE), 100 * DOLLAR - 10 * u128::from(BAND));
-    assert_eq!(h.position(ALICE), Position { long: 10, short: 10 });
+    assert_eq!(
+        h.position(ALICE),
+        Position {
+            long: 10,
+            short: 10
+        }
+    );
     assert_eq!(h.series(0).open_sets, 10);
 
-    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.transfer_position(0, id(BOB), 4, 0));
-    h.refused_with(ALICE, 1, ERR_NOT_REGISTERED, |w| w.transfer_position(0, id(CAROL), 4, 0));
-    h.refused_with(ALICE, 1, ERR_POSITION_TOO_SMALL, |w| w.transfer_position(0, id(BOB), 11, 0));
-    h.refused_with(ALICE, 1, ERR_SELF_TRANSFER, |w| w.transfer_position(0, id(ALICE), 1, 0));
-    h.refused_with(ALICE, 1, ERR_NOTHING_TO_TRANSFER, |w| w.transfer_position(0, id(BOB), 0, 0));
-    h.run(ALICE, 1, vec![], |w| w.transfer_position(0, id(BOB), 4, 1)).unwrap();
+    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| {
+        w.transfer_position(0, id(BOB), 4, 0)
+    });
+    h.refused_with(ALICE, 1, ERR_NOT_REGISTERED, |w| {
+        w.transfer_position(0, id(CAROL), 4, 0)
+    });
+    h.refused_with(ALICE, 1, ERR_POSITION_TOO_SMALL, |w| {
+        w.transfer_position(0, id(BOB), 11, 0)
+    });
+    h.refused_with(ALICE, 1, ERR_SELF_TRANSFER, |w| {
+        w.transfer_position(0, id(ALICE), 1, 0)
+    });
+    h.refused_with(ALICE, 1, ERR_NOTHING_TO_TRANSFER, |w| {
+        w.transfer_position(0, id(BOB), 0, 0)
+    });
+    h.run(ALICE, 1, vec![], |w| w.transfer_position(0, id(BOB), 4, 1))
+        .unwrap();
     assert_eq!(
         event("transfer_position")["data"],
         serde_json::json!({ "series": 0, "from": ALICE, "to": BOB, "long": 4, "short": 1 })
@@ -906,7 +1208,10 @@ fn mint_merge_and_transfer() {
     h.refused(ALICE, ERR_POSITION_TOO_SMALL, |w| w.merge(0, 7));
     h.refused(ALICE, ERR_UNKNOWN_SERIES, |w| w.merge(1, 1));
     h.ok(ALICE, |w| w.merge(0, 6));
-    assert_eq!(event("merge")["data"], serde_json::json!({ "series": 0, "account_id": ALICE, "sets": 6 }));
+    assert_eq!(
+        event("merge")["data"],
+        serde_json::json!({ "series": 0, "account_id": ALICE, "sets": 6 })
+    );
     assert_eq!(h.position(ALICE), Position { long: 0, short: 3 });
     assert_eq!(h.balance(ALICE), 100 * DOLLAR - 4 * u128::from(BAND));
     assert_eq!(h.series(0).open_sets, 4);
@@ -924,7 +1229,9 @@ fn report_checks_caller_bucket_window_price_and_bundle() {
     let mut h = H::new();
     let b = 1_000_000 - 1_000;
     h.at(b);
-    h.refused(STRANGER, ERR_NOT_REPORTER, |w| w.report(b, PRICE, BUNDLE.into()));
+    h.refused(STRANGER, ERR_NOT_REPORTER, |w| {
+        w.report(b, PRICE, BUNDLE.into())
+    });
     h.refused(R1, ERR_BUCKET, |w| w.report(b + 5, PRICE, BUNDLE.into()));
     h.refused(R1, ERR_ZERO_PRICE, |w| w.report(b, 0, BUNDLE.into()));
     h.refused(R1, ERR_BAD_BUNDLE, |w| w.report(b, PRICE, "AB".repeat(32)));
@@ -940,9 +1247,14 @@ fn report_checks_caller_bucket_window_price_and_bundle() {
         event("report")["data"],
         serde_json::json!({ "bucket": b, "reporter": R1, "price": PRICE, "bundle": BUNDLE })
     );
-    h.refused(R1, ERR_DUPLICATE_REPORT, |w| w.report(b, PRICE, BUNDLE.into()));
+    h.refused(R1, ERR_DUPLICATE_REPORT, |w| {
+        w.report(b, PRICE, BUNDLE.into())
+    });
     let print = h.view(|w| w.get_print(b)).unwrap();
-    assert_eq!((print.price, print.state, print.reports.len()), (None, PrintState::Open, 1));
+    assert_eq!(
+        (print.price, print.state, print.reports.len()),
+        (None, PrintState::Open, 1)
+    );
 }
 
 #[test]
@@ -955,15 +1267,33 @@ fn every_reporter_reporting_decides_at_once_on_the_median() {
     assert_eq!(h.view(|w| w.get_pending_prints()), vec![b]);
     // A wild third report cannot move the median.
     assert!(h.ok(R3, |w| w.report(b, 9_000_000, BUNDLE.into())));
-    assert_eq!(event("print")["data"], serde_json::json!({ "bucket": b, "price": 2_100_000, "reports": 3 }));
+    assert_eq!(
+        event("print")["data"],
+        serde_json::json!({ "bucket": b, "price": 2_100_000, "reports": 3 })
+    );
     assert_eq!(h.view(|w| w.get_pending_prints()), Vec::<u64>::new());
     // Decided: nothing is stored and the call returns false, before the duplicate check.
     assert!(!h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into())));
     assert!(events().is_empty());
     let print = h.view(|w| w.get_print(b)).unwrap();
-    assert_eq!((print.price, print.state, print.reports.len()), (Some(2_100_000), PrintState::Final, 3));
-    assert_eq!(h.view(|w| w.get_last_print()), Some(LastPrint { bucket: b, price: 2_100_000 }));
-    assert_eq!(h.view(|w| w.get_accumulator(0)), AccumulatorView { sum: U128(2_100_000), count: 1 });
+    assert_eq!(
+        (print.price, print.state, print.reports.len()),
+        (Some(2_100_000), PrintState::Final, 3)
+    );
+    assert_eq!(
+        h.view(|w| w.get_last_print()),
+        Some(LastPrint {
+            bucket: b,
+            price: 2_100_000
+        })
+    );
+    assert_eq!(
+        h.view(|w| w.get_accumulator(0)),
+        AccumulatorView {
+            sum: U128(2_100_000),
+            count: 1
+        }
+    );
 }
 
 #[test]
@@ -981,9 +1311,14 @@ fn a_bucket_short_of_reporters_waits_for_its_window_to_close() {
     h.refused(STRANGER, ERR_NO_REPORTS, |w| w.finalize_print(b - 10));
     // 2.00 and 2.02 are exactly 1% apart: within the spread, the mean.
     assert!(h.ok(STRANGER, |w| w.finalize_print(b)));
-    assert_eq!(event("print")["data"], serde_json::json!({ "bucket": b, "price": 2_010_000, "reports": 2 }));
+    assert_eq!(
+        event("print")["data"],
+        serde_json::json!({ "bucket": b, "price": 2_010_000, "reports": 2 })
+    );
     h.refused(STRANGER, ERR_DECIDED, |w| w.finalize_print(b));
-    h.refused(R3, ERR_REPORT_WINDOW, |w| w.report(b, 2_000_000, BUNDLE.into()));
+    h.refused(R3, ERR_REPORT_WINDOW, |w| {
+        w.report(b, 2_000_000, BUNDLE.into())
+    });
 }
 
 #[test]
@@ -997,7 +1332,10 @@ fn two_reports_further_apart_than_the_spread_make_no_print() {
     h.ok(R2, |w| w.report(b, 2_020_001, BUNDLE.into()));
     h.at(b + 30);
     assert!(!h.ok(STRANGER, |w| w.finalize_print(b)));
-    assert_eq!(event("no_print")["data"], serde_json::json!({ "bucket": b, "reports": 2 }));
+    assert_eq!(
+        event("no_print")["data"],
+        serde_json::json!({ "bucket": b, "reports": 2 })
+    );
     let print = h.view(|w| w.get_print(b)).unwrap();
     assert_eq!((print.price, print.state), (None, PrintState::NoPrint));
     assert_eq!(h.view(|w| w.get_last_print()).unwrap().bucket, T0);
@@ -1012,7 +1350,10 @@ fn fewer_reports_than_quorum_make_no_print() {
     h.ok(R1, |w| w.report(b, 2_000_000, BUNDLE.into()));
     h.at(b + 30);
     assert!(!h.ok(STRANGER, |w| w.finalize_print(b)));
-    assert_eq!(h.view(|w| w.get_print(b)).unwrap().state, PrintState::NoPrint);
+    assert_eq!(
+        h.view(|w| w.get_print(b)).unwrap().state,
+        PrintState::NoPrint
+    );
     assert_eq!(h.view(|w| w.get_last_print()), None);
 }
 
@@ -1035,11 +1376,21 @@ fn a_report_decides_up_to_four_closed_buckets_oldest_first() {
     let b = T0 + 160;
     h.at(b);
     assert!(!h.ok(R1, |w| w.report(b, PRICE, BUNDLE.into())));
-    let names: Vec<String> = events().iter().map(|e| e["event"].as_str().unwrap().to_string()).collect();
+    let names: Vec<String> = events()
+        .iter()
+        .map(|e| e["event"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(names, vec!["report", "print", "print", "print", "print"]);
-    let decided: Vec<u64> = events().iter().skip(1).map(|e| e["data"]["bucket"].as_u64().unwrap()).collect();
+    let decided: Vec<u64> = events()
+        .iter()
+        .skip(1)
+        .map(|e| e["data"]["bucket"].as_u64().unwrap())
+        .collect();
     assert_eq!(decided, waiting[..4]);
-    assert_eq!(h.view(|w| w.get_pending_prints()), vec![T0 + 40, T0 + 50, b]);
+    assert_eq!(
+        h.view(|w| w.get_pending_prints()),
+        vec![T0 + 40, T0 + 50, b]
+    );
     assert_eq!(h.view(|w| w.get_last_print()).unwrap().bucket, T0 + 30);
 }
 
@@ -1072,10 +1423,25 @@ fn prune_print_deletes_a_decided_bucket_but_not_the_index_state() {
     h.at(a + 2_000);
     h.refused(STRANGER, ERR_UNDECIDED, |w| w.prune_print(b + 10));
     h.ok(STRANGER, |w| w.prune_print(a));
-    assert_eq!(event("prune_print")["data"], serde_json::json!({ "bucket": a }));
+    assert_eq!(
+        event("prune_print")["data"],
+        serde_json::json!({ "bucket": a })
+    );
     assert!(h.view(|w| w.get_print(a)).is_none());
-    assert_eq!(h.view(|w| w.get_prints(0, 10)).iter().map(|p| p.bucket).collect::<Vec<_>>(), vec![b]);
-    assert_eq!(h.view(|w| w.get_last_print()), Some(LastPrint { bucket: b, price: PRICE + 1_000 }));
+    assert_eq!(
+        h.view(|w| w.get_prints(0, 10))
+            .iter()
+            .map(|p| p.bucket)
+            .collect::<Vec<_>>(),
+        vec![b]
+    );
+    assert_eq!(
+        h.view(|w| w.get_last_print()),
+        Some(LastPrint {
+            bucket: b,
+            price: PRICE + 1_000
+        })
+    );
     assert_eq!(h.view(|w| w.get_accumulator(0)).count, 2);
     h.refused(STRANGER, ERR_NO_REPORTS, |w| w.prune_print(a));
 }
@@ -1089,11 +1455,29 @@ fn prints_before_t0_and_per_series_accumulators() {
     h.print(PRICE + 1);
     h.at(T0 + 1_000);
     h.print(PRICE + 3);
-    assert_eq!(h.view(|w| w.get_accumulator(0)), AccumulatorView { sum: U128(u128::from(PRICE) + 1), count: 1 });
-    assert_eq!(h.view(|w| w.get_accumulator(1)), AccumulatorView { sum: U128(u128::from(PRICE) + 3), count: 1 });
+    assert_eq!(
+        h.view(|w| w.get_accumulator(0)),
+        AccumulatorView {
+            sum: U128(u128::from(PRICE) + 1),
+            count: 1
+        }
+    );
+    assert_eq!(
+        h.view(|w| w.get_accumulator(1)),
+        AccumulatorView {
+            sum: U128(u128::from(PRICE) + 3),
+            count: 1
+        }
+    );
     let all = h.view(|w| w.get_prints(0, 200));
     assert_eq!(all.len(), 3);
-    assert_eq!(h.view(|w| w.get_prints(T0, 1)).iter().map(|p| p.bucket).collect::<Vec<_>>(), vec![T0 + 990]);
+    assert_eq!(
+        h.view(|w| w.get_prints(T0, 1))
+            .iter()
+            .map(|p| p.bucket)
+            .collect::<Vec<_>>(),
+        vec![T0 + 990]
+    );
     assert_eq!(h.view(|w| w.get_prints(T0 + 1_001, 5)), vec![]);
 }
 
@@ -1152,18 +1536,25 @@ fn settle_at_min_prints_and_redeem_for_another_account() {
     let s = h.series(0).settlement.unwrap();
     assert_eq!((s.prints, s.void, s.settled_at), (3, false, END + 20));
     let t = h.totals();
-    assert_eq!((t.sets_backing, t.unredeemed, t.burned), (0, 8 * 400_000, 400_000));
+    assert_eq!(
+        (t.sets_backing, t.unredeemed, t.burned),
+        (0, 8 * 400_000, 400_000)
+    );
     assert_eq!(sum_of(t), before);
 
     let alice = h.balance(ALICE);
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
-    assert_eq!(event("redeem")["data"], serde_json::json!({ "series": 0, "account_id": ALICE, "amount": "1866664" }));
+    assert_eq!(
+        event("redeem")["data"],
+        serde_json::json!({ "series": 0, "account_id": ALICE, "amount": "1866664" })
+    );
     assert_eq!(h.balance(ALICE), alice + 8 * 233_333);
     assert_eq!(h.position(ALICE), Position::default());
     h.refused(STRANGER, ERR_NO_POSITION, |w| w.redeem(0, Some(id(ALICE))));
     h.refused(BOB, ERR_NO_POSITION, |w| w.redeem(0, None));
     // Units still move after settlement.
-    h.run(CAROL, 1, vec![], |w| w.transfer_position(0, id(BOB), 0, 2)).unwrap();
+    h.run(CAROL, 1, vec![], |w| w.transfer_position(0, id(BOB), 0, 2))
+        .unwrap();
     let (carol, bob) = (h.balance(CAROL), h.balance(BOB));
     h.ok(CAROL, |w| w.redeem(0, None));
     h.ok(CAROL, |w| w.redeem(0, Some(id(BOB))));
@@ -1172,7 +1563,10 @@ fn settle_at_min_prints_and_redeem_for_another_account() {
     assert_eq!(h.totals().unredeemed, 0);
 
     h.ok(STRANGER, |w| w.prune_result(0, 0));
-    assert_eq!(event("prune_result")["data"], serde_json::json!({ "series": 0, "round": 0 }));
+    assert_eq!(
+        event("prune_result")["data"],
+        serde_json::json!({ "series": 0, "round": 0 })
+    );
     assert!(h.view(|w| w.get_result(0, 0)).is_none());
     h.refused(STRANGER, ERR_NO_RESULT, |w| w.prune_result(0, 0));
 }
@@ -1206,7 +1600,10 @@ fn a_void_series_ignores_its_partial_prints_and_pays_the_centre_of_the_band() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_000_000, 200_000, 200_000, 2, true));
+    assert_eq!(
+        (s.fixing, s.long_payout, s.short_payout, s.prints, s.void),
+        (2_000_000, 200_000, 200_000, 2, true)
+    );
     // Alice paid 0.21 a LONG and Carol 0.19 a SHORT: both get 0.20.
     let (alice, carol) = (h.balance(ALICE), h.balance(CAROL));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
@@ -1229,8 +1626,10 @@ fn void_after_trades(rounds: &[(u64, u64, u64)]) -> (H, SettlementView) {
         let a = h.commit(ALICE, Side::Long, size, long_price, 5 * DOLLAR);
         let b = h.commit(BOB, Side::Short, size, short_price, 5 * DOLLAR);
         h.at(reveal_start(round));
-        h.reveal(ALICE, round, a, Side::Long, size, long_price).unwrap();
-        h.reveal(BOB, round, b, Side::Short, size, short_price).unwrap();
+        h.reveal(ALICE, round, a, Side::Long, size, long_price)
+            .unwrap();
+        h.reveal(BOB, round, b, Side::Short, size, short_price)
+            .unwrap();
         h.at(round_end(round));
         h.ok(STRANGER, |w| w.clear(0, round));
     }
@@ -1243,16 +1642,32 @@ fn void_after_trades(rounds: &[(u64, u64, u64)]) -> (H, SettlementView) {
 #[test]
 fn a_void_series_pays_half_the_band_after_trades_at_several_prices() {
     // 3 at 0.21, 5 at 0.25, 4 at 0.20: recorded, but no rule reads them.
-    let (mut h, s) = void_after_trades(&[(3, 210_000, 210_000), (5, 250_000, 250_000), (4, 220_000, 180_000)]);
+    let (mut h, s) = void_after_trades(&[
+        (3, 210_000, 210_000),
+        (5, 250_000, 250_000),
+        (4, 220_000, 180_000),
+    ]);
     let series = h.series(0);
-    assert_eq!((series.traded_units, series.traded_value), (12, U128(3 * 210_000 + 5 * 250_000 + 4 * 200_000)));
+    assert_eq!(
+        (series.traded_units, series.traded_value),
+        (12, U128(3 * 210_000 + 5 * 250_000 + 4 * 200_000))
+    );
     let json = serde_json::to_value(&series).unwrap();
-    assert_eq!((json["traded_units"].as_u64(), json["traded_value"].as_str()), (Some(12), Some("2680000")));
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_000_000, 200_000, 200_000, true));
+    assert_eq!(
+        (json["traded_units"].as_u64(), json["traded_value"].as_str()),
+        (Some(12), Some("2680000"))
+    );
+    assert_eq!(
+        (s.fixing, s.long_payout, s.short_payout, s.void),
+        (2_000_000, 200_000, 200_000, true)
+    );
     let (alice, bob) = (h.balance(ALICE), h.balance(BOB));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(BOB))));
-    assert_eq!((h.balance(ALICE) - alice, h.balance(BOB) - bob), (12 * 200_000, 12 * 200_000));
+    assert_eq!(
+        (h.balance(ALICE) - alice, h.balance(BOB) - bob),
+        (12 * 200_000, 12 * 200_000)
+    );
 }
 
 #[test]
@@ -1265,7 +1680,10 @@ fn a_void_series_pays_half_the_band_after_wash_trades_at_an_extreme_price() {
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
     h.ok(STRANGER, |w| w.redeem(0, Some(id(BOB))));
     // Together the two sides get the band per set, as they paid it: a wash gains nothing.
-    assert_eq!(h.balance(ALICE) - alice + h.balance(BOB) - bob, 10 * u128::from(BAND));
+    assert_eq!(
+        h.balance(ALICE) - alice + h.balance(BOB) - bob,
+        10 * u128::from(BAND)
+    );
 }
 
 #[test]
@@ -1277,7 +1695,10 @@ fn a_void_series_with_only_mints_splits_the_band() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.prints, s.void), (2_000_000, 200_000, 200_000, 0, true));
+    assert_eq!(
+        (s.fixing, s.long_payout, s.short_payout, s.prints, s.void),
+        (2_000_000, 200_000, 200_000, 0, true)
+    );
     h.ok(STRANGER, |w| w.redeem(0, Some(id(ALICE))));
     assert_eq!(h.balance(ALICE), 100 * DOLLAR);
 }
@@ -1293,7 +1714,10 @@ fn a_void_series_with_nothing_at_all_still_settles() {
     h.at(END + 500);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.series(0).settlement.unwrap();
-    assert_eq!((s.fixing, s.long_payout, s.short_payout, s.void), (2_000_000, 200_000, 200_000, true));
+    assert_eq!(
+        (s.fixing, s.long_payout, s.short_payout, s.void),
+        (2_000_000, 200_000, 200_000, true)
+    );
     assert_eq!(h.series(0).open_sets, 0);
 }
 
@@ -1315,7 +1739,10 @@ fn forfeits_and_fees_are_burned_and_nobody_collects_them() {
         serde_json::json!({ "series": 0, "round": 0, "price": null, "volume": 0, "forfeited": "200000", "fees": "1000" })
     );
     let result = h.view(|w| w.get_result(0, 0)).unwrap();
-    assert_eq!((result.forfeited, result.fees), (U128(200_000), U128(1_000)));
+    assert_eq!(
+        (result.forfeited, result.fees),
+        (U128(200_000), U128(1_000))
+    );
     assert_eq!(h.totals().burned, 201_000);
     for i in 0..3 {
         h.at(T0 + 100 * i);
@@ -1351,14 +1778,25 @@ fn eviction_returns_the_fee_with_the_lock() {
 fn commits_beyond_the_round_lock_limit_are_refused() {
     let mut h = H::new();
     h.funded(&[ALICE]);
-    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| w.set_guard(None, Some(U128(5 * DOLLAR))));
-    h.run(ALICE, 1, vec![], |w| w.set_guard(None, Some(U128(5 * DOLLAR)))).unwrap();
+    h.refused_with(ALICE, 0, ERR_ONE_YOCTO, |w| {
+        w.set_guard(None, Some(U128(5 * DOLLAR)))
+    });
+    h.run(ALICE, 1, vec![], |w| {
+        w.set_guard(None, Some(U128(5 * DOLLAR)))
+    })
+    .unwrap();
     assert_eq!(event("guard")["data"]["max_round_lock"], "5000000");
-    assert_eq!(h.view(|w| w.get_account(id(ALICE))).unwrap().max_round_lock, Some(U128(5 * DOLLAR)));
+    assert_eq!(
+        h.view(|w| w.get_account(id(ALICE))).unwrap().max_round_lock,
+        Some(U128(5 * DOLLAR))
+    );
     h.open_at_round(0);
     h.commit(ALICE, Side::Long, 1, 1_000, 3 * DOLLAR);
     h.commit(ALICE, Side::Long, 1, 1_000, 2 * DOLLAR);
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000), Err(ERR_ROUND_LOCK.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 1_000),
+        Err(ERR_ROUND_LOCK.into())
+    );
     // The limit is per round.
     h.at(round_start(1));
     h.commit(ALICE, Side::Long, 1, 1_000, 5 * DOLLAR);
@@ -1370,12 +1808,18 @@ fn the_round_lock_limit_counts_commits_before_any_eviction() {
     params.max_commits = 1;
     let mut h = H::with(params);
     h.funded(&[ALICE]);
-    h.run(ALICE, 1, vec![], |w| w.set_guard(None, Some(U128(5 * DOLLAR)))).unwrap();
+    h.run(ALICE, 1, vec![], |w| {
+        w.set_guard(None, Some(U128(5 * DOLLAR)))
+    })
+    .unwrap();
     h.open_at_round(0);
     h.commit(ALICE, Side::Long, 1, 1_000, 3 * DOLLAR);
     // This would evict Alice's own 3 $ commit and leave 4 $ in the round, but the
     // limit is counted first: 3 + 4 > 5.
-    assert_eq!(h.try_commit(ALICE, Side::Long, 1, 1_000, 4 * DOLLAR), Err(ERR_ROUND_LOCK.into()));
+    assert_eq!(
+        h.try_commit(ALICE, Side::Long, 1, 1_000, 4 * DOLLAR),
+        Err(ERR_ROUND_LOCK.into())
+    );
 }
 
 #[test]
@@ -1383,7 +1827,9 @@ fn commit_refuses_an_unregistered_caller_before_anything_else() {
     let mut h = H::new();
     // Outside any commit phase and with a bad hash: registration is still checked first.
     h.at(OPEN - 1);
-    h.refused(CAROL, ERR_NOT_REGISTERED, |w| w.commit(0, "XYZ".into(), U128(0)));
+    h.refused(CAROL, ERR_NOT_REGISTERED, |w| {
+        w.commit(0, "XYZ".into(), U128(0))
+    });
 }
 
 #[test]
@@ -1393,8 +1839,13 @@ fn mint_stops_at_the_cap_and_a_full_round_still_clears() {
     let mut h = H::with(params.clone());
     let cap = (1u64 << 53) - 1 - params.max_order_size * 2 * params.rounds_per_series();
     let whale_dollars = u128::from(cap) * u128::from(BAND);
-    h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(None)).unwrap();
-    h.ok(USDC, |w| w.ft_on_transfer(id(ALICE), U128(whale_dollars + 300 * DOLLAR), String::new()));
+    h.run(ALICE, REGISTRATION_FEE.as_yoctonear(), vec![], |w| {
+        w.register(None)
+    })
+    .unwrap();
+    h.ok(USDC, |w| {
+        w.ft_on_transfer(id(ALICE), U128(whale_dollars + 300 * DOLLAR), String::new())
+    });
     h.funded(&[BOB]);
     h.deposit(BOB, 200 * DOLLAR);
     h.open_at_round(0);
@@ -1420,7 +1871,13 @@ fn mint_stops_at_the_cap_and_a_full_round_still_clears() {
 fn status_lists_live_series_with_round_and_phase() {
     let mut h = H::new();
     h.at(OPEN - 1);
-    assert_eq!(h.view(|w| w.get_status()), StatusView { now: OPEN - 1, live: vec![] });
+    assert_eq!(
+        h.view(|w| w.get_status()),
+        StatusView {
+            now: OPEN - 1,
+            live: vec![]
+        }
+    );
     let live = |h: &mut H, now: u64| {
         h.at(now);
         h.view(|w| w.get_status()).live
@@ -1440,12 +1897,21 @@ fn status_lists_live_series_with_round_and_phase() {
         }]
     );
     let s = live(&mut h, round_start(8) + 1);
-    assert_eq!((s[0].round, s[0].phase, s[0].phase_ends_at), (Some(8), Phase::Commit, Some(reveal_start(8))));
+    assert_eq!(
+        (s[0].round, s[0].phase, s[0].phase_ends_at),
+        (Some(8), Phase::Commit, Some(reveal_start(8)))
+    );
     // lead = period + cutoff: one series is in auction at a time, back to back.
     let s = live(&mut h, CLOSE - 1);
-    assert_eq!((s.len(), s[0].series, s[0].round, s[0].phase), (1, 0, Some(9), Phase::Reveal));
+    assert_eq!(
+        (s.len(), s[0].series, s[0].round, s[0].phase),
+        (1, 0, Some(9), Phase::Reveal)
+    );
     let s = live(&mut h, CLOSE);
-    assert_eq!((s.len(), s[0].series, s[0].round, s[0].phase), (1, 1, Some(0), Phase::Commit));
+    assert_eq!(
+        (s.len(), s[0].series, s[0].round, s[0].phase),
+        (1, 1, Some(0), Phase::Commit)
+    );
     let s = live(&mut h, T0 + 400);
     assert_eq!((s.len(), s[0].series, s[0].round), (1, 1, Some(5)));
 }
@@ -1458,7 +1924,10 @@ fn closed_tail_of_a_window_has_no_round() {
     // Nine whole rounds end at T0 - 200; the window closes at T0 - 150.
     h.at(T0 - 180);
     let s = h.view(|w| w.get_status()).live;
-    assert_eq!((s[0].round, s[0].phase, s[0].phase_ends_at), (None, Phase::Closed, None));
+    assert_eq!(
+        (s[0].round, s[0].phase, s[0].phase_ends_at),
+        (None, Phase::Closed, None)
+    );
 }
 
 #[test]
@@ -1469,7 +1938,11 @@ fn results_are_listed_by_round() {
     h.commit(ALICE, Side::Long, 1, 1_000, 1_000);
     h.at(round_end(2));
     h.ok(STRANGER, |w| w.clear(0, 2));
-    let rounds: Vec<u64> = h.view(|w| w.get_results(0, 0, 10)).iter().map(|(r, _)| *r).collect();
+    let rounds: Vec<u64> = h
+        .view(|w| w.get_results(0, 0, 10))
+        .iter()
+        .map(|(r, _)| *r)
+        .collect();
     assert_eq!(rounds, vec![0, 2]);
     assert_eq!(h.view(|w| w.get_results(0, 1, 1)), vec![]);
     assert_eq!(h.view(|w| w.get_results(0, u64::MAX, 200)), vec![]);
@@ -1489,13 +1962,24 @@ fn get_results_looks_at_100_rounds_at_most() {
         let start = open + 100 * round;
         h.at(start);
         h.print(PRICE);
-        let hash = hex::encode(hash::commit_hash(0, round, ALICE, Side::Long, 1, 1_000, SALT));
+        let hash = hex::encode(hash::commit_hash(
+            0,
+            round,
+            ALICE,
+            Side::Long,
+            1,
+            1_000,
+            SALT,
+        ));
         h.ok(ALICE, |w| w.commit(0, hash, U128(1_000)));
         h.at(start + 100);
         h.ok(ALICE, |w| w.clear(0, round));
     }
     let rounds = |h: &H, from: u64, limit: u32| -> Vec<u64> {
-        h.view(|w| w.get_results(0, from, limit)).into_iter().map(|(r, _)| r).collect()
+        h.view(|w| w.get_results(0, from, limit))
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect()
     };
     assert_eq!(rounds(&h, 0, 101), vec![0]);
     assert_eq!(rounds(&h, 0, u32::MAX), vec![0]);
@@ -1507,8 +1991,13 @@ fn get_results_looks_at_100_rounds_at_most() {
 fn commit_hash_view_matches_section_6_2() {
     let h = H::new();
     let got = h.view(|w| w.commit_hash(0, 0, id("a.near"), Side::Long, 1, 1_000, "0".repeat(32)));
-    assert_eq!(got, "b8cb1fd8d730d14e83eeee09dbf77f01a86fbb18655fb1e083d06d248c277c1e");
-    let refused = catch_unwind(|| h.view(|w| w.commit_hash(0, 0, id("a.near"), Side::Long, 1, 1_000, "0".into())));
+    assert_eq!(
+        got,
+        "b8cb1fd8d730d14e83eeee09dbf77f01a86fbb18655fb1e083d06d248c277c1e"
+    );
+    let refused = catch_unwind(|| {
+        h.view(|w| w.commit_hash(0, 0, id("a.near"), Side::Long, 1, 1_000, "0".into()))
+    });
     assert!(message(refused.err().unwrap()).contains(ERR_BAD_SALT));
 }
 
@@ -1521,14 +2010,20 @@ fn views_serialize_as_section_12_says() {
     assert!(series["settlement"].get("bonus_long").is_none());
     assert_eq!(series["settlement"]["fixing"], 2_000_000);
     let result = serde_json::to_value(h.view(|w| w.get_result(0, 0))).unwrap();
-    assert_eq!((result["forfeited"].as_str(), result["fees"].as_str()), (Some("400000"), Some("0")));
+    assert_eq!(
+        (result["forfeited"].as_str(), result["fees"].as_str()),
+        (Some("400000"), Some("0"))
+    );
     assert_eq!(result["fills"][0]["side"], "Long");
     let print = serde_json::to_value(h.view(|w| w.get_print(T0))).unwrap();
     assert_eq!(print["state"], "Final");
     let totals = serde_json::to_value(h.view(|w| w.get_totals())).unwrap();
     let mut keys: Vec<_> = totals.as_object().unwrap().keys().cloned().collect();
     keys.sort();
-    assert_eq!(keys, vec!["burned", "free", "locked", "sets_backing", "unredeemed"]);
+    assert_eq!(
+        keys,
+        vec!["burned", "free", "locked", "sets_backing", "unredeemed"]
+    );
     let account = serde_json::to_value(h.view(|w| w.get_account(id(ALICE)))).unwrap();
     assert_eq!(account["max_round_lock"], Value::Null);
 }
@@ -1549,7 +2044,10 @@ fn totals_balance_the_books_through_a_whole_life() {
         h.ok(STRANGER, |w| w.redeem(0, Some(id(who))));
     }
     let t = h.totals();
-    assert_eq!((t.locked, t.sets_backing, t.unredeemed, t.burned), (0, 0, 0, 400_000));
+    assert_eq!(
+        (t.locked, t.sets_backing, t.unredeemed, t.burned),
+        (0, 0, 0, 400_000)
+    );
     assert_eq!(t.free + t.burned, deposits);
     let each: u128 = [ALICE, BOB, CAROL, DAVE].iter().map(|w| h.balance(w)).sum();
     assert_eq!(each, deposits - 400_000);

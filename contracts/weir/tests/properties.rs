@@ -32,17 +32,21 @@ const MAX_TICKS: u64 = 20;
 fn order_book() -> impl Strategy<Value = Vec<Order>> {
     prop::collection::vec((any::<bool>(), 1..=50u64, 1..=MAX_TICKS), 0..=40).prop_flat_map(|raw| {
         let n = raw.len();
-        (Just(raw), Just((0..n as u32).collect::<Vec<_>>()).prop_shuffle()).prop_map(|(raw, seqs)| {
-            raw.into_iter()
-                .zip(seqs)
-                .map(|((long, size, ticks), seq)| Order {
-                    seq,
-                    side: if long { Side::Long } else { Side::Short },
-                    size,
-                    price: ticks * TICK,
-                })
-                .collect()
-        })
+        (
+            Just(raw),
+            Just((0..n as u32).collect::<Vec<_>>()).prop_shuffle(),
+        )
+            .prop_map(|(raw, seqs)| {
+                raw.into_iter()
+                    .zip(seqs)
+                    .map(|((long, size, ticks), seq)| Order {
+                        seq,
+                        side: if long { Side::Long } else { Side::Short },
+                        size,
+                        price: ticks * TICK,
+                    })
+                    .collect()
+            })
     })
 }
 
@@ -171,7 +175,13 @@ fn params() -> Params {
     }
 }
 
-fn install(caller: &str, now: u64, deposit: u128, results: Vec<PromiseResult>, storage: HashMap<Vec<u8>, Vec<u8>>) {
+fn install(
+    caller: &str,
+    now: u64,
+    deposit: u128,
+    results: Vec<PromiseResult>,
+    storage: HashMap<Vec<u8>, Vec<u8>>,
+) {
     let context = VMContextBuilder::new()
         .current_account_id(id(CONTRACT))
         .signer_account_id(id(caller))
@@ -192,7 +202,13 @@ fn install(caller: &str, now: u64, deposit: u128, results: Vec<PromiseResult>, s
 }
 
 /// Runs `f` as one transaction: on a panic, storage goes back to how it was.
-fn call<R>(now: u64, caller: &str, deposit: u128, results: Vec<PromiseResult>, f: impl FnOnce(&mut Weir) -> R) -> Option<R> {
+fn call<R>(
+    now: u64,
+    caller: &str,
+    deposit: u128,
+    results: Vec<PromiseResult>,
+    f: impl FnOnce(&mut Weir) -> R,
+) -> Option<R> {
     let storage = with_mocked_blockchain(|b| b.take_storage());
     install(caller, now, deposit, results, storage.clone());
     let outcome = catch_unwind(AssertUnwindSafe(|| {
@@ -207,7 +223,8 @@ fn call<R>(now: u64, caller: &str, deposit: u128, results: Vec<PromiseResult>, f
                 let mut seen = seen.borrow_mut();
                 for log in get_logs() {
                     let event: near_sdk::serde_json::Value =
-                        near_sdk::serde_json::from_str(log.strip_prefix("EVENT_JSON:").unwrap()).unwrap();
+                        near_sdk::serde_json::from_str(log.strip_prefix("EVENT_JSON:").unwrap())
+                            .unwrap();
                     let mut name = event["event"].as_str().unwrap().to_string();
                     if name == "reveal" && event["data"]["void"] == true {
                         name = "void reveal".into();
@@ -230,8 +247,15 @@ fn call<R>(now: u64, caller: &str, deposit: u128, results: Vec<PromiseResult>, f
                 .cloned()
                 .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
                 .unwrap_or_default();
-            let reason = raw.split_once("panic_msg: \"").map_or(raw.as_str(), |(_, m)| m.trim_end_matches("\" })"));
-            SEEN.with(|seen| *seen.borrow_mut().entry(format!("refused: {reason}")).or_default() += 1);
+            let reason = raw
+                .split_once("panic_msg: \"")
+                .map_or(raw.as_str(), |(_, m)| m.trim_end_matches("\" })"));
+            SEEN.with(|seen| {
+                *seen
+                    .borrow_mut()
+                    .entry(format!("refused: {reason}"))
+                    .or_default() += 1
+            });
             None
         }
     }
@@ -257,7 +281,14 @@ enum Action {
     PrintAll(u64),
     Report(usize, u64),
     /// `lock` is `None` for a lock that covers any order of this size.
-    Commit { who: usize, series: u32, long: bool, size: u64, ticks: u64, lock: Option<u128> },
+    Commit {
+        who: usize,
+        series: u32,
+        long: bool,
+        size: u64,
+        ticks: u64,
+        lock: Option<u128>,
+    },
     Reveal(usize),
     Clear(usize),
     Mint(usize, u32, u64),
@@ -329,7 +360,10 @@ fn dollars(world: &World) -> Vec<u128> {
         held[i] = view(|w| w.get_account(id(t))).map_or(0, |a| a.balance.0);
     }
     for &(series, round) in &world.rounds {
-        for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
+        for c in view(|w| w.get_round(series, round))
+            .map(|r| r.commits)
+            .unwrap_or_default()
+        {
             held[trader(&c.owner)] += held_by(&c);
         }
     }
@@ -338,7 +372,10 @@ fn dollars(world: &World) -> Vec<u128> {
 
 fn locks_in(series: u32, round: u64) -> Vec<u128> {
     let mut locks = vec![0u128; TRADERS.len()];
-    for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
+    for c in view(|w| w.get_round(series, round))
+        .map(|r| r.commits)
+        .unwrap_or_default()
+    {
         locks[trader(&c.owner)] += held_by(&c);
     }
     locks
@@ -346,12 +383,19 @@ fn locks_in(series: u32, round: u64) -> Vec<u128> {
 
 /// What a commit still holds: its fee, and its lock unless the guard voided it.
 fn held_by(c: &weir::types::CommitView) -> u128 {
-    let lock = if c.state == CommitStateName::Void { 0 } else { c.lock.0 };
+    let lock = if c.state == CommitStateName::Void {
+        0
+    } else {
+        c.lock.0
+    };
     lock + c.fee.0
 }
 
 fn trader(account: &AccountId) -> usize {
-    TRADERS.iter().position(|t| account.as_str() == *t).expect("a trader")
+    TRADERS
+        .iter()
+        .position(|t| account.as_str() == *t)
+        .expect("a trader")
 }
 
 fn positions() -> BTreeMap<(u32, usize), Position> {
@@ -377,24 +421,36 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
                 .filter_map(|&series| {
                     let open = schedule.auction_open(series);
                     let round = now.saturating_sub(open) / schedule.round_secs();
-                    [schedule.reveal_start(series, round), schedule.round_end(series, round), open]
-                        .into_iter()
-                        .filter(|&t| t > now)
-                        .min()
+                    [
+                        schedule.reveal_start(series, round),
+                        schedule.round_end(series, round),
+                        open,
+                    ]
+                    .into_iter()
+                    .filter(|&t| t > now)
+                    .min()
                 })
                 .min()
                 .unwrap_or(now);
             world.now = next + extra;
         }
         Action::Deposit(who, amount) => {
-            let refund = call(now, USDC, 0, vec![], |w| w.ft_on_transfer(id(TRADERS[who]), U128(amount), String::new()));
+            let refund = call(now, USDC, 0, vec![], |w| {
+                w.ft_on_transfer(id(TRADERS[who]), U128(amount), String::new())
+            });
             world.held += amount - refund.expect("ft_on_transfer never panics for usdc").0;
         }
         Action::Withdraw(who, amount, fails) => {
             if call(now, TRADERS[who], 1, vec![], |w| w.withdraw(U128(amount))).is_some() {
-                let result = if fails { PromiseResult::Failed } else { PromiseResult::Successful(vec![]) };
-                call(now, CONTRACT, 0, vec![result], |w| w.on_withdraw(id(TRADERS[who]), U128(amount)))
-                    .expect("the callback never panics");
+                let result = if fails {
+                    PromiseResult::Failed
+                } else {
+                    PromiseResult::Successful(vec![])
+                };
+                call(now, CONTRACT, 0, vec![result], |w| {
+                    w.on_withdraw(id(TRADERS[who]), U128(amount))
+                })
+                .expect("the callback never panics");
                 if !fails {
                     world.held -= amount;
                     allowed[who] = amount;
@@ -404,26 +460,52 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
         Action::PrintAll(price) => {
             let bucket = now - now % 10;
             for r in REPORTERS {
-                call(now, r, 0, vec![], |w| w.report(bucket, price, BUNDLE.into()));
+                call(now, r, 0, vec![], |w| {
+                    w.report(bucket, price, BUNDLE.into())
+                });
             }
         }
         Action::Report(r, price) => {
             let bucket = now - now % 10;
-            call(now, REPORTERS[r], 0, vec![], |w| w.report(bucket, price, BUNDLE.into()));
+            call(now, REPORTERS[r], 0, vec![], |w| {
+                w.report(bucket, price, BUNDLE.into())
+            });
         }
-        Action::Commit { who, series, long, size, ticks, lock } => {
+        Action::Commit {
+            who,
+            series,
+            long,
+            size,
+            ticks,
+            lock,
+        } => {
             let schedule = params().schedule();
             let round = now.saturating_sub(schedule.auction_open(series)) / schedule.round_secs();
             let side = if long { Side::Long } else { Side::Short };
             // LONGs bid a little higher than SHORTs ask, so most books cross.
-            let price = if long { ticks + 20 } else { ticks.saturating_sub(20).max(1) } * 1_000;
+            let price = if long {
+                ticks + 20
+            } else {
+                ticks.saturating_sub(20).max(1)
+            } * 1_000;
             let account = TRADERS[who];
             // No band is wider than 420_000 with these prices and params.
             let lock = lock.unwrap_or(u128::from(size) * 420_000);
-            let hash = view(|w| w.commit_hash(series, round, id(account), side, size, price, SALT.into()));
-            if let Some(seq) = call(now, account, 0, vec![], |w| w.commit(series, hash, U128(lock))) {
+            let hash =
+                view(|w| w.commit_hash(series, round, id(account), side, size, price, SALT.into()));
+            if let Some(seq) = call(now, account, 0, vec![], |w| {
+                w.commit(series, hash, U128(lock))
+            }) {
                 world.rounds.insert((series, round));
-                world.commits.push(Committed { series, round, seq, who, side, size, price });
+                world.commits.push(Committed {
+                    series,
+                    round,
+                    seq,
+                    who,
+                    side,
+                    size,
+                    price,
+                });
             }
         }
         Action::Reveal(pick) => {
@@ -432,13 +514,30 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
             let open: Vec<Committed> = world
                 .commits
                 .iter()
-                .filter(|c| schedule.reveal_start(c.series, c.round) <= now && now < schedule.round_end(c.series, c.round))
+                .filter(|c| {
+                    schedule.reveal_start(c.series, c.round) <= now
+                        && now < schedule.round_end(c.series, c.round)
+                })
                 .copied()
                 .collect();
-            let pool = if open.is_empty() || pick % 8 == 0 { &world.commits } else { &open };
+            let pool = if open.is_empty() || pick % 8 == 0 {
+                &world.commits
+            } else {
+                &open
+            };
             if !pool.is_empty() {
                 let c = pool[pick % pool.len()];
-                call(now, TRADERS[c.who], 0, vec![], |w| w.reveal(c.series, c.round, c.seq, c.side, c.size, c.price, SALT.into()));
+                call(now, TRADERS[c.who], 0, vec![], |w| {
+                    w.reveal(
+                        c.series,
+                        c.round,
+                        c.seq,
+                        c.side,
+                        c.size,
+                        c.price,
+                        SALT.into(),
+                    )
+                });
             }
         }
         Action::Clear(pick) => {
@@ -453,7 +552,9 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
         Action::Mint(who, series, sets) => {
             let band = view(|w| w.get_series(series)).map(|s| s.band);
             if call(now, TRADERS[who], 0, vec![], |w| w.mint(series, sets)).is_some() {
-                let band = band.or_else(|| view(|w| w.get_series(series)).map(|s| s.band)).unwrap();
+                let band = band
+                    .or_else(|| view(|w| w.get_series(series)).map(|s| s.band))
+                    .unwrap();
                 allowed[who] = u128::from(sets) * u128::from(band);
             }
         }
@@ -461,16 +562,22 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
             call(now, TRADERS[who], 0, vec![], |w| w.merge(series, sets));
         }
         Action::Transfer(from, to, series, long, short) => {
-            call(now, TRADERS[from], 1, vec![], |w| w.transfer_position(series, id(TRADERS[to]), long, short));
+            call(now, TRADERS[from], 1, vec![], |w| {
+                w.transfer_position(series, id(TRADERS[to]), long, short)
+            });
         }
         Action::Settle(series) => {
             call(now, "anyone.near", 0, vec![], |w| w.settle(series));
         }
         Action::Redeem(by, of, series) => {
-            call(now, TRADERS[by], 0, vec![], |w| w.redeem(series, Some(id(TRADERS[of]))));
+            call(now, TRADERS[by], 0, vec![], |w| {
+                w.redeem(series, Some(id(TRADERS[of])))
+            });
         }
         Action::Guard(who, guard, limit) => {
-            call(now, TRADERS[who], 1, vec![], |w| w.set_guard(guard, limit.map(U128)));
+            call(now, TRADERS[who], 1, vec![], |w| {
+                w.set_guard(guard, limit.map(U128))
+            });
         }
         Action::Finalize(pick) => {
             let pending = view(|w| w.get_pending_prints());
@@ -486,11 +593,17 @@ fn apply(world: &mut World, action: &Action) -> Vec<u128> {
 /// Invariants 1 and 2, with every total recomputed from views.
 fn check_books(world: &World) -> Result<(), TestCaseError> {
     let totals = view(|w| w.get_totals());
-    let free: u128 = TRADERS.iter().map(|t| view(|w| w.get_account(id(t))).map_or(0, |a| a.balance.0)).sum();
+    let free: u128 = TRADERS
+        .iter()
+        .map(|t| view(|w| w.get_account(id(t))).map_or(0, |a| a.balance.0))
+        .sum();
     let mut locked = 0u128;
     let mut burned = 0u128;
     for &(series, round) in &world.rounds {
-        for c in view(|w| w.get_round(series, round)).map(|r| r.commits).unwrap_or_default() {
+        for c in view(|w| w.get_round(series, round))
+            .map(|r| r.commits)
+            .unwrap_or_default()
+        {
             locked += held_by(&c);
         }
         if let Some(r) = view(|w| w.get_result(series, round)) {
@@ -500,7 +613,9 @@ fn check_books(world: &World) -> Result<(), TestCaseError> {
     let mut backing = 0u128;
     let mut unredeemed = 0u128;
     for series in SERIES {
-        let Some(s) = view(|w| w.get_series(series)) else { continue };
+        let Some(s) = view(|w| w.get_series(series)) else {
+            continue;
+        };
         let (long, short) = TRADERS.iter().fold((0u64, 0u64), |(l, sh), t| {
             let p = view(|w| w.get_position(series, id(t)));
             (l + p.long, sh + p.short)
@@ -542,24 +657,36 @@ fn finish(world: &mut World) -> Result<(), TestCaseError> {
     for &(series, round) in &world.rounds.clone() {
         if view(|w| w.get_round(series, round)).is_some() {
             let cleared = call(now, "anyone.near", 0, vec![], |w| w.clear(series, round));
-            prop_assert!(cleared.is_some(), "round {}/{} cannot be cleared", series, round);
+            prop_assert!(
+                cleared.is_some(),
+                "round {}/{} cannot be cleared",
+                series,
+                round
+            );
         }
     }
     for series in SERIES {
-        let Some(s) = view(|w| w.get_series(series)) else { continue };
+        let Some(s) = view(|w| w.get_series(series)) else {
+            continue;
+        };
         if s.settlement.is_none() {
             let settled = call(now, "anyone.near", 0, vec![], |w| w.settle(series));
             prop_assert!(settled.is_some(), "series {} cannot be settled", series);
         }
         for t in TRADERS {
             if view(|w| w.get_position(series, id(t))) != Position::default() {
-                prop_assert!(call(now, "anyone.near", 0, vec![], |w| w.redeem(series, Some(id(t)))).is_some());
+                prop_assert!(call(now, "anyone.near", 0, vec![], |w| w
+                    .redeem(series, Some(id(t))))
+                .is_some());
             }
         }
     }
     check_books(world)?;
     let totals = view(|w| w.get_totals());
-    prop_assert_eq!((totals.locked.0, totals.sets_backing.0, totals.unredeemed.0), (0, 0, 0));
+    prop_assert_eq!(
+        (totals.locked.0, totals.sets_backing.0, totals.unredeemed.0),
+        (0, 0, 0)
+    );
     Ok(())
 }
 
@@ -570,9 +697,15 @@ fn setup() -> World {
     env::state_write(&Weir::new(params()));
     let now = T0 - 670;
     for t in TRADERS {
-        call(now, t, REGISTRATION_FEE.as_yoctonear(), vec![], |w| w.register(None)).unwrap();
+        call(now, t, REGISTRATION_FEE.as_yoctonear(), vec![], |w| {
+            w.register(None)
+        })
+        .unwrap();
     }
-    World { now, ..World::default() }
+    World {
+        now,
+        ..World::default()
+    }
 }
 
 proptest! {
@@ -634,7 +767,10 @@ proptest! {
 fn random_walks_reach_every_stage() {
     use proptest::strategy::ValueTree;
     use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
-    let config = Config { cases: 64, ..Config::default() };
+    let config = Config {
+        cases: 64,
+        ..Config::default()
+    };
     let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &[7; 32]);
     let mut runner = TestRunner::new_with_rng(config, rng);
     let strategy = prop::collection::vec(action(), 300);
@@ -651,10 +787,28 @@ fn random_walks_reach_every_stage() {
     let seen = SEEN.with(|seen| seen.borrow().clone());
     println!("{seen:#?}");
     for stage in [
-        "series_opened", "commit", "evict", "reveal", "void reveal", "clear", "clear with a trade",
-        "mint", "merge", "transfer_position", "print", "no_print", "settle", "void settle", "redeem",
-        "withdraw", "withdraw_failed", "guard",
+        "series_opened",
+        "commit",
+        "evict",
+        "reveal",
+        "void reveal",
+        "clear",
+        "clear with a trade",
+        "mint",
+        "merge",
+        "transfer_position",
+        "print",
+        "no_print",
+        "settle",
+        "void settle",
+        "redeem",
+        "withdraw",
+        "withdraw_failed",
+        "guard",
     ] {
-        assert!(seen.get(stage).copied().unwrap_or(0) > 0, "no {stage} in {seen:#?}");
+        assert!(
+            seen.get(stage).copied().unwrap_or(0) > 0,
+            "no {stage} in {seen:#?}"
+        );
     }
 }

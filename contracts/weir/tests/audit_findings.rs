@@ -129,7 +129,12 @@ impl H {
         install(STRANGER, now, 0, storage);
         self
     }
-    fn run<R>(&mut self, caller: &str, deposit: u128, f: impl FnOnce(&mut Weir) -> R) -> Result<R, String> {
+    fn run<R>(
+        &mut self,
+        caller: &str,
+        deposit: u128,
+        f: impl FnOnce(&mut Weir) -> R,
+    ) -> Result<R, String> {
         let storage = with_mocked_blockchain(|b| b.take_storage());
         install(caller, self.now, deposit, storage.clone());
         let outcome = catch_unwind(AssertUnwindSafe(|| {
@@ -144,7 +149,8 @@ impl H {
         })
     }
     fn ok<R>(&mut self, caller: &str, f: impl FnOnce(&mut Weir) -> R) -> R {
-        self.run(caller, 0, f).unwrap_or_else(|e| panic!("{caller}: {e}"))
+        self.run(caller, 0, f)
+            .unwrap_or_else(|e| panic!("{caller}: {e}"))
     }
     fn view<R>(&mut self, f: impl FnOnce(&Weir) -> R) -> R {
         let storage = with_mocked_blockchain(|b| b.take_storage());
@@ -153,8 +159,11 @@ impl H {
         f(&weir)
     }
     fn fund(&mut self, name: &str, amount: u128) {
-        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None)).unwrap();
-        let refund = self.ok(USDC, |w| w.ft_on_transfer(id(name), U128(amount), String::new()));
+        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None))
+            .unwrap();
+        let refund = self.ok(USDC, |w| {
+            w.ft_on_transfer(id(name), U128(amount), String::new())
+        });
         assert_eq!(refund, U128(0));
     }
     fn balance(&mut self, name: &str) -> u128 {
@@ -171,19 +180,42 @@ impl H {
         panic!("no print");
     }
     fn hash(series: u32, round: u64, name: &str, side: Side, size: u64, price: u64) -> String {
-        hex::encode(hash::commit_hash(series, round, name, side, size, price, SALT))
+        hex::encode(hash::commit_hash(
+            series, round, name, side, size, price, SALT,
+        ))
     }
-    fn commit(&mut self, round: u64, name: &str, side: Side, size: u64, price: u64, lock: u128) -> Result<u32, String> {
+    fn commit(
+        &mut self,
+        round: u64,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+        lock: u128,
+    ) -> Result<u32, String> {
         let hash = Self::hash(0, round, name, side, size, price);
         self.run(name, 0, |w| w.commit(0, hash, U128(lock)))
     }
-    fn reveal(&mut self, round: u64, seq: u32, name: &str, side: Side, size: u64, price: u64) -> Result<(), String> {
-        self.run(name, 0, |w| w.reveal(0, round, seq, side, size, price, SALT.into()))
+    fn reveal(
+        &mut self,
+        round: u64,
+        seq: u32,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+    ) -> Result<(), String> {
+        self.run(name, 0, |w| {
+            w.reveal(0, round, seq, side, size, price, SALT.into())
+        })
     }
     /// Bytes the contract pays for, as NEAR counts them: key + value + 40 per record.
     fn storage_bytes(&mut self) -> u64 {
         let storage = with_mocked_blockchain(|b| b.take_storage());
-        let bytes = storage.iter().map(|(k, v)| (k.len() + v.len() + 40) as u64).sum();
+        let bytes = storage
+            .iter()
+            .map(|(k, v)| (k.len() + v.len() + 40) as u64)
+            .sum();
         install(STRANGER, self.now, 0, storage);
         bytes
     }
@@ -203,19 +235,31 @@ fn audit_guard_change_after_commit_no_longer_cancels() {
     h.print(PRICE); // ref = 2.0 - 1.8 = 0.200000
     h.at(round_start(0));
     // Alice: no guard at commit time. LONG 10 @ 0.300 (above ref), lock 3 $.
-    let a = h.commit(0, "alice.near", Side::Long, 10, 300_000, 3 * DOLLAR).unwrap();
-    let b = h.commit(0, "bob.near", Side::Short, 10, 290_000, 2 * DOLLAR).unwrap();
+    let a = h
+        .commit(0, "alice.near", Side::Long, 10, 300_000, 3 * DOLLAR)
+        .unwrap();
+    let b = h
+        .commit(0, "bob.near", Side::Short, 10, 290_000, 2 * DOLLAR)
+        .unwrap();
     h.at(reveal_start(0) + 39);
-    h.reveal(0, b, "bob.near", Side::Short, 10, 290_000).unwrap();
+    h.reveal(0, b, "bob.near", Side::Short, 10, 290_000)
+        .unwrap();
     // Alice sees Bob's SHORT at 0.290 and tightens her guard: too late.
     let before = h.balance("alice.near");
-    h.run("alice.near", 1, |w| w.set_guard(Some(0), None)).unwrap();
-    h.reveal(0, a, "alice.near", Side::Long, 10, 300_000).unwrap();
+    h.run("alice.near", 1, |w| w.set_guard(Some(0), None))
+        .unwrap();
+    h.reveal(0, a, "alice.near", Side::Long, 10, 300_000)
+        .unwrap();
     let after = h.balance("alice.near");
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
     let r = h.view(|w| w.get_result(0, 0)).unwrap();
-    println!("alice's reveal returned {} (was the whole 3 $); the round traded {} at {:?}", after - before, r.volume, r.price);
+    println!(
+        "alice's reveal returned {} (was the whole 3 $); the round traded {} at {:?}",
+        after - before,
+        r.volume,
+        r.price
+    );
     assert_eq!(after, before, "no lock back at reveal: the order stands");
     assert_eq!((r.volume, r.price), (10, Some(295_000)));
 }
@@ -230,7 +274,10 @@ fn audit_function_call_agent_can_no_longer_drain_a_guarded_account() {
     h.fund("victim.near", 100 * DOLLAR);
     h.fund("mallory.near", 1_000 * DOLLAR);
     // The victim's full-access key sets both limits; the agent cannot change them.
-    h.run("victim.near", 1, |w| w.set_guard(Some(0), Some(U128(DOLLAR)))).unwrap();
+    h.run("victim.near", 1, |w| {
+        w.set_guard(Some(0), Some(U128(DOLLAR)))
+    })
+    .unwrap();
     h.at(round_start(0) - 5);
     h.print(PRICE);
     h.at(round_start(0));
@@ -239,7 +286,9 @@ fn audit_function_call_agent_can_no_longer_drain_a_guarded_account() {
     for round in 0..10 {
         h.at(round_start(round));
         let everything = h.balance("victim.near") - FEE;
-        let all_in = h.run("victim.near", 0, |w| w.commit(0, junk.clone(), U128(everything)));
+        let all_in = h.run("victim.near", 0, |w| {
+            w.commit(0, junk.clone(), U128(everything))
+        });
         assert_eq!(all_in, Err("over the round lock limit".into()));
         h.ok("victim.near", |w| w.commit(0, junk.clone(), U128(DOLLAR)));
         h.at(round_end(round));
@@ -258,7 +307,11 @@ fn audit_function_call_agent_can_no_longer_drain_a_guarded_account() {
     println!("victim 100 $ -> {victim}; mallory 1000 $ -> {mallory}; burned {burned}");
     // Ten rounds of 1% of 1 $ and a 0.01 $ fee: 0.2 $ in all, and nobody got it.
     assert_eq!(victim, 100 * DOLLAR - 10 * (DOLLAR / 100 + FEE));
-    assert_eq!(mallory, 1_000 * DOLLAR, "invariant 6: no gain from another's forfeit");
+    assert_eq!(
+        mallory,
+        1_000 * DOLLAR,
+        "invariant 6: no gain from another's forfeit"
+    );
     assert_eq!(burned, 10 * (DOLLAR / 100 + FEE));
 }
 
@@ -276,15 +329,22 @@ fn audit_eviction_griefing_now_costs_a_fee_per_slot() {
     h.at(round_start(0) - 5);
     h.print(PRICE);
     h.at(round_start(0));
-    h.commit(0, "a.near", Side::Long, 10, 210_000, 10 * DOLLAR).unwrap();
-    h.commit(0, "b.near", Side::Long, 10, 200_000, 10 * DOLLAR).unwrap();
-    h.commit(0, "c.near", Side::Short, 10, 190_000, 10 * DOLLAR).unwrap();
-    h.commit(0, "d.near", Side::Short, 10, 200_000, 10 * DOLLAR).unwrap();
+    h.commit(0, "a.near", Side::Long, 10, 210_000, 10 * DOLLAR)
+        .unwrap();
+    h.commit(0, "b.near", Side::Long, 10, 200_000, 10 * DOLLAR)
+        .unwrap();
+    h.commit(0, "c.near", Side::Short, 10, 190_000, 10 * DOLLAR)
+        .unwrap();
+    h.commit(0, "d.near", Side::Short, 10, 200_000, 10 * DOLLAR)
+        .unwrap();
     let start = h.balance("evil.near");
     h.at(reveal_start(0) - 1);
     let mut seqs = vec![];
     for _ in 0..4 {
-        seqs.push(h.commit(0, "evil.near", Side::Long, 1, 1_000, 10 * DOLLAR + 1).unwrap());
+        seqs.push(
+            h.commit(0, "evil.near", Side::Long, 1, 1_000, 10 * DOLLAR + 1)
+                .unwrap(),
+        );
     }
     // The evicted got lock and fee back in full.
     assert_eq!(h.balance("a.near"), 100 * DOLLAR);
@@ -296,7 +356,11 @@ fn audit_eviction_griefing_now_costs_a_fee_per_slot() {
     h.ok(STRANGER, |w| w.clear(0, 0));
     let r = h.view(|w| w.get_result(0, 0)).unwrap();
     let end = h.balance("evil.near");
-    println!("blocking the round cost the griefer {} (4 slots at {FEE}); fees burned {}", start - end, r.fees.0);
+    println!(
+        "blocking the round cost the griefer {} (4 slots at {FEE}); fees burned {}",
+        start - end,
+        r.fees.0
+    );
     assert_eq!(start - end, 4 * FEE);
     assert_eq!(r.fees.0, 4 * FEE);
 }
@@ -319,8 +383,14 @@ fn audit_one_reporter_can_no_longer_steer_the_index() {
         h.at(bucket);
         evil += evil * 1_500 / 10_000;
         assert!(!h.ok(R1, |w| w.report(bucket, evil, BUNDLE.into())));
-        assert!(!h.ok(R2, |w| w.report(bucket, honest, BUNDLE.into())), "two reports decide nothing yet");
-        assert!(h.ok(R3, |w| w.report(bucket, honest, BUNDLE.into())), "the third decides on the median");
+        assert!(
+            !h.ok(R2, |w| w.report(bucket, honest, BUNDLE.into())),
+            "two reports decide nothing yet"
+        );
+        assert!(
+            h.ok(R3, |w| w.report(bucket, honest, BUNDLE.into())),
+            "the third decides on the median"
+        );
         prints.push(h.view(|w| w.get_print(bucket)).unwrap().price.unwrap());
     }
     // One honest and one dishonest reporter, the third silent: no print.
@@ -406,7 +476,11 @@ fn audit_reporting_out_of_order_no_longer_bypasses_anything() {
     println!("two colluding reporters at 100x: in order {in_order:?}, out of order {reordered:?}; with an honest third: {in_order_3:?} / {reordered_3:?}");
     assert_eq!(in_order, reordered, "order changes nothing");
     assert_eq!(in_order_3, reordered_3);
-    assert_eq!(in_order_3, Some(100 * PRICE), "two of three are a majority: section 15");
+    assert_eq!(
+        in_order_3,
+        Some(100 * PRICE),
+        "two of three are a majority: section 15"
+    );
 }
 
 /// Finding 7: one account could mint u64::MAX sets, after which `clear` overflowed in
@@ -424,14 +498,20 @@ fn audit_open_sets_can_no_longer_overflow() {
     h.at(round_start(0) - 5);
     h.print(PRICE);
     h.at(round_start(0));
-    let a = h.commit(0, "a.near", Side::Long, 1_000, 200_000, 200 * DOLLAR).unwrap();
-    let b = h.commit(0, "b.near", Side::Short, 1_000, 200_000, 200 * DOLLAR).unwrap();
+    let a = h
+        .commit(0, "a.near", Side::Long, 1_000, 200_000, 200 * DOLLAR)
+        .unwrap();
+    let b = h
+        .commit(0, "b.near", Side::Short, 1_000, 200_000, 200 * DOLLAR)
+        .unwrap();
     let max = h.run("whale.near", 0, |w| w.mint(0, u64::MAX));
     h.ok("whale.near", |w| w.mint(0, cap));
     let one_more = h.run("whale.near", 0, |w| w.mint(0, 1));
     h.at(reveal_start(0));
-    h.reveal(0, a, "a.near", Side::Long, 1_000, 200_000).unwrap();
-    h.reveal(0, b, "b.near", Side::Short, 1_000, 200_000).unwrap();
+    h.reveal(0, a, "a.near", Side::Long, 1_000, 200_000)
+        .unwrap();
+    h.reveal(0, b, "b.near", Side::Short, 1_000, 200_000)
+        .unwrap();
     h.at(round_end(0));
     let clear = h.run(STRANGER, 0, |w| w.clear(0, 0));
     for bucket in [T0, T0 + 10, T0 + 20] {
@@ -457,8 +537,16 @@ fn audit_open_sets_can_no_longer_overflow() {
 fn audit_storage_bytes_per_object_and_pruning() {
     let mut p = params();
     p.max_commits = 64;
-    p.reporters = vec![id("reporter-a.weir.testnet"), id("reporter-b.weir.testnet"), id("reporter-c.weir.testnet")];
-    let reporters = ["reporter-a.weir.testnet", "reporter-b.weir.testnet", "reporter-c.weir.testnet"];
+    p.reporters = vec![
+        id("reporter-a.weir.testnet"),
+        id("reporter-b.weir.testnet"),
+        id("reporter-c.weir.testnet"),
+    ];
+    let reporters = [
+        "reporter-a.weir.testnet",
+        "reporter-b.weir.testnet",
+        "reporter-c.weir.testnet",
+    ];
     let mut h = H::with(p);
     let base = h.storage_bytes();
     let who = "a".repeat(64); // an implicit account id
@@ -477,12 +565,16 @@ fn audit_storage_bytes_per_object_and_pruning() {
     let s1 = h.storage_bytes();
     let mut seqs = vec![];
     for i in 0..64u64 {
-        seqs.push(h.commit(0, &who, Side::Long, 1, 1_000 * (i % 3 + 1), DOLLAR).unwrap());
+        seqs.push(
+            h.commit(0, &who, Side::Long, 1, 1_000 * (i % 3 + 1), DOLLAR)
+                .unwrap(),
+        );
     }
     let book = h.storage_bytes() - s1;
     h.at(reveal_start(0));
     for (i, seq) in seqs.iter().enumerate() {
-        h.reveal(0, *seq, &who, Side::Long, 1, 1_000 * (i as u64 % 3 + 1)).unwrap();
+        h.reveal(0, *seq, &who, Side::Long, 1, 1_000 * (i as u64 % 3 + 1))
+            .unwrap();
     }
     h.at(round_end(0));
     h.ok(STRANGER, |w| w.clear(0, 0));
@@ -507,12 +599,24 @@ fn audit_storage_bytes_per_object_and_pruning() {
 
     let near = |b: u64| b as f64 * 1e19 / 1e24;
     println!("account {account} B ({:.4} NEAR, fee 0.02)", near(account));
-    println!("print with 3 reports {print} B ({:.5} NEAR); prune_print frees {print_freed} B", near(print));
+    println!(
+        "print with 3 reports {print} B ({:.5} NEAR); prune_print frees {print_freed} B",
+        near(print)
+    );
     println!("book of 64 commits {book} B ({:.4} NEAR)", near(book));
-    println!("result of 64 unfilled orders {result} B ({:.5} NEAR); prune_result frees {result_freed} B", near(result));
+    println!(
+        "result of 64 unfilled orders {result} B ({:.5} NEAR); prune_result frees {result_freed} B",
+        near(result)
+    );
     assert!(result < 300, "a result with no fills is small: {result} B");
     // The 220 B above also hold the series record the first commit opened; the
     // result itself is what pruning frees.
-    assert!(result_freed > 0 && result_freed <= result, "prune_result frees the result: {result_freed} B");
-    assert!(print_freed > 0 && print_freed + 100 >= print, "prune_print releases the print: {print_freed} of {print}");
+    assert!(
+        result_freed > 0 && result_freed <= result,
+        "prune_result frees the result: {result_freed} B"
+    );
+    assert!(
+        print_freed > 0 && print_freed + 100 >= print,
+        "prune_print releases the print: {print_freed} of {print}"
+    );
 }

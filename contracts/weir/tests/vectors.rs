@@ -47,7 +47,9 @@ impl Rng {
     }
 
     fn hex(&mut self, len: usize) -> String {
-        (0..len).map(|_| char::from_digit((self.next() % 16) as u32, 16).unwrap()).collect()
+        (0..len)
+            .map(|_| char::from_digit((self.next() % 16) as u32, 16).unwrap())
+            .collect()
     }
 }
 
@@ -75,8 +77,12 @@ fn write_or_check(file: &str, content: String) {
         std::fs::write(&path, content).unwrap();
         return;
     }
-    let committed = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("{} is missing: run WEIR_WRITE_VECTORS=1 cargo test --test vectors", path.display()));
+    let committed = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "{} is missing: run WEIR_WRITE_VECTORS=1 cargo test --test vectors",
+            path.display()
+        )
+    });
     assert!(
         committed == content,
         "{} is stale: run WEIR_WRITE_VECTORS=1 cargo test --test vectors",
@@ -96,11 +102,21 @@ fn side_name(side: Side) -> &'static str {
 const TICK: u64 = 1_000;
 
 fn l(seq: u32, size: u64, ticks: u64) -> Order {
-    Order { seq, side: Side::Long, size, price: ticks * TICK }
+    Order {
+        seq,
+        side: Side::Long,
+        size,
+        price: ticks * TICK,
+    }
 }
 
 fn s(seq: u32, size: u64, ticks: u64) -> Order {
-    Order { seq, side: Side::Short, size, price: ticks * TICK }
+    Order {
+        seq,
+        side: Side::Short,
+        size,
+        price: ticks * TICK,
+    }
 }
 
 fn clearing_case(name: &str, orders: &[Order]) -> Value {
@@ -121,35 +137,148 @@ fn named_clearing_cases() -> Vec<(&'static str, Vec<Order>)> {
         ("one SHORT only", vec![s(0, 5, 10)]),
         ("LONGs only", vec![l(0, 5, 10), l(1, 3, 12), l(2, 1, 1)]),
         ("SHORTs only", vec![s(0, 5, 10), s(1, 3, 12), s(2, 1, 1)]),
-        ("SHORT limit one tick above LONG limit: no trade", vec![l(0, 5, 10), s(1, 5, 11)]),
-        ("SHORT limit far above LONG limit: no trade", vec![l(0, 5, 2), s(1, 5, 30)]),
-        ("cross at one price, equal sizes", vec![l(0, 5, 10), s(1, 5, 10)]),
-        ("cross at one price, LONG larger", vec![l(0, 8, 10), s(1, 5, 10)]),
-        ("cross at one price, SHORT larger", vec![l(0, 5, 10), s(1, 8, 10)]),
-        ("step 3: excess demand at every candidate takes hi", vec![l(0, 10, 12), s(1, 3, 8)]),
-        ("step 3: excess supply at every candidate takes lo", vec![s(0, 10, 5), l(1, 3, 9)]),
-        ("step 3: balanced at both ends takes the midpoint", vec![l(0, 5, 10), s(1, 5, 8)]),
-        ("step 3: midpoint 8.5 ticks rounds down to 8", vec![l(0, 5, 10), s(1, 5, 7)]),
-        ("step 3: midpoint of adjacent ticks rounds down to lo", vec![l(0, 5, 10), s(1, 5, 9)]),
-        ("step 3: midpoint between candidates of different sizes", vec![l(0, 4, 10), l(1, 4, 12), s(2, 5, 9), s(3, 3, 12)]),
-        ("step 2: least imbalance keeps one candidate", vec![l(0, 10, 12), s(1, 3, 8), l(2, 10, 9)]),
-        ("step 1: largest volume wins over balance", vec![l(0, 10, 10), s(1, 10, 6), l(2, 1, 4), s(3, 1, 4)]),
-        ("partial LONG fill goes to the lower seq", vec![l(3, 4, 10), l(1, 4, 10), s(2, 5, 10)]),
-        ("partial SHORT fill goes to the lower seq", vec![s(7, 4, 10), s(2, 4, 10), l(5, 5, 10)]),
-        ("higher LONG price fills first", vec![l(0, 4, 10), l(1, 4, 12), s(2, 5, 9), s(3, 5, 8)]),
-        ("lower SHORT price fills first", vec![s(0, 4, 10), s(1, 4, 6), l(2, 5, 12)]),
-        ("price priority beats seq", vec![l(0, 3, 10), l(9, 3, 11), s(5, 4, 10)]),
-        ("equal prices on both sides, many orders", vec![l(0, 2, 10), l(1, 3, 10), l(2, 4, 10), s(3, 1, 10), s(4, 5, 10), s(5, 2, 10)]),
-        ("seq order differs from array order", vec![s(4, 3, 9), l(3, 2, 11), s(0, 3, 9), l(1, 2, 11), l(2, 2, 11)]),
-        ("one large SHORT against many small LONGs", vec![l(0, 1, 15), l(1, 1, 14), l(2, 1, 13), l(3, 1, 12), s(4, 100, 10)]),
-        ("one large LONG against many small SHORTs", vec![s(0, 1, 5), s(1, 1, 6), s(2, 1, 7), s(3, 1, 8), l(4, 100, 10)]),
-        ("crossing over several levels", vec![l(0, 5, 14), l(1, 5, 12), l(2, 5, 10), s(3, 5, 9), s(4, 5, 11), s(5, 5, 13)]),
+        (
+            "SHORT limit one tick above LONG limit: no trade",
+            vec![l(0, 5, 10), s(1, 5, 11)],
+        ),
+        (
+            "SHORT limit far above LONG limit: no trade",
+            vec![l(0, 5, 2), s(1, 5, 30)],
+        ),
+        (
+            "cross at one price, equal sizes",
+            vec![l(0, 5, 10), s(1, 5, 10)],
+        ),
+        (
+            "cross at one price, LONG larger",
+            vec![l(0, 8, 10), s(1, 5, 10)],
+        ),
+        (
+            "cross at one price, SHORT larger",
+            vec![l(0, 5, 10), s(1, 8, 10)],
+        ),
+        (
+            "step 3: excess demand at every candidate takes hi",
+            vec![l(0, 10, 12), s(1, 3, 8)],
+        ),
+        (
+            "step 3: excess supply at every candidate takes lo",
+            vec![s(0, 10, 5), l(1, 3, 9)],
+        ),
+        (
+            "step 3: balanced at both ends takes the midpoint",
+            vec![l(0, 5, 10), s(1, 5, 8)],
+        ),
+        (
+            "step 3: midpoint 8.5 ticks rounds down to 8",
+            vec![l(0, 5, 10), s(1, 5, 7)],
+        ),
+        (
+            "step 3: midpoint of adjacent ticks rounds down to lo",
+            vec![l(0, 5, 10), s(1, 5, 9)],
+        ),
+        (
+            "step 3: midpoint between candidates of different sizes",
+            vec![l(0, 4, 10), l(1, 4, 12), s(2, 5, 9), s(3, 3, 12)],
+        ),
+        (
+            "step 2: least imbalance keeps one candidate",
+            vec![l(0, 10, 12), s(1, 3, 8), l(2, 10, 9)],
+        ),
+        (
+            "step 1: largest volume wins over balance",
+            vec![l(0, 10, 10), s(1, 10, 6), l(2, 1, 4), s(3, 1, 4)],
+        ),
+        (
+            "partial LONG fill goes to the lower seq",
+            vec![l(3, 4, 10), l(1, 4, 10), s(2, 5, 10)],
+        ),
+        (
+            "partial SHORT fill goes to the lower seq",
+            vec![s(7, 4, 10), s(2, 4, 10), l(5, 5, 10)],
+        ),
+        (
+            "higher LONG price fills first",
+            vec![l(0, 4, 10), l(1, 4, 12), s(2, 5, 9), s(3, 5, 8)],
+        ),
+        (
+            "lower SHORT price fills first",
+            vec![s(0, 4, 10), s(1, 4, 6), l(2, 5, 12)],
+        ),
+        (
+            "price priority beats seq",
+            vec![l(0, 3, 10), l(9, 3, 11), s(5, 4, 10)],
+        ),
+        (
+            "equal prices on both sides, many orders",
+            vec![
+                l(0, 2, 10),
+                l(1, 3, 10),
+                l(2, 4, 10),
+                s(3, 1, 10),
+                s(4, 5, 10),
+                s(5, 2, 10),
+            ],
+        ),
+        (
+            "seq order differs from array order",
+            vec![
+                s(4, 3, 9),
+                l(3, 2, 11),
+                s(0, 3, 9),
+                l(1, 2, 11),
+                l(2, 2, 11),
+            ],
+        ),
+        (
+            "one large SHORT against many small LONGs",
+            vec![
+                l(0, 1, 15),
+                l(1, 1, 14),
+                l(2, 1, 13),
+                l(3, 1, 12),
+                s(4, 100, 10),
+            ],
+        ),
+        (
+            "one large LONG against many small SHORTs",
+            vec![
+                s(0, 1, 5),
+                s(1, 1, 6),
+                s(2, 1, 7),
+                s(3, 1, 8),
+                l(4, 100, 10),
+            ],
+        ),
+        (
+            "crossing over several levels",
+            vec![
+                l(0, 5, 14),
+                l(1, 5, 12),
+                l(2, 5, 10),
+                s(3, 5, 9),
+                s(4, 5, 11),
+                s(5, 5, 13),
+            ],
+        ),
         ("minimum price of one tick", vec![l(0, 3, 1), s(1, 3, 1)]),
-        ("wide cross: one tick SHORT, twenty tick LONG", vec![l(0, 7, 20), s(1, 7, 1)]),
-        ("orders outside the cross take no part", vec![l(0, 5, 12), s(1, 5, 6), l(2, 1, 3), s(3, 1, 15)]),
+        (
+            "wide cross: one tick SHORT, twenty tick LONG",
+            vec![l(0, 7, 20), s(1, 7, 1)],
+        ),
+        (
+            "orders outside the cross take no part",
+            vec![l(0, 5, 12), s(1, 5, 6), l(2, 1, 3), s(3, 1, 15)],
+        ),
         ("single unit each side", vec![l(0, 1, 10), s(1, 1, 10)]),
-        ("LONG and SHORT from the same seq range interleaved", vec![l(0, 3, 9), s(1, 3, 9), l(2, 3, 9), s(3, 3, 9)]),
-        ("unfilled orders behind the clearing price", vec![l(0, 5, 10), l(1, 5, 4), s(2, 5, 10), s(3, 5, 16)]),
+        (
+            "LONG and SHORT from the same seq range interleaved",
+            vec![l(0, 3, 9), s(1, 3, 9), l(2, 3, 9), s(3, 3, 9)],
+        ),
+        (
+            "unfilled orders behind the clearing price",
+            vec![l(0, 5, 10), l(1, 5, 4), s(2, 5, 10), s(3, 5, 16)],
+        ),
     ]
 }
 
@@ -171,7 +300,11 @@ fn clearing_vectors() {
             .into_iter()
             .map(|seq| Order {
                 seq,
-                side: if rng.chance(50) { Side::Long } else { Side::Short },
+                side: if rng.chance(50) {
+                    Side::Long
+                } else {
+                    Side::Short
+                },
                 size: rng.range(1, big),
                 price: rng.range(1, top) * TICK,
             })
@@ -199,15 +332,22 @@ fn hash_vectors() {
             let series = if i < 5 { i } else { rng.range(0, 5_000) as u32 };
             let round = if i < 5 { 0 } else { rng.range(0, 3_000) };
             let account = accounts[i as usize % accounts.len()];
-            let side = if rng.chance(50) { Side::Long } else { Side::Short };
+            let side = if rng.chance(50) {
+                Side::Long
+            } else {
+                Side::Short
+            };
             let size = rng.range(1, 100_000);
             let price = rng.range(1, 2_000) * TICK;
             let salt_len = rng.range(32, 64) as usize;
             let salt = rng.hex(salt_len);
-            let hash = hex::encode(weir::hash::commit_hash(series, round, account, side, size, price, &salt));
+            let hash = hex::encode(weir::hash::commit_hash(
+                series, round, account, side, size, price, &salt,
+            ));
             // Checked against an independent sha256 of the spec's string.
             let letter = if side == Side::Long { "L" } else { "S" };
-            let preimage = format!("weir:v1|{series}|{round}|{account}|{letter}|{size}|{price}|{salt}");
+            let preimage =
+                format!("weir:v1|{series}|{round}|{account}|{letter}|{size}|{price}|{salt}");
             assert_eq!(hash, hex::encode(Sha256::digest(preimage.as_bytes())));
             json!({
                 "series": series, "round": round, "account_id": account, "side": side_name(side),
@@ -266,9 +406,17 @@ fn band_vectors() {
             json!({ "anchor": anchor, "tick": tick, "band_bps": band_bps, "expect": expect })
         })
         .collect();
-    assert!(cases.iter().filter(|c| c["expect"]["error"] == true).count() >= 10);
+    assert!(
+        cases
+            .iter()
+            .filter(|c| c["expect"]["error"] == true)
+            .count()
+            >= 10
+    );
     let safe = 9_007_199_254_740_991u64;
-    assert!(cases.iter().all(|c| c["expect"]["band"].as_u64().unwrap_or(0) <= safe));
+    assert!(cases
+        .iter()
+        .all(|c| c["expect"]["band"].as_u64().unwrap_or(0) <= safe));
     write_or_check("band.json", render(&[], &cases));
 }
 
@@ -311,17 +459,27 @@ fn print_vectors() {
     }
     let cases: Vec<Value> = inputs
         .into_iter()
-        .map(|(reports, quorum, reporters, max_spread_bps, window_closed)| {
-            let (state, price) = index::state(&reports, quorum, reporters, max_spread_bps, window_closed);
-            json!({
-                "reports": reports, "quorum": quorum, "reporters": reporters,
-                "max_spread_bps": max_spread_bps, "window_closed": window_closed,
-                "expect": { "state": state, "price": price },
-            })
-        })
+        .map(
+            |(reports, quorum, reporters, max_spread_bps, window_closed)| {
+                let (state, price) =
+                    index::state(&reports, quorum, reporters, max_spread_bps, window_closed);
+                json!({
+                    "reports": reports, "quorum": quorum, "reporters": reporters,
+                    "max_spread_bps": max_spread_bps, "window_closed": window_closed,
+                    "expect": { "state": state, "price": price },
+                })
+            },
+        )
         .collect();
     for state in ["Open", "Final", "NoPrint"] {
-        assert!(cases.iter().filter(|c| c["expect"]["state"] == state).count() >= 50, "{state}");
+        assert!(
+            cases
+                .iter()
+                .filter(|c| c["expect"]["state"] == state)
+                .count()
+                >= 50,
+            "{state}"
+        );
     }
     write_or_check("print.json", render(&[], &cases));
 }
@@ -345,24 +503,115 @@ fn settlement_vectors() {
     let none = (0u64, 0u128);
     let mut inputs: Vec<(SettleInput, (u64, u128))> = vec![
         // At min_prints, and one short of it, with and without the void window.
-        (SettleInput { sum: 6_000_000, count: 3, ..base }, none),
-        (SettleInput { sum: 4_000_000, count: 2, ..base }, none),
-        (SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base }, none),
-        (SettleInput { void_allowed: true, ..base }, none),
+        (
+            SettleInput {
+                sum: 6_000_000,
+                count: 3,
+                ..base
+            },
+            none,
+        ),
+        (
+            SettleInput {
+                sum: 4_000_000,
+                count: 2,
+                ..base
+            },
+            none,
+        ),
+        (
+            SettleInput {
+                sum: 4_100_001,
+                count: 2,
+                void_allowed: true,
+                ..base
+            },
+            none,
+        ),
+        (
+            SettleInput {
+                void_allowed: true,
+                ..base
+            },
+            none,
+        ),
         // Fixing below the floor, at it, and above the cap.
-        (SettleInput { sum: 3_000_000, count: 3, ..base }, none),
-        (SettleInput { sum: 5_400_000, count: 3, ..base }, none),
-        (SettleInput { sum: 9_000_000, count: 3, ..base }, none),
+        (
+            SettleInput {
+                sum: 3_000_000,
+                count: 3,
+                ..base
+            },
+            none,
+        ),
+        (
+            SettleInput {
+                sum: 5_400_000,
+                count: 3,
+                ..base
+            },
+            none,
+        ),
+        (
+            SettleInput {
+                sum: 9_000_000,
+                count: 3,
+                ..base
+            },
+            none,
+        ),
         // The fixing rounds down.
-        (SettleInput { sum: 6_100_001, count: 3, ..base }, none),
+        (
+            SettleInput {
+                sum: 6_100_001,
+                count: 3,
+                ..base
+            },
+            none,
+        ),
         // Void after trading: the centre of the band, whatever was traded or printed.
-        (SettleInput { sum: 4_100_001, count: 2, void_allowed: true, ..base }, traded),
-        (SettleInput { void_allowed: true, ..base }, traded),
+        (
+            SettleInput {
+                sum: 4_100_001,
+                count: 2,
+                void_allowed: true,
+                ..base
+            },
+            traded,
+        ),
+        (
+            SettleInput {
+                void_allowed: true,
+                ..base
+            },
+            traded,
+        ),
         // Wash trades one tick below the band change nothing either.
-        (SettleInput { void_allowed: true, ..base }, (10_000, 10_000 * 399_000)),
+        (
+            SettleInput {
+                void_allowed: true,
+                ..base
+            },
+            (10_000, 10_000 * 399_000),
+        ),
         // Not yet void, and enough prints: trades are ignored.
-        (SettleInput { sum: 4_100_001, count: 2, ..base }, traded),
-        (SettleInput { sum: 6_000_000, count: 3, void_allowed: true, ..base }, traded),
+        (
+            SettleInput {
+                sum: 4_100_001,
+                count: 2,
+                ..base
+            },
+            traded,
+        ),
+        (
+            SettleInput {
+                sum: 6_000_000,
+                count: 3,
+                void_allowed: true,
+                ..base
+            },
+            traded,
+        ),
     ];
     while inputs.len() < 500 {
         let half = rng.range(1, 5_000) * rng.pick(&[1u64, 10, 1_000]);
@@ -374,14 +623,21 @@ fn settlement_vectors() {
         } as u32;
         let around = floor + half;
         let sum: u128 = (0..count)
-            .map(|_| u128::from(rng.range(around.saturating_sub(3 * half).max(1), around + 3 * half)))
+            .map(|_| {
+                u128::from(rng.range(around.saturating_sub(3 * half).max(1), around + 3 * half))
+            })
             .sum();
-        let traded_units = if rng.chance(30) { 0 } else { rng.range(1, 1_000_000) };
+        let traded_units = if rng.chance(30) {
+            0
+        } else {
+            rng.range(1, 1_000_000)
+        };
         // Every round's price is below band, so the average is too.
         let traded_value = if traded_units == 0 {
             0
         } else {
-            u128::from(traded_units) * u128::from(rng.range(1, 2 * half - 1)) + u128::from(rng.range(0, traded_units - 1))
+            u128::from(traded_units) * u128::from(rng.range(1, 2 * half - 1))
+                + u128::from(rng.range(0, traded_units - 1))
         };
         let input = SettleInput {
             floor,
@@ -410,7 +666,9 @@ fn settlement_vectors() {
             })
         })
         .collect();
-    assert!(cases.iter().any(|c| c["expect"]["error"] == "not enough prints yet"));
+    assert!(cases
+        .iter()
+        .any(|c| c["expect"]["error"] == "not enough prints yet"));
     assert!(cases
         .iter()
         .filter(|c| c["expect"]["void"] == true)
@@ -483,7 +741,13 @@ fn time_vectors() {
             json!({ "series": series, "now": now, "expect": { "round": round, "phase": phase } })
         })
         .collect();
-    assert!(cases.iter().filter(|c| c["expect"]["phase"] == "Closed").count() >= 20);
+    assert!(
+        cases
+            .iter()
+            .filter(|c| c["expect"]["phase"] == "Closed")
+            .count()
+            >= 20
+    );
     let params = json!({
         "t0": schedule.t0, "period_secs": schedule.period_secs, "lead_secs": schedule.lead_secs,
         "cutoff_secs": schedule.cutoff_secs, "commit_secs": schedule.commit_secs,

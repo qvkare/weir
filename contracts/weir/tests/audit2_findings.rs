@@ -132,7 +132,12 @@ impl H {
         install(STRANGER, now, 0, storage);
         self
     }
-    fn run<R>(&mut self, caller: &str, deposit: u128, f: impl FnOnce(&mut Weir) -> R) -> Result<R, String> {
+    fn run<R>(
+        &mut self,
+        caller: &str,
+        deposit: u128,
+        f: impl FnOnce(&mut Weir) -> R,
+    ) -> Result<R, String> {
         let storage = with_mocked_blockchain(|b| b.take_storage());
         install(caller, self.now, deposit, storage.clone());
         let outcome = catch_unwind(AssertUnwindSafe(|| {
@@ -147,7 +152,8 @@ impl H {
         })
     }
     fn ok<R>(&mut self, caller: &str, f: impl FnOnce(&mut Weir) -> R) -> R {
-        self.run(caller, 0, f).unwrap_or_else(|e| panic!("{caller}: {e}"))
+        self.run(caller, 0, f)
+            .unwrap_or_else(|e| panic!("{caller}: {e}"))
     }
     fn view<R>(&mut self, f: impl FnOnce(&Weir) -> R) -> R {
         let storage = with_mocked_blockchain(|b| b.take_storage());
@@ -156,8 +162,11 @@ impl H {
         f(&weir)
     }
     fn fund(&mut self, name: &str, amount: u128) {
-        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None)).unwrap();
-        let refund = self.ok(USDC, |w| w.ft_on_transfer(id(name), U128(amount), String::new()));
+        self.run(name, REGISTRATION_FEE.as_yoctonear(), |w| w.register(None))
+            .unwrap();
+        let refund = self.ok(USDC, |w| {
+            w.ft_on_transfer(id(name), U128(amount), String::new())
+        });
         assert_eq!(refund, U128(0));
     }
     fn balance(&mut self, name: &str) -> u128 {
@@ -170,12 +179,30 @@ impl H {
             self.ok(r, |w| w.report(bucket, price, BUNDLE.into()));
         }
     }
-    fn commit(&mut self, round: u64, name: &str, side: Side, size: u64, price: u64, lock: u128) -> Result<u32, String> {
+    fn commit(
+        &mut self,
+        round: u64,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+        lock: u128,
+    ) -> Result<u32, String> {
         let hash = hex::encode(hash::commit_hash(0, round, name, side, size, price, SALT));
         self.run(name, 0, |w| w.commit(0, hash, U128(lock)))
     }
-    fn reveal(&mut self, round: u64, seq: u32, name: &str, side: Side, size: u64, price: u64) -> Result<(), String> {
-        self.run(name, 0, |w| w.reveal(0, round, seq, side, size, price, SALT.into()))
+    fn reveal(
+        &mut self,
+        round: u64,
+        seq: u32,
+        name: &str,
+        side: Side,
+        size: u64,
+        price: u64,
+    ) -> Result<(), String> {
+        self.run(name, 0, |w| {
+            w.reveal(0, round, seq, side, size, price, SALT.into())
+        })
     }
     fn open_series(&mut self) {
         self.at(round_start(0) - 5);
@@ -211,13 +238,20 @@ fn limit_one_reporter_selects_which_buckets_print() {
         honest_sum += honest;
         h.ok(R2, |w| w.report(b, honest, BUNDLE.into()));
         // R1 agrees (and leans +2%) when the price is high; disagrees when low.
-        let evil = if honest > PRICE { honest + honest * 200 / 10_000 } else { honest / 2 };
+        let evil = if honest > PRICE {
+            honest + honest * 200 / 10_000
+        } else {
+            honest / 2
+        };
         h.ok(R1, |w| w.report(b, evil, BUNDLE.into()));
     }
     h.at(END + 20);
     h.ok(STRANGER, |w| w.settle(0));
     let s = h.view(|w| w.get_series(0)).unwrap().settlement.unwrap();
-    let states: Vec<PrintState> = buckets.iter().map(|&b| h.view(|w| w.get_print(b)).unwrap().state).collect();
+    let states: Vec<PrintState> = buckets
+        .iter()
+        .map(|&b| h.view(|w| w.get_print(b)).unwrap().state)
+        .collect();
     let no_prints = states.iter().filter(|s| **s == PrintState::NoPrint).count();
     println!(
         "true average {}; fixing {} from {} prints ({} buckets no print); void {}; long_payout {} short_payout {}",
@@ -243,8 +277,19 @@ fn limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side() {
     h.fund(R1, 100 * DOLLAR); // the dishonest reporter trades too
     h.ok("a.near", |w| w.mint(0, 10));
     // The auction: a buys 10 LONG at 0.30, the reporter 10 SHORT at 0.10.
-    let a = h.commit(0, "a.near", Side::Long, 10, 300_000, 3 * DOLLAR + DOLLAR / 10).unwrap();
-    let r = h.commit(0, R1, Side::Short, 10, 300_000, DOLLAR + DOLLAR / 10).unwrap();
+    let a = h
+        .commit(
+            0,
+            "a.near",
+            Side::Long,
+            10,
+            300_000,
+            3 * DOLLAR + DOLLAR / 10,
+        )
+        .unwrap();
+    let r = h
+        .commit(0, R1, Side::Short, 10, 300_000, DOLLAR + DOLLAR / 10)
+        .unwrap();
     h.at(reveal_start(0));
     h.reveal(0, a, "a.near", Side::Long, 10, 300_000).unwrap();
     h.reveal(0, r, R1, Side::Short, 10, 300_000).unwrap();
@@ -267,7 +312,11 @@ fn limit_forcing_a_void_pays_a_reporter_half_the_band_for_a_cheap_side() {
     let got = h.balance(R1) - before;
     println!("settle at end+grace: {early:?}; void {} at long_payout {}; reporter paid {paid} for 10 SHORT, gets {got} (true price: 0)", s.void, s.long_payout);
     assert!(s.void);
-    assert_eq!((s.long_payout, s.short_payout), (200_000, 200_000), "the centre of the band");
+    assert_eq!(
+        (s.long_payout, s.short_payout),
+        (200_000, 200_000),
+        "the centre of the band"
+    );
     assert_eq!(paid, DOLLAR);
     assert_eq!(got, 2 * DOLLAR, "+1.00 $ for forcing the void");
 }
@@ -285,13 +334,18 @@ fn limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee() {
     }
     h.fund("evil.near", 1_000 * DOLLAR);
     h.open_series();
-    h.commit(0, "a.near", Side::Long, 10, 210_000, 10 * DOLLAR).unwrap();
-    h.commit(0, "b.near", Side::Short, 10, 190_000, 10 * DOLLAR).unwrap();
+    h.commit(0, "a.near", Side::Long, 10, 210_000, 10 * DOLLAR)
+        .unwrap();
+    h.commit(0, "b.near", Side::Short, 10, 190_000, 10 * DOLLAR)
+        .unwrap();
     let start = h.balance("evil.near");
     h.at(reveal_start(0) - 1);
     let mut seqs = vec![];
     for _ in 0..64 {
-        seqs.push(h.commit(0, "evil.near", Side::Long, 1, 1_000, 10 * DOLLAR + 1).unwrap());
+        seqs.push(
+            h.commit(0, "evil.near", Side::Long, 1, 1_000, 10 * DOLLAR + 1)
+                .unwrap(),
+        );
     }
     h.at(reveal_start(0));
     let honest = h.reveal(0, 0, "a.near", Side::Long, 10, 210_000);
@@ -317,7 +371,8 @@ fn limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee() {
 fn limit_an_account_without_a_round_lock_limit_can_be_burned() {
     let mut h = H::with(params());
     h.fund("victim.near", 100 * DOLLAR);
-    h.run("victim.near", 1, |w| w.set_guard(Some(0), None)).unwrap();
+    h.run("victim.near", 1, |w| w.set_guard(Some(0), None))
+        .unwrap();
     h.open_series();
     for round in 0..10 {
         h.at(round_start(round));
@@ -346,15 +401,24 @@ fn limit_last_look_a_non_reveal_changes_another_accounts_fill() {
             h.fund(who, 100 * DOLLAR);
         }
         h.open_series();
-        let a = h.commit(0, "alice.near", Side::Long, 10, 250_000, 5 * DOLLAR).unwrap();
-        let b = h.commit(0, "bob.near", Side::Short, 10, 150_000, 5 * DOLLAR).unwrap();
-        let c = h.commit(0, "charlie.near", Side::Short, 10, 200_000, 5 * DOLLAR).unwrap();
+        let a = h
+            .commit(0, "alice.near", Side::Long, 10, 250_000, 5 * DOLLAR)
+            .unwrap();
+        let b = h
+            .commit(0, "bob.near", Side::Short, 10, 150_000, 5 * DOLLAR)
+            .unwrap();
+        let c = h
+            .commit(0, "charlie.near", Side::Short, 10, 200_000, 5 * DOLLAR)
+            .unwrap();
         h.at(reveal_start(0));
-        h.reveal(0, a, "alice.near", Side::Long, 10, 250_000).unwrap();
+        h.reveal(0, a, "alice.near", Side::Long, 10, 250_000)
+            .unwrap();
         if bob_reveals {
-            h.reveal(0, b, "bob.near", Side::Short, 10, 150_000).unwrap();
+            h.reveal(0, b, "bob.near", Side::Short, 10, 150_000)
+                .unwrap();
         }
-        h.reveal(0, c, "charlie.near", Side::Short, 10, 200_000).unwrap();
+        h.reveal(0, c, "charlie.near", Side::Short, 10, 200_000)
+            .unwrap();
         h.at(round_end(0));
         h.ok(STRANGER, |w| w.clear(0, 0));
         let r = h.view(|w| w.get_result(0, 0)).unwrap();
@@ -363,8 +427,14 @@ fn limit_last_look_a_non_reveal_changes_another_accounts_fill() {
     };
     let with = outcome(true);
     let without = outcome(false);
-    println!("bob reveals: price {:?}, charlie SHORT {}, alice free {}", with.0, with.1, with.2);
-    println!("bob silent:  price {:?}, charlie SHORT {}, alice free {}", without.0, without.1, without.2);
+    println!(
+        "bob reveals: price {:?}, charlie SHORT {}, alice free {}",
+        with.0, with.1, with.2
+    );
+    println!(
+        "bob silent:  price {:?}, charlie SHORT {}, alice free {}",
+        without.0, without.1, without.2
+    );
     assert_eq!((with.0, with.1), (Some(150_000), 0));
     assert_eq!((without.0, without.1), (Some(225_000), 10));
 }
@@ -375,16 +445,25 @@ fn limit_last_look_a_non_reveal_changes_another_accounts_fill() {
 fn audit2_a_quorum_of_one_in_three_is_refused() {
     let mut p = params();
     p.quorum = 1;
-    assert_eq!(check_params(&p), Err("quorum must be a majority of the reporters"));
+    assert_eq!(
+        check_params(&p),
+        Err("quorum must be a majority of the reporters")
+    );
     let refused = catch_unwind(|| {
         install(STRANGER, OPEN, 0, HashMap::new());
         Weir::new(p)
     });
-    assert_eq!(message(refused.err().unwrap()), "quorum must be a majority of the reporters");
+    assert_eq!(
+        message(refused.err().unwrap()),
+        "quorum must be a majority of the reporters"
+    );
     let mut p = params();
     p.reporters = vec![id(R1), id(R2)];
     p.quorum = 1;
-    assert_eq!(check_params(&p), Err("quorum must be a majority of the reporters"));
+    assert_eq!(
+        check_params(&p),
+        Err("quorum must be a majority of the reporters")
+    );
 }
 
 /// LIMIT (spec 3, 15). Parameter combinations `new` still accepts that weaken the
@@ -420,7 +499,10 @@ fn limit_unwise_parameters_are_still_accepted() {
     h.at(b + 30);
     assert!(h.ok(STRANGER, |w| w.finalize_print(b)));
     let last = h.view(|w| w.get_last_print()).unwrap();
-    println!("100% spread: one honest 2.0 and one dishonest 4.0 print {}", last.price);
+    println!(
+        "100% spread: one honest 2.0 and one dishonest 4.0 print {}",
+        last.price
+    );
     assert_eq!(last.price, 3 * PRICE / 2);
 }
 
@@ -462,8 +544,12 @@ fn limit_one_account_can_take_the_whole_mint_cap() {
     h.open_series();
     h.ok("whale.near", |w| w.mint(0, cap as u64));
     let other = h.run("a.near", 0, |w| w.mint(0, 1));
-    let a = h.commit(0, "a.near", Side::Long, 10_000, 1_000, 10 * DOLLAR).unwrap();
-    let b = h.commit(0, "b.near", Side::Short, 100, 1_000, 40 * DOLLAR).unwrap();
+    let a = h
+        .commit(0, "a.near", Side::Long, 10_000, 1_000, 10 * DOLLAR)
+        .unwrap();
+    let b = h
+        .commit(0, "b.near", Side::Short, 100, 1_000, 40 * DOLLAR)
+        .unwrap();
     h.at(reveal_start(0));
     h.reveal(0, a, "a.near", Side::Long, 10_000, 1_000).unwrap();
     let rb = h.reveal(0, b, "b.near", Side::Short, 100, 1_000);

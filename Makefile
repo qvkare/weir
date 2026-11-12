@@ -162,6 +162,7 @@ WEB_PORT ?= 3000
 web:
 	cd web && WEIR_MODEL=1 pnpm exec next dev --port $(WEB_PORT)
 
-# lint: clippy on the contracts, warnings as errors.
+# lint: rustfmt's check and clippy on the contracts, warnings as errors.
 lint:
+	cargo fmt --manifest-path contracts/Cargo.toml --all -- --check
 	cargo clippy --manifest-path contracts/Cargo.toml --workspace --all-targets -- -D warnings
