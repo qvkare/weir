@@ -34,7 +34,7 @@ import { Budget, BUDGET_MARK, BudgetExhausted, PRIORITY_ORDER, type Priority, ty
 import { keyFor, redactor, strategyOf, type AgentSpec, type Deployments, type MarketDeployment, type MarketId, type Secrets, type Signer } from "./config.ts";
 import { KeyGuard, KeyUnusable, NO_KEY_MARK, type KeyFault, type Role } from "./keys.ts";
 import { indexDue, readLatest, refreshIndex, requestsFor, type IndexAttempt, type LatestBundle } from "./indexer.ts";
-import { DEFERRED, Meter, nearChain, type Chain, type Fetch, type TxRecord } from "./ports.ts";
+import { DEFERRED, Meter, nearChain, type Chain, type Fetch, type RpcCooling, type TxRecord } from "./ports.ts";
 import { KEYS, orderStore, readJson, renewLease, takeLease, type KeeperStore } from "./store.ts";
 
 export const DEFAULT_BUDGET = 40;
@@ -140,6 +140,18 @@ export interface TickReport {
   markets: Partial<Record<MarketId, MarketSummary>>;
   /** Keys the node refused, set aside (not retried) until `until`, each with what to fix. */
   key_faults: KeyFault[];
+  /** Configuration problems that held this tick: unreadable secrets, keys that do not parse,
+   * signers without a key for a market. Shown in /status for as long as they hold. */
+  config: ConfigProblem[];
+  /** RPC endpoints passed over after a refusal or a fault, when the tick ended. */
+  rpc_cooling: RpcCooling[];
+}
+
+/** One configuration problem, in words that never contain a secret. */
+export interface ConfigProblem {
+  /** Absent for a problem with the secrets as a whole. */
+  market?: MarketId;
+  text: string;
 }
 
 /** What the keeper has finished per contract. */
@@ -197,7 +209,10 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
   const run = env.runId ?? `run-${now}-${Math.random().toString(36).slice(2, 8)}`;
   const redact = redactor(env.secrets);
   const report: TickReport = {
-    now, run, ran: true, order: [], acting: [], budget: { limit: budget.limit, used: 0, by_step: {} }, requests: budget.spent, entries: [], txs: [], undone: [], markets: {}, key_faults: [],
+    now, run, ran: true, order: [], acting: [], budget: { limit: budget.limit, used: 0, by_step: {} }, requests: budget.spent, entries: [], txs: [], undone: [], markets: {}, key_faults: [], config: [], rpc_cooling: [],
+  };
+  const configProblem = (text: string, market?: MarketId) => {
+    if (!report.config.some((c) => c.text === text && c.market === market)) report.config.push({ ...(market ? { market } : {}), text });
   };
   const add = (e: Omit<KeeperEntry, "at">) => report.entries.push({ at: now, ...e });
   const fetchM = budget.meter(env.fetch);
@@ -219,7 +234,17 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
     }
   }
 
-  for (const p of env.secrets.problems) add({ step: "keeper", action: "config", status: "skipped", text: p });
+  for (const p of env.secrets.problems) {
+    add({ step: "keeper", action: "config", status: "skipped", text: p });
+    configProblem(p);
+  }
+  // Endpoints still cooling down from a refusal in an earlier tick (same process or isolate):
+  // calls pass them over, or fail at once without a request when every one refused for rate.
+  const coolingAtStart = chain.cooling?.() ?? [];
+  if (coolingAtStart.length > 0) {
+    const list = coolingAtStart.map((c) => `${c.endpoint} until ${c.until} (${c.rate ? "rate limit" : "fault"})`).join(", ");
+    add({ step: "keeper", action: "rpc", status: "skipped", text: `RPC endpoints passed over after earlier refusals: ${list}` });
+  }
 
   const minute = Math.floor(now / 60);
   const rotate = <T>(xs: T[]): T[] => {
@@ -239,7 +264,7 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
   const keys = new KeyGuard(stored, now, (text, market, account) =>
     add({ step: "keeper", ...(market ? { market: market as MarketId } : {}), ...(account ? { agent: account } : {}), action: "key", status: "skipped", text }),
   );
-  const out: Out = { keys, add, report, budget, env, now, undone: (u: string) => report.undone.push(u) };
+  const out: Out = { keys, add, report, budget, env, now, undone: (u: string) => report.undone.push(u), configProblem };
 
   try {
     budget.priority = "plan";
@@ -340,6 +365,7 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
     }
   }
   report.key_faults = Object.values(keys.faults);
+  report.rpc_cooling = chain.cooling?.() ?? [];
   if (keys.changed) {
     try {
       await env.store.put(KEYS.keyFaults, JSON.stringify(keys.faults));
@@ -354,7 +380,7 @@ export async function runTick(env: KeeperEnv, now: number): Promise<TickReport> 
   }
   const clean = redact(report);
   try {
-    await saveStatus(env.store, clean);
+    await saveStatus(env.store, clean, new Set(env.deployments.markets.map((d) => d.id)));
   } catch (e) {
     clean.entries.push({ at: now, step: "keeper", action: "store", status: "failed", text: `could not save the log: ${errorText(e)}` });
   }
@@ -369,6 +395,7 @@ type Out = {
   env: KeeperEnv;
   now: number;
   undone: (u: string) => void;
+  configProblem: (text: string, market?: MarketId) => void;
 };
 
 /** Minutes between a market's turns: at least 6 turns per commit phase and 3 per reveal phase. */
@@ -388,13 +415,16 @@ async function openMarket(out: Out, chain: Chain, fetchM: Fetch, dep: MarketDepl
   const signerPort = async (signer: Signer, role: Role, step: Step): Promise<WeirPort | null> => {
     const key = keyFor(signer, contract);
     if (key === null) {
-      keys.once(`nokey|${signer.account_id}|${contract}`, `${signer.account_id} (${role}) cannot act on ${dep.id}: it has no key for ${contract} (add one under "keys")`, dep.id, signer.account_id);
+      const text = `${signer.account_id} (${role}) cannot act on ${dep.id}: it has no key for ${contract} (add one under "keys")`;
+      keys.once(`nokey|${signer.account_id}|${contract}`, text, dep.id, signer.account_id);
+      out.configProblem(text, dep.id);
       return null;
     }
     try {
       return keys.guard(meter.wrap(await chain.connect(dep, { account_id: signer.account_id, secret_key: key }, hooks)), role, signer.account_id, contract, dep.id, out.now);
     } catch (e) {
       out.add({ step, market: dep.id, agent: signer.account_id, action: "config", status: "failed", text: `${role} not used on ${dep.id}: ${errorText(e)}` });
+      out.configProblem(`${signer.account_id} (${role}) not used on ${dep.id}: ${errorText(e)}`, dep.id);
       return null;
     }
   };
@@ -847,12 +877,20 @@ export interface StoredStatus {
   undone: string[];
   markets: TickReport["markets"];
   key_faults: KeyFault[];
+  config: ConfigProblem[];
+  rpc_cooling: RpcCooling[];
   log: KeeperEntry[];
 }
 
-async function saveStatus(store: KeeperStore, report: TickReport): Promise<void> {
+async function saveStatus(store: KeeperStore, report: TickReport, deployed: ReadonlySet<MarketId>): Promise<void> {
   const prev = await readJson<StoredStatus>(store, KEYS.status);
   const log = [...(prev?.log ?? []), ...report.entries].slice(-LOG_SIZE);
+  // A market this tick could not open (its status unreadable, or no budget left) was not
+  // checked again: its problems from the last tick that checked it still stand.
+  const config = [...report.config];
+  for (const c of prev?.config ?? []) {
+    if (c.market !== undefined && deployed.has(c.market) && report.markets[c.market] === undefined && !config.some((x) => x.market === c.market && x.text === c.text)) config.push(c);
+  }
   const status: StoredStatus = {
     last_tick: report.now,
     run: report.run,
@@ -863,6 +901,8 @@ async function saveStatus(store: KeeperStore, report: TickReport): Promise<void>
     undone: report.undone,
     markets: report.markets,
     key_faults: report.key_faults,
+    config,
+    rpc_cooling: report.rpc_cooling,
     log,
   };
   await store.put(KEYS.status, JSON.stringify(status));

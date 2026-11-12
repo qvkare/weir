@@ -41,12 +41,19 @@ export function tickOnce(env: Env, now: number, extra: { deployments?: Deploymen
   );
 }
 
-export default {
-  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(tickOnce(env, Math.floor(controller.scheduledTime / 1000)));
-  },
+/** The Worker's handlers over a given market list. The deployed Worker is `makeWorker` over
+ * the bundled `deployments.json`; tests pass their own list, so they do not depend on what
+ * the repository's file lists. */
+export function makeWorker(markets: Deployments) {
+  return {
+    async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+      ctx.waitUntil(tickOnce(env, Math.floor(controller.scheduledTime / 1000), { deployments: markets }));
+    },
 
-  fetch(request: Request, env: Env): Promise<Response> {
-    return handle(request, env.STORE);
-  },
-};
+    fetch(request: Request, env: Env): Promise<Response> {
+      return handle(request, env.STORE);
+    },
+  };
+}
+
+export default makeWorker(deployments as Deployments);

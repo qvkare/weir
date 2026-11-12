@@ -5,6 +5,7 @@
 import {
   CHANGE_METHODS,
   ChainWeir,
+  EndpointHealth,
   KeyPair,
   NearAccount,
   NearRpc,
@@ -56,6 +57,15 @@ export interface Chain {
   perCall: boolean;
   /** A port for `market` that signs as `signer` (read-only when null). Makes no request. */
   connect(market: MarketDeployment, signer: KeyedSigner | null, hooks: PortHooks): Promise<WeirPort>;
+  /** RPC endpoints passed over now after a refusal or a fault, if the chain keeps any. */
+  cooling?(): RpcCooling[];
+}
+
+/** One RPC endpoint that refused (`rate`: HTTP 429 or code -429) or faulted, passed over until `until` (seconds). */
+export interface RpcCooling {
+  endpoint: string;
+  until: number;
+  rate: boolean;
 }
 
 /** Requests one call costs on chain: a view is one `query`; a transaction reads the access
@@ -63,22 +73,63 @@ export interface Chain {
  * and those are charged by the metered fetch as they happen. */
 export const COST = { view: 1, change: 2 } as const;
 
-/** `WeirPort`s over NEAR JSON-RPC (`ChainWeir`). Key pairs are derived once per isolate. */
-export function nearChain(rpcUrls: readonly string[]): Chain {
-  const keys = new Map<string, Promise<KeyPair>>();
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** Module scope: one per Node process, one per Worker isolate (kept between the invocations
+ * of a warm isolate). `runTick` calls `nearChain` every tick, so whatever must outlive a tick
+ * lives here. */
+const PROCESS_HEALTH = new EndpointHealth();
+const PROCESS_KEYS = new Map<string, Promise<KeyPair>>();
+
+export interface NearChainOptions {
+  /** Which RPC endpoints are cooling down. Default: one per process or isolate, shared by every
+   * connection of every tick, so a refusal seen for one market or agent spares the others and
+   * the next tick. */
+  health?: EndpointHealth;
+  /** Clock (ms) and sleep for the RPC client, for tests. */
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** `WeirPort`s over NEAR JSON-RPC (`ChainWeir`). Key pairs are derived once per process or
+ * isolate. Every `NearRpc` shares one `EndpointHealth`, and makes each attempt through the
+ * port's metered `hooks.fetch`, so every attempt is charged to that tick's budget; a call
+ * that fails at once because every endpoint is cooling down sends nothing and costs nothing.
+ *
+ * A cooldown is a wall-clock deadline (10 s, or the endpoint's retry-after up to 60 s), so one
+ * taken late in a tick can still hold at the start of the next. That is kept on purpose: the
+ * endpoint said it was refusing, and asking again spends budget on another refusal. The
+ * keeper logs the cooldowns in force when a tick starts and shows them in /status. */
+export function nearChain(rpcUrls: readonly string[], opts: NearChainOptions = {}): Chain {
+  const health = opts.health ?? PROCESS_HEALTH;
+  const clock = opts.now ?? (() => Date.now());
   const keyOf = (secret: string): Promise<KeyPair> => {
-    let k = keys.get(secret);
+    let k = PROCESS_KEYS.get(secret);
     if (!k) {
       k = KeyPair.fromString(secret);
-      keys.set(secret, k);
-      k.catch(() => keys.delete(secret));
+      PROCESS_KEYS.set(secret, k);
+      k.catch(() => PROCESS_KEYS.delete(secret));
     }
     return k;
   };
+  const rpcOpts = { ...(opts.now ? { now: opts.now } : {}), ...(opts.sleep ? { sleep: opts.sleep } : {}) };
   return {
     perCall: false,
+    cooling() {
+      const now = clock();
+      return rpcUrls.flatMap((url) => {
+        const c = health.cooling.get(url);
+        return c && c.until > now ? [{ endpoint: hostOf(url), until: Math.ceil(c.until / 1000), rate: c.rate }] : [];
+      });
+    },
     async connect(market, signer, hooks) {
-      const rpc = new NearRpc({ urls: rpcUrls, fetch: hooks.fetch as unknown as FetchLike });
+      const rpc = new NearRpc({ urls: rpcUrls, fetch: hooks.fetch as unknown as FetchLike, health, ...rpcOpts });
       const account = signer ? new NearAccount(rpc, signer.account_id, await keyOf(signer.secret_key)) : undefined;
       return new ChainWeir({
         rpc,

@@ -48,10 +48,20 @@ export class DirStore implements KeeperStore {
   }
 }
 
-function summary(r: TickReport): string {
+/** The minute the loop's next tick is for, in seconds: the start of the minute after `nowMs`.
+ * Named before the wait, so a timer that fires a millisecond early (Node's may) still runs the
+ * minute it waited for, not the one before it again. */
+export const nextMinute = (nowMs: number): number => (Math.floor(nowMs / 60_000) + 1) * 60;
+
+/** The minute to run once the wait is over: the one waited for, unless the timer fired a whole
+ * minute or more late (the machine slept), and then the minute it is now. */
+export const minuteToRun = (waitedFor: number, wokeMs: number): number => Math.max(waitedFor, Math.floor(wokeMs / 60_000) * 60);
+
+function summary(r: TickReport, secs?: number): string {
   const done = r.entries.filter((e) => e.status === "done").length;
   const failed = r.entries.filter((e) => e.status === "failed");
-  const lines = [`tick ${new Date(r.now * 1000).toISOString()}: ${r.budget.used}/${r.budget.limit} requests, ${done} done, ${failed.length} failed, ${r.txs.length} transactions`];
+  const took = secs === undefined ? "" : `, ${secs.toFixed(1)} s`;
+  const lines = [`tick ${new Date(r.now * 1000).toISOString()}: ${r.budget.used}/${r.budget.limit} requests, ${done} done, ${failed.length} failed, ${r.txs.length} transactions${took}`];
   for (const e of r.entries) if (e.status !== "done" || e.action === "tx") lines.push(`  ${e.market ?? "-"} ${e.step}/${e.action} ${e.status}: ${e.text}${e.tx ? ` [${e.tx}]` : ""}`);
   for (const u of r.undone) lines.push(`  left undone: ${u}`);
   return lines.join("\n");
@@ -90,18 +100,23 @@ async function main(): Promise<void> {
     }).listen(port, () => console.log(`serving GET routes on http://localhost:${port}`));
   }
 
+  const timed = async (now: number) => {
+    const start = Date.now();
+    const report = await tickAt(now);
+    return summary(report, (Date.now() - start) / 1000);
+  };
   if (values.once) {
-    console.log(summary(await tickAt(Math.floor(Date.now() / 1000))));
+    console.log(await timed(Math.floor(Date.now() / 1000)));
     if (!values.port) return;
   }
   if (values.loop) {
     // Ticks at the start of every minute, one at a time; a tick that runs long skips the minutes it overlaps.
     for (;;) {
-      const now = Date.now();
-      await new Promise((r) => setTimeout(r, 60_000 - (now % 60_000)));
-      const minute = Math.floor(Date.now() / 60_000) * 60;
+      const target = nextMinute(Date.now());
+      await new Promise((r) => setTimeout(r, Math.max(0, target * 1000 - Date.now())));
+      const minute = minuteToRun(target, Date.now());
       try {
-        console.log(summary(await tickAt(minute)));
+        console.log(await timed(minute));
       } catch (e) {
         console.error(`tick failed: ${e instanceof Error ? e.message : String(e)}`);
       }

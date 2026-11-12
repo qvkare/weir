@@ -63,11 +63,16 @@ async function route(path: string, query: URLSearchParams, store: KeeperStore, n
       last_tick: status.last_tick,
       age_secs: Math.max(0, Math.floor(now - status.last_tick)),
       operator_note: status.operator_note,
+      // Configuration problems that held at the last tick, however much was logged after them.
+      config: status.config ?? [],
       budget: status.budget,
+      order: status.order,
+      acting: status.acting,
       undone: status.undone,
       index: attempt ? JSON.parse(attempt) : null,
       markets: status.markets,
       key_faults: status.key_faults ?? [],
+      rpc_cooling: status.rpc_cooling ?? [],
       log: status.log.slice(-STATUS_LOG),
     });
   }

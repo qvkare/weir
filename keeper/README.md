@@ -78,12 +78,32 @@ by the engine's `ERR` texts (SPEC section 16): `ERR.ALREADY_REVEALED`, `ERR.CLEA
 **Failures stay local.** A market whose status cannot be read is skipped; a failed transaction
 is logged and the step goes on; an agent with a bad key is left out.
 
+**Configuration problems stay in view.** A secret that is not valid JSON, an entry that is
+dropped, a key that does not parse, a signer with no key for a market's contract: each is
+logged, and also listed under `config` in `/status`, recomputed every tick, so it is shown for as
+long as it holds and is gone the tick after it is mended. The log alone was not enough: `/status`
+shows the last 50 entries, and one busy tick (four markets, eight agents each with a bad key)
+logs more than 50 after the line that named the problem. A market that could not be opened in a
+tick keeps the problems last found for it. `test/worker.test.ts` checks both.
+
 **Request budget.** At most `BUDGET` outbound requests per tick (default 40; the free Workers
 plan allows 50 subrequests per invocation). Every request is charged before it is made and
 refused once the budget is spent, so a tick never makes one more: a view costs 1, a
 transaction 2 (access key, then `send_tx`), each distinct index request 1, and RPC failover or
 polling is charged as it happens. Reads are cached within a tick until the next state change.
 When the budget runs out, the remaining steps are skipped and named in `undone`.
+
+**RPC endpoints, shared.** `nearChain` gives every connection (each market, each signer) one
+`EndpointHealth` from `@weir/chain`, kept for the life of the Node process or the Worker isolate.
+An endpoint that refused (HTTP 429, code -429) or faulted is passed over by every connection for
+10 s, or for its `retry-after` up to 60 s (chain/README.md, "RPC endpoints"), so a 429 seen for one
+market does not cost a refused request on each of the others. Each attempt still goes through the
+tick's metered fetch and is charged; a call that fails at once because every endpoint is cooling
+down sends nothing and is charged nothing. A cooldown is a wall-clock deadline, so one taken
+late in a tick can still hold when the next starts; that is kept on purpose (the endpoint asked
+for it, and asking again spends budget on another refusal). The tick then logs which endpoints it
+starts without, and `/status` shows `rpc_cooling` at the end of the last tick. `test/rpc.test.ts`
+checks the sharing, the carry-over, its end, and the charges.
 
 Measured on the model with all four markets for three hours: a mean of 28 requests a tick, 40
 at most (ticks with an index fetch and reports for every market), what did not fit done in the
@@ -158,10 +178,11 @@ with `Access-Control-Allow-Origin: *`:
 |---|---|
 | `/bundles/<hash>.json` | The canonical bundle of any chip; its sha256 is `<hash>`, the `bundle` argument of the reports. `Cache-Control: public, max-age=31536000, immutable`. 404 if unknown. |
 | `/latest.json?chip=h100` | `{ chip, hash, bundle }` of that chip's latest bundle with an index (`chip` defaults to `h100`; 404 for an unknown chip or none yet). `max-age=30`. |
-| `/status` | Last tick, the operator note, the budget used per step, the order markets were served in, what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
+| `/status` | Last tick, the operator note, configuration problems that hold (`config`), the budget used per step, the order markets were served in (`order`, `acting`), what was left undone, the last index attempt per chip (with per-source errors), a summary per market (bucket, print state, buckets waiting for `finalize_print`, marks, pruning, costs), refused keys (`key_faults`), RPC endpoints cooling down (`rpc_cooling`), the last 50 log entries. Everything stored is passed through a redactor that replaces every configured key and the swarm secret. |
 | `/health` | 200 if the last tick is at most 5 minutes old, else 503. |
 
-`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 135.3 KiB, 39.9 KiB gzipped.
+`wrangler deploy --dry-run --outdir <tmp>` works without logging in: 146.1 KiB, 43.1 KiB gzipped
+(2026-11-12, with the chain client of that day).
 
 ### Option 2: Node loop
 
@@ -172,7 +193,11 @@ node --env-file=keeper/.env keeper/src/node.ts --loop --port 8787
 ```
 
 Same `runTick`, same routes on `--port`, the store in `keeper/store/` (one file per key,
-`--store` to change it), `--deployments` and `--budget` to override.
+`--store` to change it), `--deployments` and `--budget` to override. The loop ticks at the start
+of every minute, one tick at a time; a tick that runs past the next minute skips the minutes it
+overlaps, and a machine that slept through the wait runs the minute it wakes in, not the one it
+waited for. Each tick prints one summary line (requests, entries, transactions, seconds taken) and
+every entry that is not "done".
 
 ## Secrets
 
@@ -253,7 +278,7 @@ them; neither was tried against an account.)
 ## Tests
 
 ```sh
-pnpm --filter @weir/keeper test        # node --test, offline, 18 tests
+pnpm --filter @weir/keeper test        # node --test, offline, 24 tests
 pnpm --filter @weir/keeper typecheck   # tsc --noEmit
 pnpm --filter @weir/keeper bench
 ```
@@ -286,10 +311,17 @@ on each sized for its market as the agents package sizes them, the housekeeping 
     events as a single run. Without the lease, the only failures are the contract's refusals of
     the second copies.
 - `worker.test.ts`: the routes (status codes, CORS, cache headers, `?chip=` for each chip, 404
-  for an unknown chip or hash), the cron handler with bad keys and the network down, no secret
+  for an unknown chip or hash), the cron handler (`makeWorker` over the test's own four markets,
+  never the repository's `deployments.json`) with bad keys and the network down, no secret
   anywhere in `/status`, `/latest.json`, `/health` or the store (recognisable fake keys,
-  including the housekeeping account's, plus malformed JSON in a secret), and `src/` free of
-  Node imports except `node.ts`.
+  including the housekeeping account's, plus malformed JSON in a secret), `config` listing the
+  malformed secret while it holds and not after, a problem kept in `config` through ticks that
+  push it out of the last 50 log entries, and `src/` free of Node imports except `node.ts`.
+- `rpc.test.ts`: a 429 seen through one market's port spares the other markets' ports in the
+  same tick and the next while the cooldown lasts, the first endpoint is used again once it ends,
+  every attempt is charged and nothing else; with every endpoint refusing, the next call fails
+  without a request or a charge; two `nearChain`s in one process share the cooldowns; the tick
+  logs the cooldowns it starts with and `/status` shows them.
 - `keys.test.ts`: per-contract function-call keys, enforced by the model transport the way a
   node does (one receiver, a method list), on two markets:
   - with keys for both, reports, clears, settles and prunes on both, nothing refused, no key in
@@ -298,7 +330,7 @@ on each sized for its market as the agents package sizes them, the housekeeping 
     and pruning is skipped with one log line a tick;
   - with a key naming the wrong contract, one `ReceiverMismatch`, one log line with the fix, no
     retry for an hour (so two in the two hours), and an agent does the clearing.
-- `node.test.ts`: the directory store under real ticks.
+- `node.test.ts`: the directory store under real ticks, and the loop's choice of the next minute.
 
 ## Not built
 
@@ -322,18 +354,83 @@ on each sized for its market as the agents package sizes them, the housekeeping 
   from the per-tick cache. `tick` does not report what a cleared round cost, so the keeper reads
   it from the book its port saw.
 
+## First night on testnet, 2026-11-12
+
+The Node loop ran against the four markets of `deployments.json` (24 agents, 6 per market,
+`evidence/deploy/testnet-w1.json`; three reporters; the housekeeping account) with the default
+budget of 40, from a `--once` run at 00:47:20 UTC and the loop from 00:48:10. The figures below
+are from the loop's output (`keeper/store/loop.log`, not committed; 30 ticks, 00:48 to 01:18
+UTC), from `/status` at 01:10 and 01:18, and from 17 view calls (`get_results`, `get_print`,
+`get_totals`, `get_series`) through `near-testnet.drpc.org` at about 01:20. The process ran the
+chain client from before commit 9507b3c and none of the keeper changes listed under "What was
+done".
+
+| What | Count, when (UTC) | Cost on chain | Whose |
+|---|---|---|---|
+| Transactions logged `RPC error: null` while a second tool used the same fastnear endpoint and it answered 429 | 12 in 5 ticks: a commit at 00:52 and at 00:57, 5 reveals at 00:59 (4 commits, one tried twice), 4 reports at 01:00 (3 on `h100-fast`, 1 on `h100-weekly`), 1 report at 01:01 (`h100-weekly`); 24 failed log entries in all, each failure being logged by its step and as a transaction | None found. Every one that could be checked had landed: rounds 11 of series 0 and 0 of series 1 of `h100-fast` hold 7 commits each (6 logged done, 1 logged failed), series 1 round 0 forfeited 0, and the 01:00 prints of `h100-fast` and `h100-weekly` hold all three reports | Chain client (fixed in 9507b3c). That the bodies came after delivery is the authors' inference; the log kept only "null" |
+| What the failures cost the keeper | The 4 failed reports at 01:00 used the rest of that tick (40 of 40): `h200-weekly` and `a100-80-weekly` reported at 01:01, the clear of series 1 round 0 waited until 01:01:29 (89 s after the round), and `h100-fast` placed no orders at 01:00 or 01:01, so series 1 round 1 got 5 orders from one tick (01:02) | Fewer orders in one round | Keeper, through the client |
+| Recovery | 0 failed entries from 01:02 to 01:18 (17 ticks). The 01:01 tick logged no report on `h100-fast`: the chain already held the three "failed" reports for the 01:00 bucket | Every `h100-fast` bucket 00:50 to 01:10 and the 01:00 bucket of the three weekly markets final with 3 reports; the four rounds cleared up to 01:11 each traded (prices 394000, then 415000 three times) with 0 forfeited; `get_totals().burned` $2.40 = 24 commit fees of $0.10, equal to the keeper's own count | Expected |
+| Request budget spent | 40 of 40 in 4 ticks, 37 or more in 10 of 30 (mean 27.6, median 25). Commits not started for want of budget: `h100-fast` 5 times, `h100-weekly` 4 of its 5 turns (it committed once, 5 orders at 01:11), `h200-weekly` 2 (it committed 6 at 01:07); `a100-80-weekly` committed 6 at 01:03 | `h100-fast` rounds got 7, 7, 5, 5, 4 and 5 orders from 6 agents (the maker places two) | Configuration: 40 is the Worker's limit, not the Node loop's |
+| The first tick of each phase sees the previous one | The chain's final block was about 3 s behind the tick (`chain_now` 1794445797 at the 1794445800 tick). No `h100-fast` orders at 01:05, 01:10 or 01:15, the minute each commit phase opened; no reveals at 00:58, the minute the reveal phase opened | None seen. Each 120 s reveal phase gets one ordinary tick and one urgent tick about 3 s before the phase ends; a reveal sent then could land too late and be forfeited (not seen) | Expected from ticking on the minute; see below |
+| One minute run twice | Two ticks labelled 01:08 and none for 01:09: the loop's timer fired just before 01:09:00 and the loop took the minute from the clock after the wait | None: every decision is read from chain state. The 01:09 tick ran 01:08's turns again (`a100-80-weekly` took a second turn); no market lost one, since only `h100-fast` acts at minute 9 | Keeper (fixed) |
+| One minute not run | No 00:51 tick: the 00:50 tick (40 requests, 6 transactions) ran past 00:51:00, which the loop skips | None seen | Expected; how long ticks take was not logged then (it is now) |
+| Orders trimmed by `max_round_lock` | 3 entries, all for series 0 round 11 (00:50 twice, 00:52): a buyer from $18.88 to $14.63 against $15, a seller from $69.30 to $49.89 and from $57.60 to $49.92 against $50. None in the 28 ticks after | None: the orders were placed, smaller | Expected: the limits the deploy tool set (25% of the working balance, at least $10) acting on the first orders; not every round |
+| Settle, redeem, prune not reached | Never in 30 ticks; "settle and redeem" and "pruning" left undone in 3 budget-short ticks | None by 01:18: nothing was due. `h100-fast` series 0 is delivered 01:00 to 02:00 and can be settled from 02:01; the first `prune_print` is due two hours after its bucket (from about 02:45); the weekly series 0 is delivered 16 to 23 November. For what happened when they became due, see below | Expected until 01:18 |
+
+**After 01:21 the laptop slept.** The loop ran on a laptop under `caffeinate -i`, which
+prevents idle sleep only, not sleep with the lid closed or on battery. `pmset -g log` showed
+"Maintenance Sleep ... Using Batt (Charge:46%)" with short DarkWakes (read by the operator at
+06:46). From 01:21 to 07:25 the log has 6 ticks: 02:28, 03:04, 03:19, 05:24, 06:46 and 07:25, after
+gaps of 67, 36, 15, 125, 82 and 39 minutes (ticks resumed at 07:34 and 07:35, not read here). A tick could also stop in the middle when
+the machine slept again: the 02:28 tick held its lease until 03:04:53 (the 03:04 tick found it
+held and did nothing) and its clears landed at 02:46:53 and 03:03:56. What that did, from the log
+and 21 more view calls through dRPC at about 07:35 UTC:
+
+| What | Count, when (UTC) | Cost on chain | Whose |
+|---|---|---|---|
+| Hourly prints missed | `h100-fast` buckets from 01:25 on mostly unreported: series 0 (delivered 01:00 to 02:00) has 5 prints, series 1 (02:00 to 03:00) 0, series 4 (05:00 to 06:00) 1 (`get_accumulator`); `min_prints` is 9 | Series 0 (91 open sets) and series 1 (115) cannot settle on an index: each will settle void when someone calls `settle`, allowed from 02:30 and 03:30. Neither is settled yet: no tick since had budget left for it. Series 2, 3, 5 and 6 never opened (no trade) | Host |
+| Reports sent too late | 6 transactions refused `outside the report window of this bucket`: 3 at the 03:19 tick (bucket 03:15) and 3 at 06:46 (bucket 06:45). They carry transaction hashes, so they reached the chain and burned gas | Gas only | Host (the tick stalled past the bucket's 6-minute window). The keeper could check the chain's time before reporting; not changed |
+| Orders never revealed | `h100-fast` series 1 round 5: 3 commits at 01:21, reveal phase 01:23 to 01:25 slept through; cleared at 02:46:53 with no trade. `a100-80-weekly` round 74: 6 commits at 01:03, reveal phase 01:45 to 02:00 slept through; cleared at 03:03:56 with no trade. Round 74 of `h100-weekly` (5 commits) and `h200-weekly` (6) is not cleared yet; its commits were not revealed either (no tick in 01:45 to 02:00) | Forfeited $0.17 on `h100-fast` (1% of $16.67 locked) and $1.31 on `a100-80-weekly`; `h100-weekly` and `h200-weekly` will lose 1% of their locks when cleared. `h100-fast` `burned` $3.77 = $3.60 in fees and $0.17 in forfeits | Host |
+| Index fetch at 02:28 | No chip formed an index (2 or 3 providers of 6 needed): vast, lium and shadeform timed out after 15 s | No report from that fetch | Host, probably (network after wake; not shown) |
+| Every tick since 01:21 at 40 of 40 | Reports, then clears; commits, settle and prune not started in most of them | No new orders since 01:21 on `h100-fast` | Host and budget |
+
+A keeper on a laptop is not a host. The first night showed the keeper's own logic recovering
+from what it met while the machine was awake (the RPC refusals, a missed minute), and the
+markets left without prints, reveals or clears while it slept. An always-on host (the Cloudflare
+Worker on the paid plan, or any machine that does not sleep) has not been set up.
+
+**What was done.**
+- `chain/`: provider refusals are now endpoint failures with their own text, retried on the
+  next endpoint (9507b3c; chain/README.md, "RPC endpoints").
+- Keeper: the cooldowns are shared by every connection of the process or isolate (above); the
+  loop names the minute it waits for before waiting (and runs the minute it wakes in when it
+  wakes a minute or more late), and prints how long each tick took;
+  configuration problems are listed in `/status` for as long as they hold.
+- Not changed, decisions left to the operator:
+  - **The Node loop's budget.** The loop is not bound by the Workers plan's 50 subrequests.
+    `--budget 80` gives 40 more requests in each tick that ran out; whether that would have
+    started every commit step skipped that night is not measured. The price is up to 80
+    requests a minute on free RPC endpoints, the kind that rate-limited that night.
+    Recommended: 80 for the Node loop, watched through `rpc_cooling` and the tick log.
+  - **When in the minute to tick.** Ticking a few seconds after the minute would make the first
+    tick of each phase useful, but would lose the urgent tick just before a reveal phase ends.
+    Recommended: no change until a reveal is seen landing too late.
+  - **Agents' sizing against `max_round_lock`.** Trimming was seen in one round; nothing to
+    change on this evidence.
+
 ## Not proven
 
 The earlier, single-market version ran against the real contract on a local sandbox node
 (`integration/RESULTS.md`: 78 ticks, every print final, zero forfeits, settled and redeemed).
 A later sandbox run of the 0.4 version on two markets found the one-key-per-contract bug fixed
-here. This version, with per-contract keys and the signer fallbacks, has only run on `ModelWeir`
-with a transport that enforces keys as a node does. Not proven:
-- the 0.4 contract's behaviour for these calls through `ChainWeir`, including its refusal texts
-  matching the engine's `ERR`;
-- function-call keys limited to the three lists, real RPC latency and how much of four markets
-  fits in a tick;
-- request counts under failover and `send_tx` polling;
+here. Since 2026-11-12 the Node loop runs on testnet against four markets (above): reports,
+finalized prints, commits, reveals and clears through function-call keys, 30 ticks at most 40
+requests each. Not proven:
+- settle, redeem and prune on testnet (none was due in the first night), and refusal texts
+  from the 0.4 contract matching the engine's `ERR` there;
+- the keeper changes of 2026-11-12 (shared cooldowns, the loop's minute, `config`) on testnet:
+  they are tested on the model and a fake RPC only;
+- request counts under failover and `send_tx` polling with the new chain client;
 - real Worker CPU time and cold starts, KV consistency for the lease, KV and subrequest limits
   as enforced, the cron trigger's timing;
 - live source responses beyond the saved ones.

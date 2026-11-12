@@ -6,8 +6,17 @@ import { sha256Hex } from "@weir/index";
 import { readSecrets } from "../src/config.ts";
 import { handle } from "../src/routes.ts";
 import { KEYS, MemoryStore } from "../src/store.ts";
-import worker, { tickOnce, type Env } from "../src/worker.ts";
+import worker, { makeWorker, tickOnce, type Env } from "../src/worker.ts";
 import { deploymentsFor, fakeKey, IDS, KEEPER_ACCOUNT, REPORTERS, secretVars, START, SWARM_SECRET, world } from "./harness.ts";
+
+/** The cron path over the test's own four markets, never over the repository's
+ * `deployments.json`, whose list changes with every deployment. */
+const cron = makeWorker(deploymentsFor(IDS));
+
+interface StatusBody {
+  config: { market?: string; text: string }[];
+  log: { text: string }[];
+}
 
 const BASE = "https://weir-keeper.example.workers.dev";
 const get = (path: string, env: Env, method = "GET") => worker.fetch(new Request(`${BASE}${path}`, { method }), env);
@@ -109,10 +118,16 @@ test("no secret ever reaches /status or the store, even when keys are bad and th
   try {
     const bad: Env = { ...env, AGENTS: `${env.AGENTS!.slice(0, 120)}` };
     const promises: Promise<unknown>[] = [];
-    await worker.scheduled({ scheduledTime: (START + 3600) * 1000, cron: "* * * * *" }, bad, { waitUntil: (p) => promises.push(p) });
+    await cron.scheduled({ scheduledTime: (START + 3600) * 1000, cron: "* * * * *" }, bad, { waitUntil: (p) => promises.push(p) });
     await Promise.all(promises);
+    const afterCron = await (await get("/status", env)).text();
+    assertNoSecret(afterCron, "/status after the cron run");
+    const s1 = JSON.parse(afterCron) as StatusBody;
+    assert.ok(s1.config.some((c) => c.text === "AGENTS is not valid JSON" && c.market === undefined), "the malformed secret is a configuration problem");
+    assert.ok(s1.config.some((c) => c.market === "h100-fast" && /keeper\.test \(keeper\) not used on h100-fast/.test(c.text)), "a key that does not parse is one too");
     // That run holds the lease for 55 s of real time; this test does not wait for it.
     await env.STORE.delete(KEYS.lease);
+    // The secret mended: that problem no longer holds and leaves `config`, the bad keys stay.
     const report = await tickOnce(env, START + 3660, { deployments: deploymentsFor(IDS) });
     assert.ok(report.budget.used <= 40);
     assert.ok(report.entries.some((e) => e.action === "config" && e.status === "failed"), "bad keys are reported");
@@ -124,7 +139,9 @@ test("no secret ever reaches /status or the store, even when keys are bad and th
   const secrets = readSecrets({ ...secretVars(), AGENTS: `${secretVars().AGENTS.slice(0, 120)}` });
   assert.deepEqual(secrets.problems, ["AGENTS is not valid JSON"]);
   const status = await (await get("/status", env)).text();
-  assert.match(status, /AGENTS is not valid JSON/);
+  const s2 = JSON.parse(status) as StatusBody;
+  assert.ok(!s2.config.some((c) => /AGENTS is not valid JSON/.test(c.text)), "a problem that no longer holds is not shown");
+  assert.equal(s2.config.filter((c) => /\(agent\) not used on/.test(c.text)).length, 32, "eight agents on four markets, each key unreadable");
   assertNoSecret(status, "/status");
   for (const [key, value] of w.store.map) assertNoSecret(value, `store key ${key}`);
   for (const path of ["/latest.json", "/health"]) assertNoSecret(await (await get(path, env)).text(), path);
@@ -136,4 +153,26 @@ test("src/ is portable: nothing but node.ts imports a Node built-in or uses Node
     if (name === "node.ts") continue;
     assert.doesNotMatch(readFileSync(new URL(name, dir), "utf8"), /from\s+["']node:|require\(|process\.|Buffer\./, name);
   }
+});
+
+test("a configuration problem stays in /status for as long as it holds, however much is logged after it", async () => {
+  const vars = secretVars();
+  const agents = JSON.parse(vars.AGENTS) as object[];
+  const typo = { account_id: "typo.test", role: "trader", market: "h100-fast", secret_key: fakeKey("typo.test") };
+  // Sixty agents with a key for another contract only: sixty "cannot act" lines every tick,
+  // all logged after the typo, more than the 50 entries /status shows.
+  const keyless = Array.from({ length: 60 }, (_, i) => ({ account_id: `keyless-${i}.test`, role: "noise", market: "h100-fast", keys: { "elsewhere.test": fakeKey(`keyless-${i}`) } }));
+  const w = world({ vars: { ...vars, AGENTS: JSON.stringify([...agents, typo, ...keyless]) } });
+  const problem = `AGENTS[${agents.length}] (typo.test): role must be buyer, seller, maker or noise`;
+  const status = async () => (await (await handle(new Request(`${BASE}/status`), w.store)).json()) as StatusBody;
+  for (let t = START; t <= START + 5 * 60; t += 60) {
+    await w.at(t);
+    const s = await status();
+    assert.ok(!s.log.some((e) => e.text === problem), `at ${t} the last 50 log entries no longer hold it`);
+    assert.deepEqual(s.config[0], { text: problem }, `config at ${t}`);
+    assert.equal(s.config.filter((c) => c.market === "h100-fast" && /keyless-\d+\.test \(agent\) cannot act on h100-fast/.test(c.text)).length, 60);
+  }
+  // Mended, both are gone at the next tick.
+  await w.at(START + 6 * 60, { secrets: readSecrets(vars) });
+  assert.deepEqual((await status()).config, []);
 });
