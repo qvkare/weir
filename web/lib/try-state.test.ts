@@ -14,12 +14,17 @@ import {
   missedReveal,
   phaseNow,
   readStored,
+  readWallet,
+  revealMissed,
   rowOf,
   settleable,
   STEP_IDS,
   stepLabel,
   storageWorks,
   tryReducer,
+  walletAccount,
+  walletGuestKey,
+  walletKey,
   type ButtonInput,
   type GuestEventLike,
   type KV,
@@ -318,4 +323,43 @@ test("a missed reveal: the bid ends with a result, the reveal row fails, nothing
   assert.ok(STEP_IDS.every((id) => next.rows[id].status === "todo"));
   // 1% of a 2.90 USD lock is 0.029 USD.
   assert.equal(forfeitOf("2900000", 100), 29_000n);
+});
+
+test("a missed reveal before the round is read: the reveal row is failed, never done, while the clear waits", () => {
+  const missedOrder = { ...ORDER, reveal: "missed" as const };
+  const storedOpen = (order: typeof ORDER & { reveal?: "done" | "missed" | "evicted" }) => readStored(JSON.stringify({ accountId: ACCOUNT, order, result: null, txs: [tx("commit", "commit", "79u")] }));
+  // The page comes back after the reveal phase: resumed, the guest finds the reveal missed and stores it.
+  let s = tryReducer(initialTry(), { type: "restore", stored: storedOpen(ORDER) });
+  s = tryReducer(s, { type: "start", at: 0 });
+  s = tryReducer(s, { type: "event", e: { type: "step", step: "reveal", message: "the reveal phase of round 5 ended before the order was revealed: 1% of its lock is forfeited when the round clears, and the rest returns" }, at: 0 });
+  s = tryReducer(s, { type: "stored", stored: storedOpen(missedOrder) });
+  assert.equal(s.rows.reveal.status, "failed");
+  assert.ok(revealMissed(s));
+  // The keeper's 20 s: the clear's waits settle the rows before it, but not the failed reveal.
+  for (let i = 0; i < 4; i++) {
+    s = tryReducer(s, { type: "event", e: { type: "wait", step: "clear", seconds: 5, message: "waiting for the keeper to clear the round" }, at: i * 5000 });
+    s = tryReducer(s, { type: "stored", stored: storedOpen(missedOrder) });
+    assert.equal(s.rows.reveal.status, "failed");
+    assert.equal(s.rows.clearWait.status, "active");
+  }
+  s = tryReducer(s, { type: "event", e: { type: "step", step: "clear", message: "nobody cleared round 5; clearing it" }, at: 20_000 });
+  assert.equal(s.rows.reveal.status, "failed");
+  // A reload in those seconds restores it failed as well.
+  assert.equal(tryReducer(initialTry(), { type: "restore", stored: storedOpen(missedOrder) }).rows.reveal.status, "failed");
+  // A reveal that landed is not touched.
+  const done = tryReducer(initialTry(), { type: "restore", stored: storedOpen({ ...ORDER, reveal: "done" }) });
+  assert.notEqual(done.rows.reveal.status, "failed");
+  assert.ok(!revealMissed(done));
+});
+
+test("wallet storage: the wallet's record and its guest state have their own keys beside the throwaway guest's", () => {
+  const kv = memoryKV();
+  assert.equal(walletKey("w.testnet"), "weir-wallet:w.testnet");
+  assert.equal(walletGuestKey("w.testnet"), "weir-wallet-guest:w.testnet");
+  assert.notEqual(walletGuestKey("w.testnet"), guestKey("w.testnet"));
+  assert.equal(readWallet(kv, "w.testnet"), null);
+  kv.setItem(walletKey("w.testnet"), JSON.stringify({ version: 1, contractId: "w.testnet", secretKey: "ed25519:S", publicKey: "ed25519:P", walletId: "meteor-wallet", accountId: "alice.testnet", phase: "connecting", since: 1 }));
+  assert.equal(walletAccount(readWallet(kv, "w.testnet")), null);
+  kv.setItem(walletKey("w.testnet"), JSON.stringify({ version: 1, contractId: "w.testnet", secretKey: "ed25519:S", publicKey: "ed25519:P", walletId: "meteor-wallet", accountId: "alice.testnet", phase: "connected", since: 1 }));
+  assert.equal(walletAccount(readWallet(kv, "w.testnet")), "alice.testnet");
 });

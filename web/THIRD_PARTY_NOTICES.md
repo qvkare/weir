@@ -49,3 +49,13 @@ then removed). Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved 
 
 Tailwind CSS (MIT), clsx (MIT), tailwind-merge (MIT) and motion (MIT) are dependencies in
 `package.json`, under their own licences in `node_modules`.
+
+## NEAR Connect (MIT)
+
+`@hot-labs/near-connect` 0.12.0 (HOT Labs, https://github.com/hot-dao/near-selector), MIT according
+to its `package.json` (the package ships no licence file), is a dependency in `package.json`, loaded
+by the test bid's "Connect a NEAR wallet". `public/wallets/manifest.json` is a subset of that
+repository's `repository/manifest.json` (read 13 Nov 2026): four wallet entries, with the Meteor
+and MyNearWallet icons fetched from the URLs the manifest gave and inlined as `data:` URIs, and
+MyNearWallet's `features.testnet` set to true. The icons are those wallets' marks, shown only to
+name them in the chooser.

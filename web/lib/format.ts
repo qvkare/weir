@@ -64,6 +64,26 @@ export function fmtUsdExact(v: bigint | string | number | null | undefined): str
   return `${neg ? "-" : ""}$${(abs / 1_000_000n).toLocaleString("en-US")}.${frac}`;
 }
 
+/** micro-USDC as the test bid shows an amount: under $0.10 to three decimals ("$0.028"),
+ * otherwise to the nearest cent ("$2.79"); both rounded half up. Never four decimals. */
+export function fmtUsdShort(v: bigint | string | number | null | undefined): string {
+  const b = toBig(v);
+  if (b === null) return NO_DATA;
+  const neg = b < 0n;
+  const abs = neg ? -b : b;
+  const mills = (abs + 500n) / 1_000n;
+  let text: string;
+  if (abs === 0n) {
+    text = "0.00";
+  } else if (mills < 100n) {
+    text = `0.${mills.toString().padStart(3, "0")}`;
+  } else {
+    const cents = (abs + 5_000n) / 10_000n;
+    text = `${(cents / 100n).toLocaleString("en-US")}.${(cents % 100n).toString().padStart(2, "0")}`;
+  }
+  return `${neg && abs > 0n ? "-" : ""}$${text}`;
+}
+
 /** As fmtUsd, but an exact zero reads "none", so a real zero is never mistaken for a placeholder. */
 export function fmtUsdOrNone(v: bigint | string | number | null | undefined): string {
   const b = toBig(v);

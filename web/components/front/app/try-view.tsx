@@ -10,7 +10,7 @@ import { buttonClass } from "@/components/ui/button.ts";
 import { ExternalIcon } from "@/components/icons.tsx";
 import { useRefreshAt } from "@/components/live.tsx";
 import { withMarket, type MarketId } from "@/lib/config.ts";
-import { dollarsOfPrice, fmtBps, fmtCountdown, fmtUsdExact, fmtUtcTime } from "@/lib/format.ts";
+import { dollarsOfPrice, fmtBps, fmtCountdown, fmtUsdShort, fmtUtcTime } from "@/lib/format.ts";
 import type { SiteConfig } from "@/lib/site-config.ts";
 import {
   adviceFor,
@@ -25,25 +25,35 @@ import {
   missedReveal,
   phaseNow,
   readStored,
+  readWallet,
+  revealMissed,
   settleable,
   STEP_IDS,
   stepLabel,
   storageWorks,
   tryReducer,
+  walletAccount,
+  walletGuestKey,
   type KV,
+  type Signer,
   type PlanView,
   type ResultLike,
   type Row,
   type StepId,
   type TryState,
+  type ViewError,
 } from "@/lib/try-state.ts";
 import { cn } from "@/lib/utils.ts";
 import { ChipRow, Panel } from "./parts.tsx";
+import { useWallet, WalletPanel } from "./try-wallet.tsx";
 import { ShellFrame, type ShellProps } from "./views.tsx";
 
 /** The only market with rounds short enough to watch one through. */
 export const TRY_MARKET: MarketId = "h100-fast";
 const PLAN_POLL_SECS = 15;
+/** Prices per GPU-hour show three decimals before the plan (and the market's tick, 1000 micro-USD
+ * in get_params) is read, so a result restored from storage never shows a price to the cent. */
+const PRICE_TICK = 1_000;
 const EXPLORER = "https://testnet.nearblocks.io";
 
 type RunLib = typeof import("@/lib/try-run.ts");
@@ -63,8 +73,62 @@ export function TryView(p: ShellProps) {
   const c = p.cfg.contracts[TRY_MARKET];
   return (
     <ShellFrame {...p} chips={<ChipRow label="Test bid" bar={<span className="text-xs text-muted-foreground">NEAR {p.cfg.network}, test dollars only</span>} />}>
-      <GuestBid cfg={p.cfg} contractId={c?.contract ?? null} usdcId={c?.usdc ?? null} />
+      <TestBid cfg={p.cfg} contractId={c?.contract ?? null} usdcId={c?.usdc ?? null} />
     </ShellFrame>
+  );
+}
+
+/** Who signs: the visitor's choice, kept in this browser (a convenience; it may be lost). */
+const MODE_KEY = "weir-try-signer";
+
+/** The choice between a wallet and a throwaway guest account, then the bid for that signer. */
+function TestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null }) {
+  const [signer, setSigner] = useState<Signer | null>(null);
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    const kv = localKV();
+    let m: Signer = "guest";
+    try {
+      const v = kv?.getItem(MODE_KEY);
+      if (v === "wallet" || v === "guest") m = v;
+      else if (kv && contractId && readWallet(kv, contractId)) m = "wallet";
+    } catch {
+      // Storage blocked: the guest path, which says so itself.
+    }
+    setSigner(m);
+  }, [contractId]);
+  const choose = (m: Signer) => {
+    setSigner(m);
+    try {
+      localKV()?.setItem(MODE_KEY, m);
+    } catch {
+      // Not remembered; nothing else depends on it.
+    }
+  };
+  const option = (m: Signer, label: string) => (
+    <button
+      type="button"
+      aria-pressed={signer === m}
+      disabled={locked && signer !== m}
+      onClick={() => choose(m)}
+      className={cn(buttonClass(signer === m ? "primary" : "secondary", "md"), "h-auto min-h-10 min-w-0 flex-1 cursor-pointer whitespace-normal border-0 px-3 py-2 font-sans disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none sm:px-5")}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <>
+      <Panel title="Who signs">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Who signs the bid">
+          {option("wallet", "Connect a NEAR wallet")}
+          {option("guest", "Bid as a guest")}
+        </div>
+        <p className="m-0 mt-3 max-w-[68ch] text-sm text-muted-foreground">
+          {locked ? "A call is in flight; the choice opens again when it ends." : signer === "wallet" ? "Your own testnet account. Your wallet approves one setup; the bid itself needs no further approval." : signer === "guest" ? "A throwaway testnet account made in this browser. Nothing to install." : null}
+        </p>
+      </Panel>
+      {signer ? <GuestBid key={signer} signer={signer} cfg={cfg} contractId={contractId} usdcId={usdcId} onBusy={setLocked} /> : null}
+    </>
   );
 }
 
@@ -88,11 +152,12 @@ async function withLock(name: string, f: () => Promise<void>, onHeld: () => void
   });
 }
 
-function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null }) {
+function GuestBid({ cfg, contractId, usdcId, signer, onBusy }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null; signer: Signer; onBusy: (busy: boolean) => void }) {
   const target = useMemo(() => (contractId ? { contractId, usdcId, rpcUrls: cfg.rpc } : null), [contractId, usdcId, cfg.rpc]);
-  const key = guestKey(contractId ?? "none");
+  const isWallet = signer === "wallet";
+  const key = isWallet ? walletGuestKey(contractId ?? "none") : guestKey(contractId ?? "none");
   const mode = contractId ? cfg.mode : "none";
-  const [st, dispatch] = useReducer(tryReducer, undefined, () => initialTry("guest"));
+  const [st, dispatch] = useReducer(tryReducer, undefined, () => initialTry(signer));
   const [storageOk, setStorageOk] = useState<boolean | null>(null);
   const [plan, setPlan] = useState<PlanView | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -105,6 +170,9 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
   const lib = useRef<Promise<RunLib> | null>(null);
   const loadLib = useCallback(() => (lib.current ??= import("@/lib/try-run.ts")), []);
   const stored = () => readStored(kv.current?.getItem(key) ?? null);
+  const wallet = useWallet(isWallet && mode === "chain", target, plan);
+  const walletRef = useRef(wallet);
+  walletRef.current = wallet;
 
   const planBusy = useRef(false);
   const readPlan = useCallback(async () => {
@@ -137,10 +205,11 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
           key,
           async () => {
             const m = await loadLib();
-            const guest = await m.openGuest(target, store, (e) => {
+            const onEvent = (e: Parameters<Parameters<RunLib["openGuest"]>[2]>[0]) => {
               dispatch({ type: "event", e, at: Date.now() });
               dispatch({ type: "stored", stored: fresh() });
-            });
+            };
+            const guest = await openRunner(m, store, onEvent);
             if (kind === "again") {
               await guest.nextBid();
               dispatch({ type: "next", stored: fresh() });
@@ -149,7 +218,7 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
             try {
               dispatch({ type: "result", result: await guest.run() });
             } catch (e) {
-              dispatch({ type: "error", error: m.viewError(e) });
+              dispatch({ type: "error", error: walletAdvice(m.viewError(e), e) });
             }
             dispatch({ type: "stored", stored: fresh() });
           },
@@ -162,10 +231,33 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
         inFlight.current = false;
         setBusy(false);
         void readPlan();
+        if (isWallet) walletRef.current.refresh();
       }
     },
-    [target, key, loadLib, readPlan],
+    // openRunner and walletAdvice read only `isWallet`, `target` and storage.
+    [target, key, loadLib, readPlan, isWallet],
   );
+
+  /** The guest that trades: the throwaway account, or the wallet's account with the stored trading key. */
+  async function openRunner(m: RunLib, store: KV, onEvent: Parameters<RunLib["openGuest"]>[2]) {
+    if (!isWallet) return m.openGuest(target!, store, onEvent);
+    const rec = readWallet(store, target!.contractId);
+    const accountId = walletAccount(rec);
+    if (!rec || !accountId) throw new Error("Connect a wallet first.");
+    const w = await import("@/lib/wallet-run.ts");
+    return w.openWalletGuest(target!, store, { accountId, secretKey: rec.secretKey }, onEvent);
+  }
+
+  /** The wallet's own next step where the guest's advice would not fit an account set up by a wallet. */
+  function walletAdvice(err: ViewError, e: unknown): ViewError {
+    if (!isWallet) return err;
+    const step = e && typeof e === "object" && "step" in e ? String((e as { step: unknown }).step) : null;
+    if (err.kind === "allowance" && step !== "clear") return { ...err, message: "The trading key has used up its gas allowance.", advice: "Disconnect, then connect again for a new key." };
+    if (err.kind === "unfunded") return { ...err, advice: "Add test dollars with the button in the wallet panel above, then bid again." };
+    return err;
+  }
+
+  useEffect(() => onBusy(busy), [busy, onBusy]);
 
   // On open: is there storage, and a stored guest? A sealed bid is resumed at once: it must be revealed.
   useEffect(() => {
@@ -190,7 +282,7 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
   }, [busy, mode, readPlan]);
 
   // Leaving with a sealed bid not yet revealed: the browser asks first.
-  const sealedOpen = !!st.sealed && st.rows.reveal.status !== "done";
+  const sealedOpen = !!st.sealed && !st.sealed.reveal && st.rows.reveal.status !== "done";
   useEffect(() => {
     if (!sealedOpen) return;
     const warn = (e: BeforeUnloadEvent) => {
@@ -238,18 +330,31 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
   const running = st.run === "running" || busy;
   // A sealed bid this page is not driving (a failed reveal, another tab): offer to resume it.
   const open = storageOk === true && hasOpenBid(stored());
-  const btn = bidButton({ mode, storage: storageOk !== false, busy: busy || elsewhere, open, plan, planError, now });
+  const btnChain = bidButton({ mode, storage: storageOk !== false, busy: busy || elsewhere, open, plan, planError, now });
+  // A wallet account bids once it is set up; the chain's rules come first (closed, in flight, open bid).
+  const btn = isWallet && btnChain.enabled && !wallet.ready ? { enabled: false, reason: wallet.reason, until: null } : btnChain;
+  // The wallet signed the setup: those rows read done once the chain shows it.
+  const rows = isWallet && wallet.status?.keyOnChain && wallet.status.registered ? { ...st.rows, account: { ...st.rows.account, status: "done" as const }, register: { ...st.rows.register, status: "done" as const }, fund: { ...st.rows.fund, status: wallet.ready || st.rows.fund.status === "done" ? ("done" as const) : st.rows.fund.status } } : st.rows;
   const resumable = open && !running && !elsewhere && mode === "chain";
 
   return (
     <>
       <Panel title="Place one sealed bid">
-        <p className="m-0 max-w-[68ch] text-base text-foreground">
-          The page makes a NEAR testnet account, funds it with test dollars and commits one sealed order to the round now: LONG 5 GPU-hours at the price below. When the reveal phase opens it reveals the order, then reads the clearing price and your fill, about five minutes in all.
-        </p>
-        <p className="m-0 mt-4 max-w-[68ch] rounded-lg bg-background/60 px-4 py-3 text-sm text-muted-foreground ring-1 ring-border">
-          This makes a throwaway NEAR testnet account. Its key stays in this browser&rsquo;s storage. Test dollars only. Clearing your browser data loses it.
-        </p>
+        {isWallet ? (
+          <p className="m-0 max-w-[68ch] text-base text-foreground">
+            Your wallet approves one setup: the market registration and test dollars. Then the page commits one sealed order to the round now, LONG 5 GPU-hours at the price below, reveals it when the reveal phase opens, and reads the clearing price and your fill, about five minutes in all, with no further wallet prompt.
+          </p>
+        ) : (
+          <>
+            <p className="m-0 max-w-[68ch] text-base text-foreground">
+              The page makes a NEAR testnet account, funds it with test dollars and commits one sealed order to the round now: LONG 5 GPU-hours at the price below. When the reveal phase opens it reveals the order, then reads the clearing price and your fill, about five minutes in all.
+            </p>
+            <p className="m-0 mt-4 max-w-[68ch] rounded-lg bg-background/60 px-4 py-3 text-sm text-muted-foreground ring-1 ring-border">
+              This makes a throwaway NEAR testnet account. Its key stays in this browser&rsquo;s storage. Test dollars only. Clearing your browser data loses it.
+            </p>
+          </>
+        )}
+        {isWallet && mode === "chain" ? <WalletPanel w={wallet} running={running} openBid={open} /> : null}
       </Panel>
 
       <Panel title="The round now" note={mode === "chain" ? `Read from the chain in this browser, again every ${PLAN_POLL_SECS} s` : null}>
@@ -281,11 +386,11 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
         )}
       </Panel>
 
-      <Panel title="Steps" note={st.accountId ? <AccountLink id={st.accountId} /> : "No test account in this browser yet"}>
+      <Panel title="Steps" note={st.accountId ? <AccountLink id={st.accountId} /> : isWallet ? (wallet.accountId ? <AccountLink id={wallet.accountId} /> : "No wallet connected yet") : "No test account in this browser yet"}>
         {sealedOpen ? <SealedNote st={st} plan={plan} now={now} /> : null}
         <ol className="m-0 list-none p-0">
           {STEP_IDS.map((id) => (
-            <StepRow key={id} id={id} row={st.rows[id]} label={id === "reveal" && missedReveal(st.result) ? "Not revealed in time" : stepLabel(id, st.signer)} wait={st.wait} wall={wall} />
+            <StepRow key={id} id={id} row={rows[id]} label={id === "reveal" && revealMissed(st) ? "Not revealed in time" : stepLabel(id, st.signer)} wait={st.wait} wall={wall} />
           ))}
         </ol>
         {st.wait?.step === "plan" && running ? (
@@ -294,7 +399,7 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
           </p>
         ) : null}
         {st.error ? <ErrorNote error={st.error} /> : null}
-        {st.accountId ? (
+        {st.accountId && !isWallet ? (
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-4">
             <button type="button" className={cn(buttonClass("ghost", "sm"), "cursor-pointer border-0 bg-transparent px-0 font-sans disabled:cursor-not-allowed disabled:opacity-50")} disabled={running} onClick={forget}>
               Forget this account
@@ -307,13 +412,13 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
       {st.result ? (
         <Panel title={`Result, round ${st.result.round} of series ${st.result.series}`}>
           {missedReveal(st.result) ? <MissedNote r={st.result} forfeitBps={plan?.forfeitBps ?? 100} /> : null}
-          <ResultFigures r={st.result} tick={plan?.tick} />
+          <ResultFigures r={st.result} tick={plan?.tick ?? PRICE_TICK} />
           <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
             <button type="button" className={cn(buttonClass("primary", "md"), "cursor-pointer border-0 font-sans disabled:cursor-not-allowed disabled:opacity-50")} disabled={!btn.enabled || running} onClick={() => void go("again")}>
               Bid again in the next round
             </button>
             <p className="m-0 text-sm text-muted-foreground" aria-live="polite">
-              {running ? null : btn.reason ? `${btn.reason} ` : "Same account, no new one. "}
+              {running ? null : btn.reason ? `${btn.reason} ` : isWallet ? "Same account, no wallet prompt. " : "Same account, no new one. "}
               {!running && btn.until !== null ? (
                 <>
                   The next commit phase opens in <Secs left={btn.until - now} />.
@@ -322,11 +427,11 @@ function GuestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: st
             </p>
           </div>
           <SettleBlock st={st} plan={plan} now={now} busy={running} onSettle={(s) => void settle(s)} />
-          {st.history.length ? <History rows={st.history} tick={plan?.tick} /> : null}
+          {st.history.length ? <History rows={st.history} tick={plan?.tick ?? PRICE_TICK} /> : null}
         </Panel>
       ) : st.history.length ? (
         <Panel title="Earlier bids">
-          <History rows={st.history} tick={plan?.tick} />
+          <History rows={st.history} tick={plan?.tick ?? PRICE_TICK} />
           <SettleBlock st={st} plan={plan} now={now} busy={running} onSettle={(s) => void settle(s)} />
         </Panel>
       ) : null}
@@ -407,12 +512,12 @@ function PlanFigures({ plan, planError, now, mode, mine }: { plan: PlanView | nu
           sub={plan.lastClearing ? `/GPU-h, round ${plan.lastClearing.round} of this series` : o ? "None in this series yet; the order starts from the last index print" : "Read while a commit phase is open"}
         />
         {mine ? (
-          <Figure label={`Your sealed order, round ${mine.round}`} value={<span className="text-long">LONG {mine.size}</span>} sub={`GPU-h at most ${dollarsOfPrice(mine.floor + mine.price, tick)} /GPU-h. Lock ${fmtUsdExact(mine.lock)}`} />
+          <Figure label={`Your sealed order, round ${mine.round}`} value={<span className="text-long">LONG {mine.size}</span>} sub={`GPU-h at most ${dollarsOfPrice(mine.floor + mine.price, tick)} /GPU-h. Lock ${fmtUsdShort(mine.lock)}`} />
         ) : (
           <Figure
             label="Suggested order"
             value={o ? <span className="text-long">LONG {o.size}</span> : "none"}
-            sub={o && plan.floor !== null ? `GPU-h at most ${dollarsOfPrice(plan.floor + o.price, tick)} /GPU-h. Lock ${fmtUsdExact(o.lock)}, fee ${fmtUsdExact(o.fee)}` : "Shown while a commit phase is open"}
+            sub={o && plan.floor !== null ? `GPU-h at most ${dollarsOfPrice(plan.floor + o.price, tick)} /GPU-h. Lock ${fmtUsdShort(o.lock)}, fee ${fmtUsdShort(o.fee)}` : "Shown while a commit phase is open"}
           />
         )}
       </div>
@@ -432,7 +537,7 @@ function SealedNote({ st, plan, now }: { st: TryState; plan: PlanView | null; no
         Keep this tab open until the reveal{left !== null ? <>, about <span className="font-mono tabular-nums">{left}</span> s</> : null}.
       </p>
       <p className="m-0 mt-1 text-xs text-muted-foreground">
-        Your order is sealed in round {o.round}. If this page is closed before it is revealed, {plan ? fmtBps(plan.forfeitBps) : "1%"} of its lock{forfeit !== null ? ` (${fmtUsdExact(forfeit)})` : ""} is forfeited when the round clears. Reloading is safe: the page reveals it when it opens again.
+        Your order is sealed in round {o.round}. If this page is closed before it is revealed, {plan ? fmtBps(plan.forfeitBps) : "1%"} of its lock{forfeit !== null ? ` (${fmtUsdShort(forfeit)})` : ""} is forfeited when the round clears. Reloading is safe: the page reveals it when it opens again.
       </p>
     </div>
   );
@@ -514,7 +619,7 @@ function MissedNote({ r, forfeitBps }: { r: ResultLike; forfeitBps: number }) {
     <div className="mb-4 rounded-lg bg-background/60 px-4 py-3 ring-1 ring-border" role="status">
       <p className="m-0 text-sm font-medium text-foreground">The order was not revealed in time.</p>
       <p className="m-0 mt-1 text-sm text-muted-foreground">
-        The page was away while the reveal phase of round {r.round} ran. {fmtBps(forfeitBps)} of the lock ({fmtUsdExact(forfeitOf(r.order.lock, forfeitBps))}) is forfeited when the round clears; the rest of the lock ({fmtUsdExact(BigInt(r.order.lock) - forfeitOf(r.order.lock, forfeitBps))}) is back in the free balance. You can bid again with the same account.
+        The page was away while the reveal phase of round {r.round} ran. {fmtBps(forfeitBps)} of the lock ({fmtUsdShort(forfeitOf(r.order.lock, forfeitBps))}) is forfeited when the round clears; the rest of the lock ({fmtUsdShort(BigInt(r.order.lock) - forfeitOf(r.order.lock, forfeitBps))}) is back in the free balance. You can bid again with the same account.
       </p>
     </div>
   );
@@ -528,7 +633,7 @@ function ResultFigures({ r, tick }: { r: ResultLike; tick: number | undefined })
         <Figure label="Clearing price" value={r.clearingPriceAbs !== null ? dollarsOfPrice(r.clearingPriceAbs, tick) : "none"} sub={r.clearingPriceAbs !== null ? `/GPU-h; your limit ${dollarsOfPrice(r.order.floor + r.order.price, tick)}` : "The round did not trade"} />
         <Figure label="Filled" value={`${r.filled} of ${size}`} sub={missedReveal(r) ? "GPU-h: not revealed in time" : `GPU-h: ${r.outcome}`} />
         <Figure label="Position" value={<span className={r.position.long ? "text-long" : undefined}>{r.position.long ? `LONG ${r.position.long}` : r.position.short ? `SHORT ${r.position.short}` : "none"}</span>} sub={`GPU-h in series ${r.series}; paid at settlement`} />
-        <Figure label="Free balance" value={fmtUsdExact(r.balance)} sub="Test dollars in the market, after clearing" />
+        <Figure label="Free balance" value={fmtUsdShort(r.balance)} sub="Test dollars in the market, after clearing" />
       </div>
     </>
   );
@@ -553,7 +658,7 @@ function SettleBlock({ st, plan, now, busy, onSettle }: { st: TryState; plan: Pl
       {s && s.status !== "running" ? (
         s.status === "done" ? (
           <p className="m-0 mt-3 text-sm text-foreground">
-            Settled and redeemed. Free balance {s.balance !== null ? fmtUsdExact(s.balance) : "no data"}. {s.txs.map((t) => <TxLink key={t.url} {...t} />)}
+            Settled and redeemed. Free balance {s.balance !== null ? fmtUsdShort(s.balance) : "no data"}. {s.txs.map((t) => <TxLink key={t.url} {...t} />)}
           </p>
         ) : (
           <div className="state error mt-3" role="alert">

@@ -11,6 +11,17 @@ import type { Deployments } from "./config.ts";
  * endpoints already listed (fastnear first for sends). */
 export const FAUCET_ORIGIN = "https://helper.nearprotocol.com";
 
+/** "Connect a NEAR wallet" on the test bid (lib/wallet-run.ts), testnet only. The selector reads
+ * this site's own manifest (public/wallets/manifest.json); when a visitor picks a wallet, its
+ * script is fetched from its publisher and runs in a sandboxed frame that inherits this policy:
+ * - raw.githubusercontent.com: the Meteor, MyNearWallet and NEAR CLI scripts;
+ * - wallet.intear.tech: the Intear script, and Intear's sign-in frame (frame-src);
+ * - wss://logout-bridge-service.intear.tech: Intear's bridge to its desktop app;
+ * - rpc.testnet.near.org: the RPC MyNearWallet's script reads (Meteor's reads fastnear, listed).
+ * The wallets' own windows (wallet.meteorwallet.app, ...) are pop-ups, outside this policy. */
+export const WALLET_CONNECT_ORIGINS = ["https://raw.githubusercontent.com", "https://wallet.intear.tech", "wss://logout-bridge-service.intear.tech", "https://rpc.testnet.near.org"] as const;
+export const WALLET_FRAME_ORIGINS = ["https://wallet.intear.tech"] as const;
+
 const originOf = (u: string): string | null => {
   try {
     return new URL(u).origin;
@@ -20,7 +31,7 @@ const originOf = (u: string): string | null => {
 };
 
 export function connectSources(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">): string[] {
-  return [...new Set(["'self'", ...d.rpc.map(originOf), d.bundlesBase ? originOf(d.bundlesBase) : null, d.network === "testnet" ? FAUCET_ORIGIN : null].filter((x): x is string => !!x))];
+  return [...new Set(["'self'", ...d.rpc.map(originOf), d.bundlesBase ? originOf(d.bundlesBase) : null, ...(d.network === "testnet" ? [FAUCET_ORIGIN, ...WALLET_CONNECT_ORIGINS] : [])].filter((x): x is string => !!x))];
 }
 
 export function csp(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">, dev = false): string {
@@ -33,6 +44,7 @@ export function csp(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">, dev
     "img-src 'self' data: blob:",
     "font-src 'self'",
     `connect-src ${connectSources(d).join(" ")}${dev ? " ws: http://localhost:*" : ""}`,
+    `frame-src 'self'${d.network === "testnet" ? ` ${WALLET_FRAME_ORIGINS.join(" ")}` : ""}`,
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "base-uri 'self'",

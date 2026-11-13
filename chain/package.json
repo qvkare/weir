@@ -6,7 +6,13 @@
   "type": "module",
   "exports": {
     ".": "./src/mod.ts",
-    "./guest": "./src/guest.ts"
+    "./guest": "./src/guest.ts",
+    "./wallet-setup": "./src/wallet-setup.ts",
+    "./tx": "./src/tx.ts",
+    "./near": "./src/near.ts",
+    "./token": "./src/token.ts",
+    "./faucet": "./src/faucet.ts",
+    "./weir": "./src/weir.ts"
   },
   "scripts": {
     "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",

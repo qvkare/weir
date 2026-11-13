@@ -15,6 +15,7 @@
     "deploy": "next build && wrangler deploy"
   },
   "dependencies": {
+    "@hot-labs/near-connect": "0.12.0",
     "@tailwindcss/postcss": "4.1.14",
     "@weir/agents": "workspace:*",
     "@weir/chain": "workspace:*",

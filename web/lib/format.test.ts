@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fmtBps, fmtCountdown, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUsd, fmtUsdExact, fmtUtc, fmtUtcTime, NO_DATA, shortAccount, shortHash, tickDecimals, toBig } from "./format.ts";
+import { fmtBps, fmtCountdown, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUsd, fmtUsdExact, fmtUsdShort, fmtUtc, fmtUtcTime, NO_DATA, shortAccount, shortHash, tickDecimals, toBig } from "./format.ts";
 
 test("prices carry their unit and the tick's decimals", () => {
   assert.equal(fmtPrice(2_310_000, 10_000), "$2.31 /GPU-h");
@@ -84,4 +84,23 @@ test("fmtUsdExact: no rounding, at least to the cent", () => {
   assert.equal(fmtUsdExact("41200000000"), "$41,200.00");
   assert.equal(fmtUsdExact(-2_500_000n), "-$2.50");
   assert.equal(fmtUsdExact("1.5"), NO_DATA);
+});
+
+test("fmtUsdShort: three decimals under ten cents, the nearest cent otherwise, never four decimals", () => {
+  assert.equal(fmtUsdShort("28200"), "$0.028");
+  assert.equal(fmtUsdShort("29000"), "$0.029");
+  assert.equal(fmtUsdShort("28250"), "$0.028");
+  assert.equal(fmtUsdShort("28500"), "$0.029");
+  assert.equal(fmtUsdShort("100000"), "$0.10");
+  assert.equal(fmtUsdShort("99600"), "$0.10");
+  assert.equal(fmtUsdShort("99400"), "$0.099");
+  assert.equal(fmtUsdShort("2791800"), "$2.79");
+  assert.equal(fmtUsdShort("4865000"), "$4.87");
+  assert.equal(fmtUsdShort("2625000"), "$2.63");
+  assert.equal(fmtUsdShort("2900000"), "$2.90");
+  assert.equal(fmtUsdShort(0n), "$0.00");
+  assert.equal(fmtUsdShort("41200000000"), "$41,200.00");
+  assert.equal(fmtUsdShort(-2_500_000n), "-$2.50");
+  assert.equal(fmtUsdShort("1.5"), NO_DATA);
+  for (const v of [1n, 28_250n, 2_791_800n, 99_999n, 123_456_789n]) assert.doesNotMatch(fmtUsdShort(v), /\.\d{4}/);
 });

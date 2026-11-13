@@ -154,8 +154,135 @@ under many visitors; "Settle and redeem" in a browser (covered on the fake RPC i
 `chain/test/guest.test.ts`). The
 countdowns read the chain again 1 s after a phase ends, then every 2 s for up to 30 s while the
 chain's clock still shows it (`useRefreshAt` in `components/live.tsx`); not measured in a browser.
-Lock, fee, forfeit and balance on this page are shown unrounded (`fmtUsdExact`: 1% of $2.90 is
-$0.029).
+Amounts on this page (lock, fee, forfeit, balance) are rounded half up: under $0.10 to three
+decimals, so 1% of a $2.82 lock reads $0.028; otherwise to the cent ($2.79). Prices per GPU-hour
+keep the tick's three decimals (`fmtUsdShort` and `dollarsOfPrice` in `lib/format.ts`, tested in
+`lib/format.test.ts`). A page that comes back after a missed reveal now shows the reveal row as
+"Not revealed in time" while it checks the round, instead of "Revealed: done" (`markMissed` in
+`lib/try-state.ts`, tested in `lib/try-state.test.ts`).
+
+### Connect a NEAR wallet
+
+The view starts with a choice: "Connect a NEAR wallet" or "Bid as a guest" (remembered in
+`localStorage` under `weir-try-signer`). The guest path is unchanged. With a wallet:
+
+1. "Connect a NEAR wallet" makes an ed25519 key in the browser, stores it under
+   `weir-wallet:<contract>`, then opens the NEAR Connect chooser (`@hot-labs/near-connect`
+   0.12.0, published 26 Oct 2026, MIT) on testnet. The sign-in asks the wallet to add that key as a
+   function-call key on the market for commit, reveal, clear, mint, merge, settle and redeem, with a
+   0.25 NEAR gas allowance (`signInKeyRequest` in `chain/src/wallet-setup.ts`).
+2. The page reads `view_account` and `view_access_key` itself. An account missing on testnet stops
+   here with a plain sentence.
+3. "Approve the setup in your wallet": one `signAndSendTransactions` with what is missing, in this
+   order: an `AddKey` to the visitor's own account (only when the wallet did not add the key), Weir
+   `register` with 0.02 NEAR, then the token transaction (`storage_deposit`, `mint` of 10 test
+   dollars, `ft_transfer_call` to Weir) (`walletSetupBatch`). The chain is read again afterwards. A
+   deposit sent back because it reached Weir before the registration (SPEC section 5) shows "Deposit
+   again", which sends the token transaction alone.
+4. Bidding, reveal, clear and result are the guest's code (`Guest.forAccount`, state under
+   `weir-wallet-guest:<contract>`), signed by the stored key with no wallet prompt.
+5. "Disconnect" deletes both entries and signs the wallet out. The key stays on the account
+   (limited to the market, 0.25 NEAR of gas at most) until the visitor deletes it in the wallet;
+   the page does not send a `DeleteKey`.
+
+- Code: `chain/src/wallet-setup.ts` (pure builders, `chain/test/wallet-setup.test.ts`),
+  `lib/wallet.ts` (connect, key check, setup, refund, disconnect, plain error text; tested against
+  a fake wallet and a fake chain in `lib/wallet.test.ts`), `lib/wallet-run.ts` (the browser side:
+  the selector, RPC views, the trading guest), `components/front/app/try-wallet.tsx` (the panel).
+  The wallet code and NEAR Connect are dynamic imports made on Connect, or on open when this browser
+  already holds a wallet; a guest loads none of it.
+- Wallets: our own pinned manifest, `public/wallets/manifest.json`, copied on 13 Nov 2026 from the
+  NEAR Connect repository's `repository/manifest.json` (version 1.1.0, sha256 `a90e85a7...`) with
+  four wallets kept: Meteor, Intear, MyNearWallet (its `features.testnet` set to true by us; its
+  script has a testnet configuration, `testnet.mynearwallet.com`) and NEAR CLI. Icons are inlined
+  as `data:` URIs, so the chooser fetches nothing from third parties.
+- What still loads from third parties at run time, only after a wallet is picked: that wallet's
+  script (Meteor, MyNearWallet, NEAR CLI from `raw.githubusercontent.com`, mutable branch URLs; Intear
+  from `wallet.intear.tech`), run in NEAR Connect's `sandbox="allow-scripts"` frame, then whatever it
+  calls: Meteor reads `test.rpc.fastnear.com` (already listed) and opens `wallet.meteorwallet.app`
+  in a pop-up; Intear opens a frame from `wallet.intear.tech` and may use
+  `wss://logout-bridge-service.intear.tech`; MyNearWallet reads `rpc.testnet.near.org`; NEAR CLI
+  reads the RPC the page passes it. NEAR Connect caches each script in IndexedDB (`hot-connector`).
+- Security headers (`lib/headers.ts`, `lib/headers.test.ts`), testnet only, on every page:
+  `connect-src` adds `https://raw.githubusercontent.com https://wallet.intear.tech
+  wss://logout-bridge-service.intear.tech https://rpc.testnet.near.org`; a new `frame-src 'self'
+  https://wallet.intear.tech`. `script-src` and `img-src` are unchanged (the scripts run inline in
+  the frame; icons are `data:`). The sandboxed frame inherits this policy. `next dev` sends no
+  policy, so the browser check below did not exercise it; it needs `next build` and `wrangler dev`.
+- Checked in `next dev` (13 Nov 2026, desktop app's Chromium pane): the chooser lists Meteor,
+  Intear, MyNearWallet and NEAR CLI; the network log shows `/wallets/manifest.json` and no
+  third-party request; closing the chooser shows "The wallet window was closed before it finished.
+  Nothing was signed."; no horizontal scroll at 375 px. No wallet was signed in to. After these
+  changes, one guest bid from the same `next dev` page, from 20:25 UTC: `weir-try-c4bbfd8969ac.testnet`
+  committed LONG 5 at most $2.969 in round 6 of series 44, revealed, cleared it itself, filled 5 of 5
+  at $2.841, free balance $2.86
+  ([commit](https://testnet.nearblocks.io/txns/2J9CghUBwGHMcdWKcyFjiouKisNQKooTbFQwbsXFH2J6),
+  [reveal](https://testnet.nearblocks.io/txns/5ZJJoGZdxBQEvBqh1uLFyHC2KVqJVFPZhBsoRuZWjQSd),
+  [clear](https://testnet.nearblocks.io/txns/AQv1rsKR1xCr27EBipVB4SwE9XS6YYnKQSeBMJLq9zaG)).
+- One live run of the wallet path, with the NEAR CLI wallet, on the built site (`wrangler dev` on
+  :8787, so the security headers applied; the desktop app's Chromium pane), 13 Nov 2026 from
+  20:33 UTC, account `weir-wtest-ecea8aa3cc2c.testnet` (made by the faucet, its key in a file used
+  by near-cli-rs 0.31.1 with `sign-with-access-key-file`). The panel asked for three commands, one
+  at a time, and took each transaction hash back:
+  [add-key](https://testnet.nearblocks.io/txns/ExgTD58LePZkmo69Ey526MRSkGBQ1QkFUrGXQUSuPJp3)
+  (the page then showed "Connected" and the setup did not ask for the key again),
+  [register](https://testnet.nearblocks.io/txns/7sqAxrHafMqC3csyzaf9iFK42GH7vQyd3AK3t9DLQZME),
+  [storage_deposit, mint and ft_transfer_call](https://testnet.nearblocks.io/txns/DFbgZhcWBQB9zLtPiJCno8rrBTqyXKFFj1XxxhCinEnp)
+  (the page then showed "Set up. Free balance in the market $10.00"). "Place a test bid" then ran
+  with no wallet prompt: LONG 5 in round 8 of series 44, filled 5 of 5 at $2.896, free balance $7.59
+  ([commit](https://testnet.nearblocks.io/txns/8JBTu8wniD8W2TYQ5ahHiHjJM8sAD9ysNMrQFQCzXEj2),
+  [reveal](https://testnet.nearblocks.io/txns/2zVoroY5KavtSBvH4K9L39SYt5DuG1HY2nx9Rp2Sd9mC),
+  [clear](https://testnet.nearblocks.io/txns/F3ncCi36Sf5gbZqdzaEiS8FzdpZNh9JyGyiYLARWBrG1)).
+  Read from the chain: the commit's signer key is the page's key, and `view_access_key` shows it as
+  a function-call key for `weir-h100-fast-w1.testnet` with the seven methods `commit`, `reveal`,
+  `clear`, `mint`, `merge`, `settle`, `redeem`. No console message during the run.
+- Not proven: sign-in with a wallet that has its own window (Meteor, Intear, MyNearWallet): their
+  pop-ups, whether they add the key at sign-in on testnet (the setup adds it when they do not), and
+  the order in which they send the batch (NEAR CLI asks for one transaction at a time); Meteor's
+  script under the production policy (its bundle has one `new Function`, inside a `try` with a
+  fallback, and the policy has no `unsafe-eval`); "Disconnect"; NEAR CLI's style sheet from
+  `rsms.me` is blocked by `style-src` (it falls back to system fonts).
+
+#### Hand test with Meteor on testnet (about ten minutes)
+
+Run on the built site (`pnpm --filter @weir/web preview`, then http://localhost:8787/m/h100-fast/try),
+so the security headers apply. Chrome with pop-ups allowed for the site.
+
+1. Get a testnet account: open https://wallet.meteorwallet.app, create or import a wallet, switch
+   the network to Testnet (settings), and create a testnet account. Expect an account ending in
+   `.testnet` with some test NEAR (the setup needs about 0.03 NEAR plus gas).
+2. On the test bid page, press "Connect a NEAR wallet" under "Who signs", then the same button in
+   the panel. Expect a chooser with Meteor, Intear, MyNearWallet, NEAR CLI.
+3. Pick Meteor and approve the sign-in in its pop-up. Expect "Connected: <your account> with Meteor
+   Wallet", the sentence about the trading key, and the button "Approve the setup in your wallet"
+   with "One approval in your wallet registers you with the market (0.02 NEAR) and mints and
+   deposits $10.00 in test dollars." If it also says "adds the trading key", Meteor did not add the
+   key at sign-in: note it, the setup adds it.
+4. Press the setup button and approve in Meteor. Expect, within about 10 s, "Set up. Free balance in
+   the market $10.00." and the steps "Wallet connected", "Registered", "Funded" done.
+   If it shows "Deposit again", press it and approve once more (the wallet sent the deposit before
+   the registration).
+5. In a commit phase with 30 s or more left, press "Place a test bid". Expect no wallet prompt; the
+   steps fill in as for a guest; after about five minutes a result with the clearing price, the fill
+   and the free balance.
+6. Reload during the sealed phase once (optional). Expect the bid to resume without a new commit.
+7. Press "Bid again in the next round" (optional). Expect no wallet prompt.
+8. Press "Disconnect" and confirm. Expect the panel back at "Connect a NEAR wallet". In Meteor the
+   key for `weir-h100-fast-w1.testnet` stays listed until you remove it.
+
+If a step fails, send: the step number, a screenshot of the page, the text of any red box, your
+account name, the browser console (right click, Inspect, Console: copy everything, especially lines
+with "Content Security Policy" or "Refused"), and any transaction links from Meteor's history.
+
+Without a GUI wallet: pick "NEAR CLI" at step 3. It shows `near` commands (near-cli-rs, not the JS
+`near-cli`) to run in a terminal and asks for each transaction's hash or explorer link. The sign-in
+command is `near account add-key <account> grant-function-call-access --allowance '0.25 NEAR'
+--contract-account-id weir-h100-fast-w1.testnet --function-names 'commit, reveal, clear, mint, merge,
+settle, redeem' use-manually-provided-public-key ed25519:... network-config testnet
+sign-with-keychain`; replace `sign-with-keychain` with `sign-with-access-key-file <file>.json` or
+`sign-with-plaintext-private-key` to sign with a key file. The setup batch comes as one `near
+transaction construct-transaction ...` command per transaction. Read from the script's code
+(`near/near-cli-connect`, `dist/near-cli.js`, 13 Nov 2026); not run.
 
 ## JSON endpoints
 

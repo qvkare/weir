@@ -5,3 +5,4 @@ export * from "./token.ts";
 export * from "./intents.ts";
 export * from "./faucet.ts";
 export * from "./guest.ts";
+export * from "./wallet-setup.ts";
