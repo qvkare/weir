@@ -261,8 +261,12 @@ Read back afterwards with one `get_result` call through fastnear: series 43, rou
 452000 above the floor of 2.386 USD, volume 35, and in `fills` the guest's order with `filled: 5`.
 
 **Not proven.** One run is one run: how often the faucet rate-limits, and how the run behaves at
-the top of the hour, are not known. `--settle` (settle and redeem for that account) has not been
-run. A browser has not run
+the top of the hour, are not known. `--settle` for that account ran once, at 21:03 UTC the same day, three minutes after series 43's
+delivery hour ended: it sent
+[settle](https://testnet.nearblocks.io/txns/CAS1SKb7ctXPpvtGh9wXZFSrHMWbpDmjVDmf2Z4EzF87) itself and
+[redeem](https://testnet.nearblocks.io/txns/HTBtX1x9JnRCXXF8jD8K2vjwMfSmezJkQG9K2D9ecGaJ) in 12 s,
+and the account's free balance in the market went from 2.64 USD to 5.13708 USD (5.00 USD had been
+deposited; LONG 5 bought at 0.452 USD above the floor was paid 0.499416 USD each). A browser has not run
 the module either, and whether the faucet allows cross-origin requests is not known. The
 allowance refusal text (`NotEnoughAllowance`) is matched by pattern and was not seen live. If a
 commit's outcome is unknown and the commit lands more than about 10 s later, a restart in the same
