@@ -1,6 +1,6 @@
 # Weir: status and limits
 
-What runs on NEAR testnet now, how Weir fails, what is not built, and what the review left open. These sections were part of the root [README](../README.md) until 2026-11-13 and are kept here with their text unchanged, apart from their links. Where they say "above" about a transaction, a series or a void, they mean the table "What is proven, and by what" in the README.
+What runs on NEAR testnet now, how Weir fails, what is not built, and what the review left open. These sections were part of the root [README](../README.md) until 2026-11-13 and are kept here with their text unchanged, apart from their links and the lines marked with a later date. Where they say "above" about a transaction, a series or a void, they mean the table "What is proven, and by what" in the README.
 
 ## What is running now, and what is not
 
@@ -32,7 +32,7 @@ What runs on NEAR testnet now, how Weir fails, what is not built, and what the r
 - **No mainnet and no real USDC.** The test dollar has an open mint.
 - **No AMD market.** Of the six sources only RunPod lists an AMD chip (MI300X), and one provider cannot make an index. B200 meets the provider count but its values spread by a factor of 2.7, so it is not offered either ([`index/METHOD.md`](../index/METHOD.md)).
 - **Independent reporters.** One operator runs all three.
-- **No wallet in the site.** It is read-only; agents trade through their own keys.
+- **Wallet sign-in shown with one wallet only** (changed 2026-11-13). The site was read-only; it now has a test bid view (`/m/h100-fast/try`) where a visitor bids as a throwaway testnet guest or signs in with a NEAR testnet wallet. The guest path and the wallet path through the NEAR CLI wallet were run on testnet; Meteor, Intear and MyNearWallet were not ([`web/README.md`](../web/README.md)). There is no order form beyond that one suggested bid, and nothing on mainnet.
 - **No external audit firm, no formal verification and no reproducible build** (`contracts/build.sh` builds `non-reproducible-wasm`).
 - **A keeper proven on the free plan over days.** It has run on the Workers Free plan for about 11.7 hours, from 19:15 UTC on 2026-11-12 to 06:58 UTC on 2026-11-13, across one daily reset, settling every hourly series in that time on the index. Whether it stays within the plan's limits is reasoned in [`keeper/README.md`](../keeper/README.md); the account's usage page has not been read.
 - **Funding through NEAR Intents.** Dry quotes only; no transfer.

@@ -145,8 +145,24 @@ from 19:50 UTC: series 43, round 11, filled 5 of 5 at 2.841 USD, position LONG 1
 committed LONG 5 in round 1 of series 44; the tab went to another page before the reveal phase and
 came back 20 s after the round ended; the view ended the bid as "not revealed in time", cleared
 the round, showed 0.0282 USD forfeited (1% of the 2.82 USD lock) and 2.7918 USD returned, and
-offered "Bid again". Seen in that run and not fixed: for about 20 s after coming back, before the
-round's result was read, the step read "Revealed: done".
+offered "Bid again". Seen in that run: for about 20 s after coming back, before the round's result
+was read, the step read "Revealed: done". Changed afterwards so that row reads "Not revealed in
+time" while the round is checked (`lib/try-state.test.ts`; not seen live again).
+
+On the deployed site (https://tryweir.com, deployed 13 Nov 2026 at 20:49 UTC), one guest bid from
+20:50 UTC in the same pane: the faucet created `weir-try-a51bbbcab556.testnet` from that origin; it
+registered, deposited, committed LONG 5 at most 3.024 USD in round 11 of series 44, revealed, and
+was filled 5 of 5 at 2.896 USD, free balance 2.59 USD:
+[create_account](https://testnet.nearblocks.io/txns/F8Qn3N5MNKVQYccTpy4hkhTyVkmzYWh3y2KbACKZnf5N),
+[register](https://testnet.nearblocks.io/txns/53LpmXakERyJkjxcFtJoYg7UFPrKapwT6mr9EJ99Myd4),
+[deposit](https://testnet.nearblocks.io/txns/8Hw7fXZ5HYsrzNtRvhpfwj6KtTGxPPwWuTXhZ2muUGgG),
+[commit](https://testnet.nearblocks.io/txns/ALCitjvirFk6Z7TUAXdLRLS1KrcxKKkBwj3VDJCVRMgA),
+[reveal](https://testnet.nearblocks.io/txns/74yRcAEZgT3Z6HEBpcpT9eATEiQwuhDkiWKARSAcGusy),
+[clear](https://testnet.nearblocks.io/txns/GaBASFwsGeAFkNsuttAX45bsaEnYGHnW94KtQaCffEpr).
+The one console message on `tryweir.com`: Cloudflare adds its analytics script
+(`static.cloudflareinsights.com/beacon.min.js`) to pages on that domain and the policy's
+`script-src` refuses it, so it does not load. The wallet path has not been run on the deployed
+site.
 
 Not proven: a run in a background tab (browsers slow timers in hidden tabs; the reveal has 120 s);
 Safari and Firefox (the runs were in the desktop app's Chromium pane); the faucet's rate limit

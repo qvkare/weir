@@ -23,7 +23,9 @@ Open https://tryweir.com. In a minute you can see:
 - the print check (https://tryweir.com/m/h100-fast/auction/prints): your browser fetches each recent print's evidence bundle from the keeper and checks its hash against the hashes the three reporters posted on chain;
 - the review (https://tryweir.com/proof/review, or https://tryweir.com/audit): the findings and what stays open.
 
-No wallet and no login. To run the site locally in model mode instead (every view answered by the engine, no chain): `pnpm install`, then `make web`, then open http://localhost:3000.
+In about five minutes you can place one sealed bid yourself (https://tryweir.com/m/h100-fast/try): press "Place a test bid". The page makes a throwaway testnet account in your browser, funds it with test dollars, commits LONG 5 GPU-hours, reveals the order when the reveal phase opens, and shows the clearing price and your fill, with a link to every transaction. Or press "Connect a NEAR wallet" and use your own testnet account: the wallet adds a key that can trade in this market and cannot withdraw, you approve one setup, and the bid then needs no wallet prompt. What was run and what was not is in [`web/README.md`](web/README.md).
+
+No wallet and no login are needed: the test bid's throwaway key stays in your browser. To run the site locally in model mode instead (every view answered by the engine, no chain): `pnpm install`, then `make web`, then open http://localhost:3000.
 
 Then the keyless checks, from a clone, with Node 22.18 or newer, pnpm 10 and Python 3:
 
@@ -34,7 +36,7 @@ make judge
 
 | Do | See |
 |---|---|
-| `make judge` | Everything below except the last three rows, then a summary of what was and was not checked. On an Apple-silicon laptop it took 8 s at 07:44 and at 19:25 UTC on 2026-11-12 and 10 s at 06:58 UTC on 2026-11-13, and 83 s at 01:00 UTC on 2026-11-12, when the keeper ran on the same machine against the same RPC endpoint and the read-back from testnet waited out its rate limits; the steps without the network take about 2 s |
+| `make judge` | Everything below except the last four rows, then a summary of what was and was not checked. On an Apple-silicon laptop it took 8 s at 07:44 and at 19:25 UTC on 2026-11-12 and 10 s at 06:58 UTC on 2026-11-13, and 83 s at 01:00 UTC on 2026-11-12, when the keeper ran on the same machine against the same RPC endpoint and the read-back from testnet waited out its rate limits; the steps without the network take about 2 s |
 | `make verify` | The four recorded index bundles (the first H100 print and the newest H100, H200 and A100 80 GB prints) recomputed from the raw source bodies and re-hashed: 113, 115, 76 and 90 checks. The engine reproducing all 4,584 cases the contract wrote to `vectors/`. The testnet deployment record (`evidence/deploy/testnet-w1.json`) read back from the chain with read-only RPC calls: code hashes, parameters, reporters and every operator key, 41 of 41 checks matching, plus each market's last print and status |
 | `make sim` | 30 agents (20 buyers, 5 sellers, 2 makers, 3 noise traders) trading the hourly H100 demo market on the engine: 20 of 20 rounds traded, both series settled and redeemed, and a money check (deposits equal free balances plus locks plus backing plus unredeemed plus burned) that the target asserts |
 | `make backtest` | The backtest recomputed from `backtest/data/derived/`, its four result files compared byte for byte with the committed ones, then `backtest/scripts/verify.py` recomputing 900 numbers in Python with 0 mismatches |
@@ -42,6 +44,7 @@ make judge
 | `make audit` | Needs Rust. The 20 tests from the four passes of the independent review (8, 9, 2 and 1 per file), each with what it shows, then the state each one printed |
 | `make web` | The site at http://localhost:3000 in model mode, with a ribbon on every page saying so |
 | `make index` | Needs the network. This hour's index for the three chips from six public, keyless sources (8 HTTP requests), written to a temporary directory and verified |
+| `make try` | Needs the network. One sealed bid in the hourly demo market by a throwaway testnet account the command makes through the faucet: each step with its transaction link, then the clearing price and the fill. On 2026-11-13 it took 341 s and 6 transactions and was filled 5 of 5 at 2.838 USD per GPU-hour ([`chain/README.md`](chain/README.md)). `make try TRY_ARGS=--plan` reads the chain and sends nothing |
 
 `make test` runs every suite that needs no running node (needs Rust 1.96 and cargo-near 0.23). `make test-sandbox` runs the real wasm on a local NEAR node. `make help` lists every target.
 
