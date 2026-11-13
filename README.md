@@ -1,20 +1,8 @@
 # Weir
 
-Weir runs sealed-bid, single-price, week-ahead auctions on the price of one GPU-hour, on NEAR. It is for people who rent GPU time and want to fix next week's price today, and for people who own GPUs and want to fix what they will earn. There is one market per chip: H100 (weekly, plus an hourly demo market that runs 168 times faster), H200 weekly and A100 80 GB weekly. Buyers of compute buy LONG, owners of GPUs buy SHORT. Every position is paid in full when it opens, so nothing is ever liquidated. A series settles on the average of a public GPU price index over its delivery week. AI agents can bid with NEAR function-call keys that cannot withdraw.
+Weir runs sealed-bid, single-price, week-ahead auctions on the price of one GPU-hour, on NEAR testnet. It is for people who rent GPU time and want to fix next week's price today, and for people who own GPUs and want to fix what they will earn. There is one market per chip: H100 (weekly, plus an hourly demo market that runs 168 times faster), H200 weekly and A100 80 GB weekly. Buyers of compute buy LONG, owners of GPUs buy SHORT. Every position is paid in full when it opens, so nothing is ever liquidated. A series settles on the average of a public GPU price index over its delivery week. AI agents can bid with NEAR function-call keys that cannot withdraw.
 
-**Where it runs.** The site is public at https://tryweir.com (the same site also answers at https://weir.qvkare.workers.dev, for networks that block newly registered domains). The four markets are deployed on NEAR testnet with a test dollar ([Contracts and accounts](#contracts-and-accounts)). Nothing is on mainnet. A keeper on Cloudflare's free plan reports the index and runs the trading agents (https://weir-keeper.qvkare.workers.dev/status). `make judge` checks the repository and reads the deployment back from testnet, with no keys.
-
-## Who built this
-
-Weir was built by Qvkare ([qvkare.com](https://qvkare.com), [GitHub](https://github.com/qvkare), [X](https://x.com/Qvkare)). His earlier results, as listed on qvkare.com:
-
-- Linea MCP: 1st place, Linea Dev Cook-Off ([announcement](https://x.com/lineabuild/status/1913222836056969581)).
-- Mirror Search: 1st place, Bless Network Genesis Hackathon ([announcement](https://x.com/theblessnetwork/status/1935370517336440866)).
-- Copil: 2nd place, Chainlink Chromion Hackathon ([recording](https://www.youtube.com/live/xuGBbwtmjFc)).
-
-AI was used as a tool in developing this project. The author checked the contracts himself, by hand; that is his own check, not an independent audit.
-
-The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
+**Where it runs.** The site is public at https://tryweir.com.
 
 ## The problem
 
@@ -52,7 +40,7 @@ make judge
 
 ### By track
 
-Weir enters four tracks ([About this entry](#about-this-entry)). One check per track, each a few minutes or less except the last command of Agent Economy.
+Weir enters four tracks: Unstoppable DeFi, AI Swarms, Agent Economy and Open Innovation. One check per track, each a few minutes or less except the last command of Agent Economy.
 
 | Track | Run or open | What you see | Needs |
 |---|---|---|---|
@@ -105,9 +93,9 @@ Spec sections [9](docs/SPEC.md#9-index) and [10](docs/SPEC.md#10-settlement).
 
 ## Why it is built this way
 
-**Positions are fully paid, not margined.** Each side pays its whole possible loss when its order fills: a LONG pays `p*` per GPU-hour and a SHORT pays `band - p*`, so each matched pair puts `band` dollars in the contract (spec sections [1](docs/SPEC.md#1-what-weir-is) and [7.3](docs/SPEC.md#73-accounting)). This removes liquidations, a margin engine and the chance that the losing side does not pay at settlement: the payout is already held, and no account can lose more than it locked or paid (spec section [11](docs/SPEC.md#11-invariants), invariants 1 and 5). It costs capital and cover. Each side's dollars stay locked from the auction until the series settles after its delivery week, and payouts stop at the band, so a move of more than 15% in a week is not hedged ([When it fails](#when-it-fails)).
+**Positions are fully paid, not margined.** Each side pays its whole possible loss when its order fills: a LONG pays `p*` per GPU-hour and a SHORT pays `band - p*`, so each matched pair puts `band` dollars in the contract (spec sections [1](docs/SPEC.md#1-what-weir-is) and [7.3](docs/SPEC.md#73-accounting)). This removes liquidations, a margin engine and the chance that the losing side does not pay at settlement: the payout is already held, and no account can lose more than it locked or paid (spec section [11](docs/SPEC.md#11-invariants), invariants 1 and 5). It costs capital and cover. Each side's dollars stay locked from the auction until the series settles after its delivery week, and payouts stop at the band, so a move of more than 15% in a week is not hedged.
 
-**What sealing hides, and for how long.** In the commit phase the chain shows the account, the hash and the lock, which bounds what the order can cost; side, size and price are hidden (spec section [6.2](docs/SPEC.md#62-commit)). They are hidden only until the reveal. A reveal is a public transaction: its arguments (side, size, price and salt) and its `reveal` event (account, side, size, price and whether the order was void) stay in the chain's history, for orders that filled and for orders that did not (spec section [13](docs/SPEC.md#13-events); `reveal` in `contracts/weir/src/lib.rs`). Until the round is cleared, the view `get_round` also lists every commit with its owner and its revealed order. After `clear` the contract keeps only the filled orders (`get_result`, field `fills`) and the total LONG and SHORT size (spec sections [12](docs/SPEC.md#12-views) and [14](docs/SPEC.md#14-limits-gas-and-storage)). So anyone can read each account's past sides, sizes and limit prices, filled or not, and use them to guess how it will bid in the next round. Nobody can read a round's orders before they are revealed. Within a round, a late revealer sees the earlier reveals: that is the last look in [When it fails](#when-it-fails). Hiding losing bids for good, with encrypted bids, is not built.
+**What sealing hides, and for how long.** In the commit phase the chain shows the account, the hash and the lock, which bounds what the order can cost; side, size and price are hidden (spec section [6.2](docs/SPEC.md#62-commit)). They are hidden only until the reveal. A reveal is a public transaction: its arguments (side, size, price and salt) and its `reveal` event (account, side, size, price and whether the order was void) stay in the chain's history, for orders that filled and for orders that did not (spec section [13](docs/SPEC.md#13-events); `reveal` in `contracts/weir/src/lib.rs`). Until the round is cleared, the view `get_round` also lists every commit with its owner and its revealed order. After `clear` the contract keeps only the filled orders (`get_result`, field `fills`) and the total LONG and SHORT size (spec sections [12](docs/SPEC.md#12-views) and [14](docs/SPEC.md#14-limits-gas-and-storage)). So anyone can read each account's past sides, sizes and limit prices, filled or not, and use them to guess how it will bid in the next round. Nobody can read a round's orders before they are revealed. Within a round, a late revealer sees the earlier reveals before deciding: not revealing costs 1% of the lock and the fee, and can change who else is filled. Hiding losing bids for good, with encrypted bids, is not built.
 
 ## The index
 
@@ -181,31 +169,6 @@ Method, sources, licences and every table: [`backtest/README.md`](backtest/READM
 - **Cheap, frequent transactions.** A weekly market has 168 rounds, so an active agent sends up to 336 commits and reveals a week. Measured on the sandbox (third integration run), a commit burns 2.97 Tgas and a reveal 2.51 Tgas at the median. At the gas price read on testnet on 2026-11-12 (0.0001 NEAR per Tgas), that is about 0.0003 NEAR each.
 - **NEAR Intents.** `make quote-dry` and the site take live dry quotes from the 1Click API for moving USDC from Arbitrum, Base, Ethereum or Solana to NEAR. The client refuses anything but a dry quote. No transfer has been made through Intents.
 
-## Audit
-
-An AI reviewer (Claude, an Anthropic model) that did not write the contract reviewed it in four passes, all on 2026-11-12, against specifications 0.3, 0.4, 0.5 and 0.6, and kept its findings as tests. It covered `contracts/weir/src/` only: not the TypeScript packages, the reporters' code, deployment or real tokens. It did not run the real wasm. The review record is not an audit by a security firm and not a formal verification, and no person has signed the review record off. Its record is [`docs/AUDIT.md`](docs/AUDIT.md); `make audit` runs its tests and prints what each one shows.
-
-Found sound in all four passes: the dollar accounting on every path, the 0.6 void path included (`audit4_a_non_reporter_cannot_move_the_void_payout` asserts free plus burned equals deposits after a full void redemption; burned dollars are never credited). Also found sound, by reading: clearing as the spec defines it, the commit hash, the access controls, the recorded guard, the round lock limit and the sets cap.
-
-One fix was itself found faulty. After the second pass, specification 0.5 settled a void series at its average traded price. The third pass showed that wash trades between two accounts one person controls set that average anywhere in the band for the cost of commit fees: in its test a trading reporter took 19.40 USD of a counterparty's 20 USD (finding 3.1). Specification 0.6 replaced the rule: a void series pays half the band on each side and reads nothing that was traded. The fourth pass checked that rule and found it sound against traders who are not reporters: wash trades, mints, merges and transfers before a void changed nothing.
-
-The verdict, as the record states it: fit for a public testnet with test dollars, with its reporters run by one known operator and these limits stated. Not fit for real dollars until, at least, the reporters are independent parties, numerous enough that one absence does not leave two reporters each able to veto any hour; blocking a round costs something that scales with what it blocks; the round lock limit is on by default; and the contract's NEAR balance and pruning have a funded owner.
-
-What stays open, at the deployed parameters (weekly preset, 0.10 USD fee, a 0.60 USD band on a 2.00 USD index):
-
-| # | Open | Size | Test |
-|---|---|---|---|
-| 2.1 | With one reporter absent, one dishonest reporter chooses which hours print and leans each print | About 0.029 USD a unit, 4.8% of the band, at an hourly spread the reviewer assumed (1% of the index), not measured | `limit_one_reporter_selects_which_buckets_print` |
-| 3.2 (and 2.2) | A reporter holding a side bought cheaply forces a void and is paid half the band | Up to 0.299 USD a unit, 49.8% of the band. Needs 43 of 168 hours without a print | `limit_a_trading_reporter_forces_a_void_for_up_to_0_299_a_unit_at_the_deployed_band` |
-| 2.3 (and 1.5) | Blocking a round | 6.40 USD a round, about 1,075 USD a week, plus capital above the largest honest lock | `limit_blocking_a_round_costs_6_40_dollars_at_the_deployed_fee` |
-| 2.4 | An agent key burns an account with no round lock limit at 1% plus the fee a round | The deploy tool sets the limit for the agents it creates; the limit is off by default | `limit_an_account_without_a_round_lock_limit_can_be_burned` |
-| 2.5 | Not revealing changes who else is filled: a last look | 1% of the lock plus 0.10 USD | `limit_last_look_a_non_reveal_changes_another_accounts_fill` |
-| 1.8 | Nobody is paid to prune or to send the contract NEAR | A low balance stops reports, and settlement then turns void | `audit_storage_bytes_per_object_and_pruning` |
-| 2.6, 2.7 | One account can take a series' mint cap; `new` still accepts unwise parameters (a 100% spread, two reporters, no fee and no forfeit) | Read `get_params` before trusting a deployment | `limit_one_account_can_take_the_whole_mint_cap`, `limit_unwise_parameters_are_still_accepted` |
-| 2.8 to 2.11, 4.1 | Pending-bucket growth; early pruning; a lagging guard reference; a view limit; a void caused only indirectly by draining the contract's NEAR | Low or note; found by reading, not tested | none |
-
-Closed, each with a test that keeps the attack and asserts it fails: one reporter steering, freezing or reordering the index (1.1, 1.2, 1.7); the mint overflow (1.3); forfeits paid to an accomplice (1.4, theft part); changing the guard after commit (1.6); a quorum below a majority (part of 2.7); the 0.5 void payout set by wash trades (3.1).
-
 ## Contracts and accounts
 
 Deployed on NEAR testnet on 2026-11-12, 00:25 to 00:46 UTC, by `node deploy/src/cli.ts apply --network testnet --suffix w1`: 34 accounts and 211 transactions. The public record, with every account, the parameters as read from chain, every public key with its allowance and every transaction hash, is [`evidence/deploy/testnet-w1.json`](evidence/deploy/testnet-w1.json). `make verify-deploy` reads it back from the chain with no keys. Nothing is deployed on mainnet.
@@ -225,50 +188,13 @@ All four markets run `weir.wasm` with sha256 `13536f3b32299da4b352d34931e6ef200d
 
 **What went wrong in the deployment.** The first `apply` stopped at step 8 on a balance check that was wrong, and was resumed with one day of operator gas instead of two. On 2026-11-12 at 07:38 to 07:42 UTC, `node deploy/src/cli.ts topup --days 7` funded the operators for about seven more days: 45 transactions, two new faucet accounts swept into the operator account, test dollars for the six agents of the hourly market. Details, and the other problems that run found (a gas estimate, a deprecated RPC endpoint, a rate limit), are in `deploy/README.md`, section "Run against testnet".
 
-### What is running now, and what is not
-
-- **The weekly markets** are in the auction window of series 0 (`make verify-deploy` prints the round); series 0 delivers from 2026-11-16 00:00 UTC to 2026-11-23 00:00 UTC, so no weekly series can settle before 2026-11-23.
-- **The hourly demo market** auctions a one-hour series every hour, and each can be settled about a minute after its hour of delivery ends. Its first cleared round is the transaction above. Of its series settled by 06:58 UTC on 13 Nov, 13 settled on the index (8, and 17 to 28 in a row) and five void, all five before the keeper moved to Cloudflare (above).
-- **The keeper** runs on Cloudflare's Workers Free plan as one Durable Object, at https://weir-keeper.qvkare.workers.dev, also reachable as https://keeper.tryweir.com (`/health`, `/status`, `/latest.json?chip=h100`, `/bundles/<hash>.json`; design and free-plan arithmetic in `keeper/README.md`, option 1). It fetches the live index for the three chips, has the three reporters post it, runs the agents, clears rounds and settles series (18 to 28 above). It took over from a Node loop on the author's laptop at 19:15 UTC on 2026-11-12, after a first attempt at 19:00 was refused because one secret was over Cloudflare's 5.1 kB limit (`keeper/README.md`, "The second switch"). At 19:23 UTC `/status` showed the last tick at 19:23:00, no configuration problem, no refused key, and 0 failed entries in its last 50 log entries (19:17 to 19:22), with 21 transactions; one of them, a commit, read on chain, was signed by the agent's recorded function-call key. At 06:58 UTC on 13 Nov `/status` showed the last tick at 06:58:00, no configuration problem, no refused key, no endpoint cooling down, and 0 failed among its last 50 log entries. It has run about 11.7 hours on the free plan, from 19:15 UTC on 12 Nov to 06:58 UTC on 13 Nov, across Cloudflare's daily reset at 00:00 UTC, while the laptop that used to run it was asleep for much of that time (authors' statement). Not shown yet: the account's usage page (duration, rows and requests as Cloudflare counts them: nobody has looked), the 15-day retention rule running, a weekly series settling (not before 23 Nov), and what happens when the public RPC rate-limits Cloudflare's addresses.
-- **Before that, the laptop.** From 00:48 to 19:14 UTC the keeper was a Node loop on the author's laptop, which slept for much of the day (authors' statement, consistent with the voids above).
-- **The first night.** The laptop slept from 01:21 UTC to about 07:34 UTC with a few short wakes; the keeper ran 6 ticks in those six hours (`keeper/README.md`, "First night on testnet, 2026-11-12"). The cost: the hourly market's series 0 got 5 of the 9 prints it needed and series 1 none, so both settled void; unrevealed commits forfeited 0.17 USD on the hourly market and 1.31 USD on the A100 80 GB market, and, when round 74 of the H100 and H200 weekly markets was cleared after the restart, 2.26 USD and 3.50 USD there (`get_result` read at 07:44 UTC); 6 late reports were refused on chain and cost gas. The keeper was restarted on fixed code at 07:37 UTC (authors' statement).
-- **The three reporters are the keeper's own accounts,** run by one operator from one fetch, as everywhere else in this README.
-- **The site** is public at https://tryweir.com (since 08:14 UTC on 2026-11-13; registered that morning) and at its first address, https://weir.qvkare.workers.dev, both served by the same Worker on Cloudflare's Workers Free plan, first at 20:14 UTC on 2026-11-12 and, redesigned, since 06:56 UTC on 2026-11-13 (`web/README.md`, `web/DESIGN.md`). The homepage's market window is a preview of the application, built from the same components; the proof page is four views (`/proof`, `/proof/solvency`, `/proof/review`, `/proof/record`). Every page is a static file written at build time; a small Worker serves only `/api/*` and redirects old `?m=` links to `/m/<market>/…`. Each data page shows the figures the build read, labelled with their time, then reads the chain in the visitor's browser (dRPC first, fastnear second). Limits: the built figures are as old as the last build, and rebuilding and redeploying is manual; the live reads depend on two free public RPC endpoints from the visitor's own address; prints reported before 19:15 UTC on 12 Nov show as "not published", because their bundles were never published; nobody has watched the site's requests against the free plan's 100,000 a day; motion was checked by eye in a desktop browser pane, not on a phone. One build fault is on the record: the build replayed chain reads cached by an earlier build, so a page built after 21:49 UTC on 12 Nov could show the chain as it was at 21:49; since commit 7cfe135 the cache is cleared at the start of each build. The deploys at 20:14 on 12 Nov and 06:56 on 13 Nov fall before that window and after the fix.
-
-## When it fails
-
-- **The index has no print.** A chip with fewer than 6 providers or 3 rate cards gets no index for that hour. If Shadeform is down, every chip is. A series with too few prints is void and pays both sides half the band: the hedge is cancelled.
-- **Reporters disagree or are wrong.** One operator runs all three reporters from one fetch, so the quorum protects against a failed transaction, not a wrong price. Two reporters agreeing can set any price. Nothing on chain checks a report against its bundle.
-- **One reporter is absent and another is dishonest.** The dishonest one can choose which hours print and lean each print, about 0.029 USD a GPU-hour at an assumed hourly spread (finding 2.1, open). Or it can veto 43 of 168 hours to make the series void, which pays half the band to a side it may have bought cheaply: up to 0.299 USD a GPU-hour at a 0.60 USD band (finding 3.2, open).
-- **The index moves more than 15% in a week.** Payouts stop at the band; the rest is not hedged. This happened once in 69 backtest weeks.
-- **The buyer's provider does not follow the index.** The hedge then adds risk (Lambda in the backtest).
-- **Nobody bids on one side.** A round with no crossing orders does not trade.
-- **A bidder with capital blocks a round.** It fills all 64 slots with larger locks; it costs 6.40 USD a round in fees at the presets.
-- **A late revealer takes a last look.** Not revealing costs 1% of the lock and the fee, and can change who else is filled.
-- **The keeper stops.** Reveals are missed and each commit forfeits 1% of its lock; hours go unreported, and a series with too few prints settles void. Rounds still clear and series still settle when anyone calls them. This happened on testnet while the keeper ran on a laptop (above). It now runs on Cloudflare, so it depends on the free plan's daily limits (about 11.7 hours run so far, across one daily reset; usage not read from the account) and on two free RPC endpoints, fastnear and dRPC: fastnear rate-limits at the top of the hour, and dRPC's free plan answers a `send_tx` that waits for finality with HTTP 408 after forwarding it (`chain/README.md`, "Second finding").
-- **The contract runs short of NEAR for storage.** Reports, commits and settlement fail until someone sends it NEAR; no dollars are stolen, but a series whose hours go unreported settles void. Nobody is paid to prune or to send NEAR.
-- **An agent's account has no round lock limit.** A stolen agent key can then burn 1% of the balance plus the fee every round (finding 2.4).
-
-## Not built yet
-
-- **No mainnet deployment, and no sealed contract.** The testnet contracts can still be replaced by their deployer.
-- **No mainnet and no real USDC.** The test dollar has an open mint.
-- **No AMD market.** Of the six sources only RunPod lists an AMD chip (MI300X), and one provider cannot make an index. B200 meets the provider count but its values spread by a factor of 2.7, so it is not offered either ([`index/METHOD.md`](index/METHOD.md)).
-- **Independent reporters.** One operator runs all three.
-- **No wallet in the site.** It is read-only; agents trade through their own keys.
-- **No external audit firm, no formal verification and no reproducible build** (`contracts/build.sh` builds `non-reproducible-wasm`).
-- **A keeper proven on the free plan over days.** It has run on the Workers Free plan for about 11.7 hours, from 19:15 UTC on 2026-11-12 to 06:58 UTC on 2026-11-13, across one daily reset, settling every hourly series in that time on the index. Whether it stays within the plan's limits is reasoned in [`keeper/README.md`](keeper/README.md); the account's usage page has not been read.
-- **Funding through NEAR Intents.** Dry quotes only; no transfer.
-- **Bids that stay hidden.** Every revealed order is public for good, filled or not ([Why it is built this way](#why-it-is-built-this-way)). Encrypted bids, which would keep losing orders hidden, are not built.
-- **The weekly preset end to end.** The sandbox runs covered whole series of the hourly demo market; in the third run an H200 weekly market ran 2.6 hours of its week alongside, so its pruning, settlement and redemption were not exercised on chain.
-- **Raw source bodies are not published by the keeper.** The committed evidence has them; the live keeper publishes bundles only, so a live print's offers can be re-checked but not re-derived from the responses. Bundles of prints made before 19:15 UTC on 2026-11-12 are not published at all.
-
 ## Repository
 
 | Path | What |
 |---|---|
 | `docs/SPEC.md` | The rules, version 0.6. The source of truth |
 | `docs/AUDIT.md` | The independent review's record |
+| `docs/STATUS.md` | What runs on testnet now, how Weir fails, what is not built, and the review's open findings |
 | `contracts/` | The NEAR contract `weir` and the test dollar `mock-usdc`, Rust, near-sdk 5.30.1 |
 | `engine/` | The second implementation of the spec, TypeScript, no runtime dependencies |
 | `vectors/` | Test cases written by the contract, reproduced by the engine |
@@ -288,20 +214,17 @@ All four markets run `weir.wasm` with sha256 `13536f3b32299da4b352d34931e6ef200d
 - **The keeper**: [`keeper/README.md`](keeper/README.md). A Cloudflare Worker with one Durable Object (what runs now) or a Node loop, with the keys `deploy` writes to `deploy/out/testnet/keeper.env`. Never run both at once.
 - **The site**: [`web/README.md`](web/README.md).
 
-## About this entry
+## Who built this
 
-Built for the NEAR Hackathon (deadline 2026-11-14). Everything here was built in the hackathon window; the repository began on 2026-11-11. It enters four tracks:
+Weir was built by Qvkare ([qvkare.com](https://qvkare.com), [GitHub](https://github.com/qvkare), [X](https://x.com/Qvkare)). His earlier results, as listed on qvkare.com:
 
-- **AI Swarms**: a swarm of agents with four strategies makes the market, driven by one stateless `tick` that runs on the engine or on the chain ([`agents/README.md`](agents/README.md)).
-- **Agent Economy**: agents buy and sell next week's GPU-hours for the people who use and own the GPUs, with dollars deposited for them.
-- **Unstoppable DeFi**: fully paid positions, no liquidation, no owner, no upgrade method, settlement anyone can call. The testnet contracts are not sealed yet ([Contracts and accounts](#contracts-and-accounts)).
-- **Open Innovation**: a forward market for the price of a real-world input, one GPU-hour next week, settled on a published index whose data anyone can re-hash (`make verify-index`).
+- Linea MCP: 1st place, Linea Dev Cook-Off ([announcement](https://x.com/lineabuild/status/1913222836056969581)).
+- Mirror Search: 1st place, Bless Network Genesis Hackathon ([announcement](https://x.com/theblessnetwork/status/1935370517336440866)).
+- Copil: 2nd place, Chainlink Chromion Hackathon ([recording](https://www.youtube.com/live/xuGBbwtmjFc)).
 
-What to run for each track: [By track](#by-track).
+AI was used as a tool in developing this project. The author checked the contracts himself, by hand; that is his own check, not an independent audit.
 
-Demo post: https://x.com/tryweir/status/2121257824529367160
-
-Who built it: [Who built this](#who-built-this).
+The same author also entered Levee (https://github.com/qvkare/levee), an independent project that shares no code with this one.
 
 ## License
 
