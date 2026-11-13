@@ -50,6 +50,19 @@ make judge
 
 `make test` runs every suite that needs no running node (needs Rust 1.96 and cargo-near 0.23). `make test-sandbox` runs the real wasm on a local NEAR node. `make help` lists every target.
 
+### By track
+
+Weir enters four tracks ([About this entry](#about-this-entry)). One check per track, each a few minutes or less except the last command of Agent Economy.
+
+| Track | Run or open | What you see | Needs |
+|---|---|---|---|
+| Unstoppable DeFi | `make sim`, then `make verify-deploy` | 20 of 20 rounds traded, both series settled and redeemed, and the money check (deposits equal free balances plus locks plus backing plus unredeemed plus burned). Then the four testnet markets read back against the record: 41 of 41 checks, one code hash on all four, and a line for each contract saying it is not sealed | `make sim`: nothing but Node. `make verify-deploy`: the network, no keys |
+| AI Swarms | `make sim`; https://tryweir.com/m/h100-fast/auction | 30 agents (20 buyers, 5 sellers, 2 makers, 3 noise traders) trading the hourly demo market on the engine. On the site, the same market's live round on testnet, where the keeper's agents trade | `make sim`: nothing but Node. The site: a browser |
+| Agent Economy | Transaction [`9cA639eA…SbAR`](https://testnet.nearblocks.io/txns/9cA639eApJhMSeQEdQRZkA2V5UeFoHanjRtFwjVSWbAR); `make test-sandbox` | An agent, `h100-fast-buyer-1`, credited 13.547 USD on redeem, signed with its function-call key. In the sandbox run, the test `a_function_call_key_trades_but_cannot_move_money`: the agent's key trades, settles and redeems, and is refused on `withdraw`, `set_guard` and `transfer_position` | The transaction: a browser. `make test-sandbox`: Rust 1.96, cargo-near 0.23, about 20 minutes, and the network on the first run to download the sandbox binary ([`contracts/README.md`](contracts/README.md)) |
+| Open Innovation | `make verify-index`; https://tryweir.com/m/h100-fast/auction/prints | The four recorded index bundles recomputed from the raw source bodies and re-hashed: 113, 115, 76 and 90 checks. On the site, your browser fetches each recent print's evidence bundle and compares its hash with the hashes the three reporters posted on chain | `make verify-index`: nothing but Node. The site: a browser |
+
+`make judge` runs `make sim`, `make verify-index` and `make verify-deploy` among its steps.
+
 ## What is proven, and by what
 
 | Claim | Checked by | Kind of evidence |
@@ -89,6 +102,12 @@ Spec sections [9](docs/SPEC.md#9-index) and [10](docs/SPEC.md#10-settlement).
 2. After the delivery week and a 15-minute grace, once every round of the series is cleared, anyone calls `settle`. With at least 126 of 168 hourly prints, the fixing is their average, and LONG and SHORT payouts follow from the band.
 3. With fewer prints, two days after delivery ends, the series is void and cancelled at the centre of its band: every LONG and every SHORT is paid half the band, whatever was traded and whatever prints exist. Nothing a trader does moves that number. A side bought for less than half the band gets more back than it paid, a side bought for more gets less.
 4. Anyone calls `redeem` for any account, which credits that account's free balance. Withdrawing needs the account's full-access key.
+
+## Why it is built this way
+
+**Positions are fully paid, not margined.** Each side pays its whole possible loss when its order fills: a LONG pays `p*` per GPU-hour and a SHORT pays `band - p*`, so each matched pair puts `band` dollars in the contract (spec sections [1](docs/SPEC.md#1-what-weir-is) and [7.3](docs/SPEC.md#73-accounting)). This removes liquidations, a margin engine and the chance that the losing side does not pay at settlement: the payout is already held, and no account can lose more than it locked or paid (spec section [11](docs/SPEC.md#11-invariants), invariants 1 and 5). It costs capital and cover. Each side's dollars stay locked from the auction until the series settles after its delivery week, and payouts stop at the band, so a move of more than 15% in a week is not hedged ([When it fails](#when-it-fails)).
+
+**What sealing hides, and for how long.** In the commit phase the chain shows the account, the hash and the lock, which bounds what the order can cost; side, size and price are hidden (spec section [6.2](docs/SPEC.md#62-commit)). They are hidden only until the reveal. A reveal is a public transaction: its arguments (side, size, price and salt) and its `reveal` event (account, side, size, price and whether the order was void) stay in the chain's history, for orders that filled and for orders that did not (spec section [13](docs/SPEC.md#13-events); `reveal` in `contracts/weir/src/lib.rs`). Until the round is cleared, the view `get_round` also lists every commit with its owner and its revealed order. After `clear` the contract keeps only the filled orders (`get_result`, field `fills`) and the total LONG and SHORT size (spec sections [12](docs/SPEC.md#12-views) and [14](docs/SPEC.md#14-limits-gas-and-storage)). So anyone can read each account's past sides, sizes and limit prices, filled or not, and use them to guess how it will bid in the next round. Nobody can read a round's orders before they are revealed. Within a round, a late revealer sees the earlier reveals: that is the last look in [When it fails](#when-it-fails). Hiding losing bids for good, with encrypted bids, is not built.
 
 ## The index
 
@@ -240,6 +259,7 @@ All four markets run `weir.wasm` with sha256 `13536f3b32299da4b352d34931e6ef200d
 - **No external audit firm, no formal verification and no reproducible build** (`contracts/build.sh` builds `non-reproducible-wasm`).
 - **A keeper proven on the free plan over days.** It has run on the Workers Free plan for about 11.7 hours, from 19:15 UTC on 2026-11-12 to 06:58 UTC on 2026-11-13, across one daily reset, settling every hourly series in that time on the index. Whether it stays within the plan's limits is reasoned in [`keeper/README.md`](keeper/README.md); the account's usage page has not been read.
 - **Funding through NEAR Intents.** Dry quotes only; no transfer.
+- **Bids that stay hidden.** Every revealed order is public for good, filled or not ([Why it is built this way](#why-it-is-built-this-way)). Encrypted bids, which would keep losing orders hidden, are not built.
 - **The weekly preset end to end.** The sandbox runs covered whole series of the hourly demo market; in the third run an H200 weekly market ran 2.6 hours of its week alongside, so its pruning, settlement and redemption were not exercised on chain.
 - **Raw source bodies are not published by the keeper.** The committed evidence has them; the live keeper publishes bundles only, so a live print's offers can be re-checked but not re-derived from the responses. Bundles of prints made before 19:15 UTC on 2026-11-12 are not published at all.
 
@@ -272,10 +292,14 @@ All four markets run `weir.wasm` with sha256 `13536f3b32299da4b352d34931e6ef200d
 
 Built for the NEAR Hackathon (deadline 2026-11-14). Everything here was built in the hackathon window; the repository began on 2026-11-11. It enters four tracks:
 
-- **AI Swarms**: a swarm of agents with four strategies makes the market, driven by one stateless `tick` that runs on the engine or on the chain.
+- **AI Swarms**: a swarm of agents with four strategies makes the market, driven by one stateless `tick` that runs on the engine or on the chain ([`agents/README.md`](agents/README.md)).
 - **Agent Economy**: agents buy and sell next week's GPU-hours for the people who use and own the GPUs, with dollars deposited for them.
-- **Unstoppable DeFi**: fully paid positions, no liquidation, no owner, no upgrade method, settlement anyone can call.
-- **AI Security & Defense**: agent keys bounded by the protocol and by two limits the agent cannot change, and an AI review whose findings are kept as tests.
+- **Unstoppable DeFi**: fully paid positions, no liquidation, no owner, no upgrade method, settlement anyone can call. The testnet contracts are not sealed yet ([Contracts and accounts](#contracts-and-accounts)).
+- **Open Innovation**: a forward market for the price of a real-world input, one GPU-hour next week, settled on a published index whose data anyone can re-hash (`make verify-index`).
+
+What to run for each track: [By track](#by-track).
+
+Demo post: https://x.com/tryweir/status/2121257824529367160
 
 Who built it: [Who built this](#who-built-this).
 
