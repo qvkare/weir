@@ -41,7 +41,7 @@ Environment, at build: `WEIR_MODEL=1` (model mode), `WEIR_MODEL_NOW` (Unix secon
 `metadataBase`, canonical links, the link preview, `robots.txt`, `sitemap.xml` and the code on
 `/agents`; default `https://tryweir.com`, `lib/site.ts`). On the Worker, optional:
 `WEIR_QUOTE_RECIPIENT` (NEAR mainnet account named in dry quotes; default a 64-hex placeholder;
-nothing is ever sent to it). The site holds no secret.
+nothing is ever sent to it). The site holds no secret. The test bid's throwaway key is made in the visitor's browser and kept in its `localStorage`; it never reaches the site.
 
 ## How it is served
 
@@ -77,6 +77,85 @@ Worker CPU, measured in Node 22.23 on an Apple M1 with the RPC answers replayed 
 (network waiting is not CPU time): `route()` 0.39 ms on the first call, 3.7 µs after;
 `/api/status` 0.45 ms on the first call, 0.07 ms after; `/api/round` 0.05 ms. Not measured on
 Cloudflare. The free plan allows 10 ms of CPU per request.
+
+## The test bid (`/m/h100-fast/try`)
+
+One sealed bid in the hourly demo market from the visitor's browser, by a throwaway NEAR testnet
+account. Reached from the sidebar's "Test bid" (hourly market only), the "Place a test bid"
+button in the title row of the hourly market's auction views, and the panel at the end of its
+Round in progress view. `/try` and the weekly markets' `/m/<market>/try` say in one line that the
+test bid runs on the hourly market and link there, so switching market keeps the view.
+
+What the page does: reads the plan (`readPlan`, views only, every 15 s while idle and visible);
+on "Place a test bid", `Guest.run()` from `@weir/chain/guest` makes a key, has the testnet faucet
+create `weir-try-<12 hex>.testnet`, registers, mints and deposits test dollars, commits LONG 5
+GPU-hours at the suggested limit, reveals in the reveal phase, waits for the keeper (clears the
+round itself after 20 s) and reads the fill. Each step shows its nearblocks link; a refusal shows
+the contract's text verbatim and one sentence on what to do. After the result: "Bid again in the
+next round" (`Guest.nextBid()`, same account) and, once the delivery hour is over, "Settle and
+redeem" (`Guest.settle(series)`).
+
+- Code: `components/front/app/try-view.tsx` (the view, loaded with `next/dynamic` from
+  `try-view-lazy.tsx`, so the other application views do not carry it), `lib/try-run.ts` (the chain
+  side, a dynamic import inside the view), `lib/try-state.ts` (storage adapter, step reducer,
+  button rules; tested in `lib/try-state.test.ts`).
+- Storage: the guest's state, including the secret key, is in `localStorage` under
+  `weir-guest:weir-h100-fast-w1.testnet`, one account per browser. Reopening the page with a
+  committed, uncleared order resumes it and reveals it; a Web Lock keeps a second tab from driving
+  the same bid. "Forget this account" deletes the entry after a confirmation.
+- Limits: one bid at a time, size 5; the button is off while a call is in flight, while the market
+  is closed or stale, and with less than 30 s of commit left (it counts down to the next commit).
+- Security headers: `connect-src` adds `https://helper.nearprotocol.com` on testnet, on every page
+  (`lib/headers.ts`, `lib/headers.test.ts`): a policy is fixed when a document loads and the site
+  moves between views without loading one. Sends go to fastnear, already listed.
+- Size (`next build`, 13 Nov 2026, `wc -c` and `gzip -9` on `out/_next/static/chunks`): the view's
+  chunk 26,824 bytes (8,513 gzipped), on the four `/try` pages only; the guest chunk 56,611
+  (20,811 gzipped), loaded when the view opens and referenced by no page's HTML.
+- Faucet CORS (`curl -X OPTIONS` with `Origin`, 13 Nov 2026): 204 with the origin allowed for
+  `https://tryweir.com`, `http://localhost:8787` and `https://weir.qvkare.workers.dev`.
+
+Run it locally against testnet:
+
+```sh
+pnpm --filter @weir/web preview      # next build, then wrangler dev on :8787
+open http://localhost:8787/m/h100-fast/try
+```
+
+One live run from the page (`wrangler dev` on :8787, in the desktop app's Chromium pane), 13 Nov
+2026 from 19:40:31 UTC: the faucet created `weir-try-ca5553d1483e.testnet`; it registered, minted
+and deposited 5.00 USD, committed LONG 5 GPU-hours at most 2.967 USD in round 9 of series 43; the
+page was reloaded once while the bid was sealed (about 100 s before the reveal) and resumed the same
+order without committing again; it revealed, cleared the round itself after the keeper's 20 s, and
+was filled 5 of 5 at 2.841 USD per GPU-hour, free balance 2.625 USD; 302 s from key to result, six
+transactions:
+[create_account](https://testnet.nearblocks.io/txns/FcukoVcQoJoReKZonMqMathARzxAR9Jv4FeqSv9m1Pof),
+[register](https://testnet.nearblocks.io/txns/H69cd2EwCzxV2zcqY1GZ2TQYMQPZwbCiJpDJZZLZGyyg),
+[storage_deposit, mint and ft_transfer_call](https://testnet.nearblocks.io/txns/2asu8CkkzJ9pZeraYi944Z2BbUCGam7KoDnk758KVfzd),
+[commit](https://testnet.nearblocks.io/txns/5HgvYiJBzyGRYg8wRv5CkwRxE39CT9CJ7ed4ixDEcmHR),
+[reveal](https://testnet.nearblocks.io/txns/5KnXW66ynCGYcR7cmjzvANVRadsed71iybtK3hg9SRRA),
+[clear](https://testnet.nearblocks.io/txns/4MmC4cBqnhGdQRQFeG1wdEMPrx93yhh8aYPZAA1FKBEF).
+Found in that run and fixed after it: the account row read "done" as soon as the key was made,
+before the faucet answered (`lib/try-state.ts`, tested). After the run, `next build` while
+`wrangler dev` was serving `out/` crashed wrangler (`SQLITE_BUSY` in its local state); a restart
+served the new build.
+
+Two more live runs from the page the same evening, same pane. "Bid again" with that account,
+from 19:50 UTC: series 43, round 11, filled 5 of 5 at 2.841 USD, position LONG 10, free balance
+2.25 USD. A missed reveal, from 20:01 UTC: a new account, `weir-try-5fd952d07dc3.testnet`,
+committed LONG 5 in round 1 of series 44; the tab went to another page before the reveal phase and
+came back 20 s after the round ended; the view ended the bid as "not revealed in time", cleared
+the round, showed 0.0282 USD forfeited (1% of the 2.82 USD lock) and 2.7918 USD returned, and
+offered "Bid again". Seen in that run and not fixed: for about 20 s after coming back, before the
+round's result was read, the step read "Revealed: done".
+
+Not proven: a run in a background tab (browsers slow timers in hidden tabs; the reveal has 120 s);
+Safari and Firefox (the runs were in the desktop app's Chromium pane); the faucet's rate limit
+under many visitors; "Settle and redeem" in a browser (covered on the fake RPC in
+`chain/test/guest.test.ts`). The
+countdowns read the chain again 1 s after a phase ends, then every 2 s for up to 30 s while the
+chain's clock still shows it (`useRefreshAt` in `components/live.tsx`); not measured in a browser.
+Lock, fee, forfeit and balance on this page are shown unrounded (`fmtUsdExact`: 1% of $2.90 is
+$0.029).
 
 ## JSON endpoints
 
@@ -125,7 +204,7 @@ Writes `public/icon.svg`, `icon-32.png`, `apple-icon.png`, `icon-512.png` and
 
 ## Not built
 
-- Wallet connection and the order form (scope: read-only first). `/auction` links to `/agents` instead.
+- Wallet connection and an order form with a price and size of your choosing. The one way to bid from the site is the test bid on the hourly market (below), with a throwaway account and a fixed order; to bid with your own account, `/agents` sets up a key.
 - The fills table's refund column (not readable from views; see DESIGN.md section 10).
 - The smoke test (`node scripts/smoke.ts`) mostly sees the static HTML. Its one layout pass (`scripts/frame-layout.ts`, headless Chrome, skipped with a note when no Chrome is found, `--no-layout` to skip) opens the nine views of the default and hourly markets at 1440x810, 1366x768, 1280x720, 1024x600, 900x560 and 390x844 and checks the end of each view and of its sidebar can be scrolled into sight. It was added on 14 Nov 2026 after the demo film's capture found the frame clipping its content at 1440x810: the frame's grid row grew with the content, so everything below the frame's own height was cut off (on 13 Nov, six of the nine views at 1440x810 and seven at 1366x768 and 1280x720, on both markets, and the sidebar of each of those; fixed in `components/front/app/parts.tsx` and `app/site.css`). The rest of the HTML checks: every page, every view of every market, the `?m=` redirects, every internal anchor, and that each item of the homepage window's sidebar opens a page showing that view. What the browser reads after load is covered by the loader tests (`lib/pages.test.ts`, on the model) and by one local Workers run against testnet on 12 Nov 2026 (`wrangler dev`): every page of the four markets, `?m=` redirects, a past round, at 375 px in both colour schemes. In that run the contracts each still held one full-access key, and the bundle host answered 404 for reports made before 12 Nov 2026, 19:15 UTC; Index prints counts those as "not published", apart from matched and did not match (`lib/verify.ts`, `summarizeChecks`, tested in `lib/verify.test.ts`).
 - The error state with both RPC endpoints down was tested in Node (`lib/near.test.ts`), not in a browser.

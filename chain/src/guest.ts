@@ -140,6 +140,10 @@ export interface GuestOrder {
   band: number;
   /** The commits' seqs once known; null while the commit's outcome is not known. */
   seqs: number[] | null;
+  /** What became of the reveal: `done`; `missed` (the reveal phase ended first: 1% of the lock
+   * is forfeited at clearing, the rest returns); `evicted` (a larger lock took its place; lock
+   * and fee returned). Absent until known, and in state stored before it. */
+  reveal?: "done" | "missed" | "evicted";
 }
 
 export interface GuestResult {
@@ -185,6 +189,8 @@ export interface GuestState {
   order: GuestOrder | null;
   result: GuestResult | null;
   txs: GuestTx[];
+  /** Earlier bids of this account, oldest first (`nextBid`). Absent in state stored before it. */
+  history?: GuestResult[];
 }
 
 /** What the chain says now, and the order the guest would place. Views only. */
@@ -541,16 +547,33 @@ export class Guest {
     return await this.#result(result);
   }
 
-  /** After the delivery hour: settles the series if nobody has, then redeems this account's
-   * position. A refusal to settle (too early, prints missing) is returned, not thrown. */
-  async settle(): Promise<GuestSettlement> {
+  /** After a cleared round: the same account bids again. The result moves to `history`, the
+   * order and the transaction list start empty, and the time limit starts again. Refused while
+   * an order is open (committed and not yet cleared). */
+  async nextBid(): Promise<void> {
     const st = this.#state;
-    const order = st?.result?.order ?? st?.order;
-    if (!st || !order) throw new Error("this guest has no order to settle");
+    if (!st) throw new Error("no account yet: call setup() or forAccount() first");
+    if (st.order && !st.result) throw new Error("this guest's order is still open: reveal and clear it first");
+    if (st.result) st.history = [...(st.history ?? []), st.result];
+    st.order = null;
+    st.result = null;
+    st.txs = [];
+    st.startedAt = this.#deps.now();
+    this.#deadlineAt = null;
+    await this.#save();
+  }
+
+  /** After the delivery hour: settles the series if nobody has, then redeems this account's
+   * position. A refusal to settle (too early, prints missing) is returned, not thrown.
+   * `series` defaults to the series of the latest order. */
+  async settle(series?: number): Promise<GuestSettlement> {
+    const st = this.#state;
+    const order = st?.result?.order ?? st?.order ?? st?.history?.at(-1)?.order;
+    if (!st || (series === undefined && !order)) throw new Error("this guest has no order to settle");
     await this.#ports();
     const txs: GuestTx[] = [];
     const before = st.txs.length;
-    const series = order.series;
+    series ??= order!.series;
     let reason: string | null = null;
     this.#step = "settle";
     const s = await this.#views.get_series({ series });
@@ -822,35 +845,55 @@ export class Guest {
     const p = this.#engineParams!;
     const opens = roundStart(p, o.series, o.round) + p.commitSecs;
     const closes = roundEnd(p, o.series, o.round);
-    let now = await this.#waitChain("reveal", opens, `the reveal phase of round ${o.round} opens`);
+    // A page that comes back after the reveal phase does not wait for it.
+    let now = (await this.#views.get_status({})).now;
+    if (now < closes) now = await this.#waitChain("reveal", opens, `the reveal phase of round ${o.round} opens`);
     for (const seq of o.seqs ?? []) {
       for (let attempt = 0; ; attempt++) {
         const r = await this.#views.get_round({ series: o.series, round: o.round });
         if (r === null) {
-          this.#emit({ type: "step", step: "reveal", message: `round ${o.round} is no longer open for reveals (already cleared)` });
+          // Cleared while this guest was away: revealed only if a reveal of it landed.
+          if (!o.reveal) o.reveal = this.#state!.txs.some((t) => t.method === "reveal" && t.ok) ? "done" : "missed";
+          await this.#save();
+          this.#emit({ type: "step", step: "reveal", message: o.reveal === "missed" ? missedText(o.round, this.#params?.forfeit_bps ?? 100) : `round ${o.round} is no longer open for reveals (already cleared)` });
           return;
         }
         const c = r.commits.find((x) => x.seq === seq);
         if (!c) {
+          o.reveal = "evicted";
+          await this.#save();
           this.#emit({ type: "step", step: "reveal", message: `seq ${seq} is not in the round: a larger lock evicted it and its lock and fee were returned` });
           break;
         }
         if (c.order !== null) {
+          o.reveal = "done";
+          await this.#save();
           this.#emit({ type: "step", step: "reveal", message: `seq ${seq} is already revealed` });
           break;
         }
         if (now >= closes) {
-          throw new GuestError("refused", "reveal", `the reveal phase of round ${o.round} ended before seq ${seq} was revealed: 1% of its lock is forfeited at clearing`);
+          // Too late to reveal: not an error to stop on. The round clears without it and the
+          // bid ends with a result, so the same account can bid again.
+          o.reveal = "missed";
+          await this.#save();
+          this.#emit({ type: "step", step: "reveal", message: missedText(o.round, this.#params?.forfeit_bps ?? 100) });
+          break;
         }
         this.#emit({ type: "step", step: "reveal", message: `revealing seq ${seq}: LONG ${o.size} at ${price(o.floor + o.price)}` });
         try {
           await this.#port!.reveal({ series: o.series, round: o.round, seq, side: o.side, size: o.size, price: o.price, salt: o.salt });
+          o.reveal = "done";
+          await this.#save();
           this.#emit({ type: "done", step: "reveal", message: `revealed seq ${seq}` });
           break;
         } catch (e) {
           if (!(e instanceof CallFailed)) throw this.#plain(e);
           this.#refused("reveal", e);
-          if (e.message === ERR.ALREADY_REVEALED) break;
+          if (e.message === ERR.ALREADY_REVEALED) {
+            o.reveal = "done";
+            await this.#save();
+            break;
+          }
           if (e.message === ERR.NOT_REVEAL_PHASE && attempt === 0) {
             now = await this.#waitChain("reveal", opens + 1, "the reveal phase opens (the chain's clock is behind)");
             continue;
@@ -926,7 +969,11 @@ export class Guest {
     const outcome =
       (o.seqs ?? []).length === 0
         ? "no commit"
-        : filled === 0
+        : o.reveal === "missed"
+          ? `not revealed in time: ${p100(this.#params?.forfeit_bps ?? 100)} of the lock (${usd((big(o.lock) * big(this.#params?.forfeit_bps ?? 100)) / 10_000n)}) is forfeited at clearing and the rest is back in the free balance`
+          : o.reveal === "evicted"
+            ? "evicted before the reveal by a larger lock; the lock and the fee were returned"
+            : filled === 0
           ? res.price === null
             ? "the round did not trade; the lock is back in the free balance"
             : "not filled: the clearing price was above this order's limit; the lock is back in the free balance"
@@ -1039,6 +1086,9 @@ export class Guest {
     this.#deps.onEvent?.(e);
   }
 }
+
+const p100 = (bps: number): string => `${bps / 100}%`;
+const missedText = (round: number, bps: number): string => `the reveal phase of round ${round} ended before the order was revealed: ${p100(bps)} of its lock is forfeited when the round clears, and the rest returns`;
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 

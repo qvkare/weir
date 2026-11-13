@@ -5,7 +5,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Countdown } from "@/components/countdown.tsx";
-import { APP_VIEWS, type AppView } from "@/lib/app-views.ts";
+import { viewsFor, type AppView } from "@/lib/app-views.ts";
 import { MARKET_IDS, MARKET_INFO, withMarket, type MarketId } from "@/lib/config.ts";
 import type { FrontChip, FrontRow } from "@/lib/data/front.ts";
 import { dollarsOfPrice, fmtGpuH, fmtUsd, fmtUtcTime } from "@/lib/format.ts";
@@ -91,7 +91,7 @@ export function Sidebar({ network, chips, selected, view, onSelect }: SidebarPro
       </Group>
       {(["Views", "Proof"] as const).map((g) => (
         <Group key={g} title={g}>
-          {APP_VIEWS.filter((v) => v.group === g).map((v) => (
+          {viewsFor(selected).filter((v) => v.group === g).map((v) => (
             <NavItem key={v.id} icon={ICONS[v.id]} href={withMarket(v.path, selected)} current={v.id === view.id}>
               {v.label}
             </NavItem>
@@ -115,6 +115,9 @@ export function PhoneNav({ selected, view }: { selected: MarketId; view: AppView
   const go = (href: string) => {
     window.location.assign(href);
   };
+  // A view the sidebar does not list for this market (the test bid on a weekly market) stays selectable while shown.
+  const listed = viewsFor(selected);
+  const views = listed.some((v) => v.id === view.id) ? listed : [...listed, view];
   return (
     <div className="grid grid-cols-2 gap-2 border-b border-border p-3 md:hidden">
       <label className="grid gap-1 text-xs text-muted-foreground">
@@ -129,8 +132,8 @@ export function PhoneNav({ selected, view }: { selected: MarketId; view: AppView
       </label>
       <label className="grid gap-1 text-xs text-muted-foreground">
         View
-        <select className="h-9 rounded-md bg-background px-2 text-sm text-foreground ring-1 ring-border" value={view.id} onChange={(e) => go(withMarket(APP_VIEWS.find((v) => v.id === e.target.value)!.path, selected))}>
-          {APP_VIEWS.map((v) => (
+        <select className="h-9 rounded-md bg-background px-2 text-sm text-foreground ring-1 ring-border" value={view.id} onChange={(e) => go(withMarket(views.find((v) => v.id === e.target.value)!.path, selected))}>
+          {views.map((v) => (
             <option key={v.id} value={v.id}>
               {v.group === "Proof" ? `Proof: ${v.label}` : v.label}
             </option>
@@ -346,6 +349,12 @@ const ICONS: Record<string, ReactNode> = {
   prints: (
     <I>
       <path d="M2.5 12.5h11M3.5 10l3-3 2.5 2 4-4.5" />
+    </I>
+  ),
+  try: (
+    <I>
+      <rect x="2.5" y="4" width="11" height="8" rx="1.5" />
+      <path d="M5.5 8h5M8.5 6l2 2-2 2" />
     </I>
   ),
   agents: (

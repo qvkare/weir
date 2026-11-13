@@ -14,6 +14,7 @@ import { fmtUtc } from "@/lib/format.ts";
 import { recordedBundle } from "@/lib/load-server.ts";
 import { siteCfg } from "@/lib/site.ts";
 import { serverReader, source } from "@/lib/source.ts";
+import { TryViewLazy } from "@/components/front/app/try-view-lazy.tsx";
 import { AgentsGuide } from "./agents-page.tsx";
 import { Audited, contractRows, ParamsTable, SandboxLine, Transactions } from "./proof-page.tsx";
 
@@ -66,6 +67,9 @@ export async function AppPage({ viewId, market }: { viewId: string; market: Mark
       }
       break;
     }
+    case "try":
+      body = <TryViewLazy {...common} />;
+      break;
     case "review": {
       const c = await loadProof([], serverReader, market);
       body = <ReviewView {...common} review={<Audited market={market} params={c.params ? valueOf(c.params) : null} kind={c.kind} />} sandbox={<SandboxLine />} />;

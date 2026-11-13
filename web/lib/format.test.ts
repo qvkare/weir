@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fmtBps, fmtCountdown, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUsd, fmtUtc, fmtUtcTime, NO_DATA, shortAccount, shortHash, tickDecimals, toBig } from "./format.ts";
+import { fmtBps, fmtCountdown, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUsd, fmtUsdExact, fmtUtc, fmtUtcTime, NO_DATA, shortAccount, shortHash, tickDecimals, toBig } from "./format.ts";
 
 test("prices carry their unit and the tick's decimals", () => {
   assert.equal(fmtPrice(2_310_000, 10_000), "$2.31 /GPU-h");
@@ -72,4 +72,16 @@ test("hashes and accounts shorten in the middle", () => {
   const a = shortAccount("a-very-long-account-name-for-an-agent.testnet", 21);
   assert.equal(a.length, 21);
   assert.ok(a.includes("…"));
+});
+
+test("fmtUsdExact: no rounding, at least to the cent", () => {
+  assert.equal(fmtUsdExact("29000"), "$0.029");
+  assert.equal(fmtUsdExact("2900000"), "$2.90");
+  assert.equal(fmtUsdExact("2625000"), "$2.625");
+  assert.equal(fmtUsdExact("28250"), "$0.02825");
+  assert.equal(fmtUsdExact(1n), "$0.000001");
+  assert.equal(fmtUsdExact(0n), "$0.00");
+  assert.equal(fmtUsdExact("41200000000"), "$41,200.00");
+  assert.equal(fmtUsdExact(-2_500_000n), "-$2.50");
+  assert.equal(fmtUsdExact("1.5"), NO_DATA);
 });

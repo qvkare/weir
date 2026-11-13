@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { AgentPanel, LiveCurves, NoRoundInProgress, RoundResult, SealedBook } from "@/components/auction-blocks.tsx";
 import { SeriesStrips } from "@/components/home-blocks.tsx";
-import { LiveBar, useLive } from "@/components/live.tsx";
+import { LiveBar, useLive, useRefreshAt } from "@/components/live.tsx";
 import { NotDeployed, RpcError } from "@/components/state.tsx";
 import { Contracts, Solvency } from "@/components/pages/proof-live.tsx";
 import { ProofIndex } from "@/components/pages/proof-index.tsx";
@@ -76,10 +76,13 @@ function useMovedAnchors(view: AppView, market: MarketId, off = false) {
   }, [view, market, off]);
 }
 
-function ShellFrame(p: ShellProps & { chips?: ReactNode; children: ReactNode }) {
-  const [st] = useShell(p);
+export function ShellFrame(p: ShellProps & { chips?: ReactNode; children: ReactNode }) {
+  const [st, reread] = useShell(p);
   useMovedAnchors(p.view, p.market, p.embedded);
   const s = st.data;
+  // The title row's countdown: read again when its phase ends, not on the next poll.
+  const ends = !p.embedded && s.live?.phase_ends_at ? (st.from === "build" ? s.live.phase_ends_at * 1000 : st.at + (s.live.phase_ends_at - s.now) * 1000) : null;
+  useRefreshAt(ends, st.at, reread);
   const auctionView = p.view.section === "auction";
   return (
     <Frame
@@ -95,10 +98,17 @@ function ShellFrame(p: ShellProps & { chips?: ReactNode; children: ReactNode }) 
           frozen={p.embedded}
           action={
             auctionView ? (
-              <Link href="/how" className="text-xs text-foreground underline underline-offset-4">
-                How a round works
-              </Link>
-            ) : (
+              <span className="inline-flex items-center gap-3">
+                <Link href="/how" className="text-xs text-foreground underline underline-offset-4">
+                  How a round works
+                </Link>
+                {p.market === "h100-fast" && !p.embedded ? (
+                  <Link href={withMarket("/try", p.market)} className={smallButton}>
+                    Place a test bid
+                  </Link>
+                ) : null}
+              </span>
+            ) : p.view.id === "try" ? null : (
               <Link href={withMarket("/auction", p.market)} className={smallButton}>
                 Open the auction
               </Link>

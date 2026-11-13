@@ -5,7 +5,8 @@
   "description": "A minimal NEAR JSON-RPC client, the Weir contract port (on chain and on the engine model), the USDC token calls and a NEAR Intents quote client.",
   "type": "module",
   "exports": {
-    ".": "./src/mod.ts"
+    ".": "./src/mod.ts",
+    "./guest": "./src/guest.ts"
   },
   "scripts": {
     "test": "node --test --disable-warning=ExperimentalWarning \"test/**/*.test.ts\"",

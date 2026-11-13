@@ -1,7 +1,15 @@
 // The security headers every response carries. The browser may talk to this site, the NEAR RPC
-// endpoints and the bundle host (deployments.json), and nothing else. Used by the Worker for the
-// responses it makes and written to out/_headers for the assets Cloudflare serves directly.
+// endpoints and the bundle host (deployments.json), the testnet faucet, and nothing else. Used by
+// the Worker for the responses it makes and written to out/_headers for the assets Cloudflare
+// serves directly.
 import type { Deployments } from "./config.ts";
+
+/** The NEAR testnet faucet that creates the test bid's throwaway account (chain/src/faucet.ts).
+ * Allowed on every page, not only on /m/h100-fast/try: a policy is fixed when a document loads,
+ * and the site moves between its views without loading a new document, so a test bid opened from
+ * another view would run under that view's policy. The test bid's transactions go to the RPC
+ * endpoints already listed (fastnear first for sends). */
+export const FAUCET_ORIGIN = "https://helper.nearprotocol.com";
 
 const originOf = (u: string): string | null => {
   try {
@@ -11,11 +19,11 @@ const originOf = (u: string): string | null => {
   }
 };
 
-export function connectSources(d: Pick<Deployments, "rpc" | "bundlesBase">): string[] {
-  return [...new Set(["'self'", ...d.rpc.map(originOf), d.bundlesBase ? originOf(d.bundlesBase) : null].filter((x): x is string => !!x))];
+export function connectSources(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">): string[] {
+  return [...new Set(["'self'", ...d.rpc.map(originOf), d.bundlesBase ? originOf(d.bundlesBase) : null, d.network === "testnet" ? FAUCET_ORIGIN : null].filter((x): x is string => !!x))];
 }
 
-export function csp(d: Pick<Deployments, "rpc" | "bundlesBase">, dev = false): string {
+export function csp(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">, dev = false): string {
   return [
     "default-src 'self'",
     // Next.js inlines its boot data as inline scripts in static pages, and the theme and motion
@@ -33,7 +41,7 @@ export function csp(d: Pick<Deployments, "rpc" | "bundlesBase">, dev = false): s
   ].join("; ");
 }
 
-export function securityHeaders(d: Pick<Deployments, "rpc" | "bundlesBase">): Record<string, string> {
+export function securityHeaders(d: Pick<Deployments, "rpc" | "bundlesBase" | "network">): Record<string, string> {
   return {
     "Content-Security-Policy": csp(d),
     "X-Content-Type-Options": "nosniff",

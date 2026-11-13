@@ -197,14 +197,22 @@ export function NoRoundInProgress({ params, now }: { params: WireParams; now: nu
 }
 
 export function AgentPanel({ market }: { market: MarketId }) {
+  const hourly = market === "h100-fast";
   return (
     <aside className="state none" aria-labelledby="bid-agent-h">
-      <h3 id="bid-agent-h" style={{ fontSize: "var(--t18)" }}>Bid with an agent</h3>
-      <p className="small" style={{ marginTop: 8 }}>
-        This version of the site reads the chain and does not hold keys. To bid, give an agent a function-call key that can commit, reveal, clear and redeem, and cannot withdraw.
-      </p>
-      <p style={{ marginTop: 12 }}>
-        <Link className="button" href={withMarket("/agents", market)}>Set up an agent</Link>
+      <h3 id="bid-agent-h" style={{ fontSize: "var(--t18)" }}>{hourly ? "Bid from this page, or with an agent" : "Bid with an agent"}</h3>
+      {hourly ? (
+        <p className="small" style={{ marginTop: 8 }}>
+          A test bid places one sealed order from this browser with a throwaway testnet account and test dollars; the page makes and keeps its key. To bid with an account of your own, give an agent a function-call key that can commit, reveal, clear and redeem, and cannot withdraw.
+        </p>
+      ) : (
+        <p className="small" style={{ marginTop: 8 }}>
+          To bid, give an agent a function-call key that can commit, reveal, clear and redeem, and cannot withdraw. The site never asks for your keys. A test bid from this browser runs on the <Link href={withMarket("/try", "h100-fast")}>hourly market</Link>.
+        </p>
+      )}
+      <p style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {hourly ? <Link className="button" href={withMarket("/try", market)}>Place a test bid</Link> : null}
+        <Link className={hourly ? "button ghost" : "button"} href={withMarket("/agents", market)}>Set up an agent</Link>
       </p>
     </aside>
   );

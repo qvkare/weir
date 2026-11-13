@@ -52,6 +52,18 @@ export function fmtUsd(v: bigint | string | number | null | undefined): string {
   return `${neg ? "-" : ""}$${whole.toLocaleString("en-US")}.${frac}`;
 }
 
+/** micro-USDC as dollars with no rounding, at least to the cent: "$2.90", "$0.029", "$2.625".
+ * For the test bid's lock, fee, forfeit and balance, where a cent rounded down misstates a
+ * small amount (1% of $2.90 is $0.029, not $0.02). */
+export function fmtUsdExact(v: bigint | string | number | null | undefined): string {
+  const b = toBig(v);
+  if (b === null) return NO_DATA;
+  const neg = b < 0n;
+  const abs = neg ? -b : b;
+  const frac = (abs % 1_000_000n).toString().padStart(6, "0").replace(/0+$/, "").padEnd(2, "0");
+  return `${neg ? "-" : ""}$${(abs / 1_000_000n).toLocaleString("en-US")}.${frac}`;
+}
+
 /** As fmtUsd, but an exact zero reads "none", so a real zero is never mistaken for a placeholder. */
 export function fmtUsdOrNone(v: bigint | string | number | null | undefined): string {
   const b = toBig(v);

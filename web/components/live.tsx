@@ -93,6 +93,27 @@ export function useLive<T>(o: LiveOptions<T>): [LiveState<T>, () => void] {
   return [st, run];
 }
 
+/**
+ * Reads again when a phase ends: `endsAt` is the wall-clock ms the figures on screen say it ends,
+ * `readAt` when they were read. Fires 1 s after the end, and again 2 s after each read that still
+ * shows a phase already over (the chain's clock trails the wall by a few seconds), for at most
+ * 30 s. Never more than one read per 2 s from here, so requests stay apart.
+ */
+export function useRefreshAt(endsAt: number | null, readAt: number, refresh: () => void): void {
+  const fn = useRef(refresh);
+  fn.current = refresh;
+  useEffect(() => {
+    if (endsAt === null) return;
+    const now = Date.now();
+    if (now > endsAt + 30_000) return;
+    const delay = Math.max(endsAt + 1000 - now, readAt + 2000 - now, 1000);
+    const id = window.setTimeout(() => {
+      if (!document.hidden) fn.current();
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [endsAt, readAt]);
+}
+
 const hms = (ms: number) => new Date(ms).toISOString().slice(11, 19);
 
 /** One line above a page's live figures: where they came from, when, and what is polled. */

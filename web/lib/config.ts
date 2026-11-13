@@ -35,7 +35,7 @@ const ALIASES: Record<string, MarketId> = { weekly: "h100-weekly", fast: "h100-f
 export const marketsOfChip = (chip: ChipKey, among: readonly MarketId[] = MARKET_IDS): MarketId[] => among.filter((m) => MARKET_INFO[m].chip === chip);
 
 /** The pages written once per market; the rest (/spec, /audit, /backtest) are the same for all. */
-export const PER_MARKET_PAGES: readonly string[] = ["/", "/auction", "/auction/book", "/auction/clearings", "/auction/prints", "/agents", "/proof", "/proof/solvency", "/proof/review", "/proof/record", "/how", "/simulate"];
+export const PER_MARKET_PAGES: readonly string[] = ["/", "/auction", "/auction/book", "/auction/clearings", "/auction/prints", "/agents", "/proof", "/proof/solvency", "/proof/review", "/proof/record", "/how", "/simulate", "/try"];
 
 /**
  * A page of a market: the plain path for the default market, /m/<market>/<page> for the others

@@ -506,3 +506,81 @@ test("a function-call key without allowance for clear leaves it to the keeper, t
   assert.equal(result.filled, 5);
   assert.deepEqual(w.sentBy(id).map((s) => s.method), ["commit", "reveal"]);
 });
+
+test("bidding again with the same account: the result moves to history, no second account", async () => {
+  const w = world({ start: 5, keeper: true, counterparty: true });
+  const guest = await w.load();
+  const first = await guest.run();
+  await guest.nextBid();
+  assert.equal(w.state()!.result, null);
+  assert.equal(w.state()!.order, null);
+  assert.deepEqual(w.state()!.txs, []);
+  assert.deepEqual(w.state()!.history!.map((r) => r.round), [first.round]);
+  const second = await (await w.load()).run();
+  assert.equal(second.accountId, first.accountId);
+  assert.ok(second.round > first.round);
+  assert.equal(w.faucetCalls.length, 1);
+  assert.equal(w.sentBy(first.accountId, "register").length, 1);
+  assert.equal(w.sentBy(first.accountId, "commit").length, 2);
+  assert.ok(!second.txs.some((t) => t.method === "create_account" || t.method === "register"));
+  // An open order cannot be put aside.
+  const third = await w.load();
+  await third.nextBid();
+  const s = w.state()!;
+  s.order = { ...first.order };
+  w.storage.data.set(KEY, JSON.stringify(s));
+  await assert.rejects((await w.load()).nextBid(), /still open/);
+});
+
+test("a page back after the reveal phase: the missed reveal ends the bid with a result, no throw, and the account bids again", async () => {
+  const w = world({ start: 5, keeper: true, counterparty: true });
+  const inner = w.deps.onEvent;
+  w.deps.onEvent = (e: GuestEvent) => {
+    inner(e);
+    if (e.type === "done" && e.step === "commit") w.crashOnNextSleep();
+  };
+  await assert.rejects((await w.load()).run(), /crash/);
+  w.deps.onEvent = inner;
+  const order = w.state()!.order!;
+  // The page was closed through the reveal phase: the round is over, nobody has cleared it yet.
+  w.market.setTime(OPEN + order.round * 300 + 300 + 5);
+  const result = await (await w.load()).run();
+  const me = result.accountId;
+  assert.equal(w.sentBy(me, "reveal").length, 0);
+  assert.equal(result.order.reveal, "missed");
+  assert.equal(result.filled, 0);
+  assert.match(result.outcome, /^not revealed in time: 1% of the lock \(0\.02825 USD\) is forfeited at clearing and the rest is back in the free balance$/);
+  const deposited = BigInt(w.sentBy(me, "ft_transfer_call")[0]!.args.amount as string);
+  assert.equal(result.balance, (deposited - 100_000n - BigInt(order.lock) / 100n).toString());
+  assert.ok(w.events.some((e) => e.type === "step" && e.step === "reveal" && /ended before the order was revealed/.test(e.message)));
+  // Terminal: loading again sends nothing and returns the same result.
+  const n = w.fake.sent.length;
+  assert.deepEqual(await (await w.load()).run(), result);
+  assert.equal(w.fake.sent.length, n);
+  // A new bid with the same account.
+  const g = await w.load();
+  await g.nextBid();
+  const second = await g.run();
+  assert.equal(second.accountId, me);
+  assert.ok(second.round > order.round);
+  assert.equal(w.sentBy(me, "reveal").length, 1);
+  assert.equal(w.faucetCalls.length, 1);
+});
+
+test("a page back after the round was cleared without its reveal: the stored order ends as missed", async () => {
+  const w = world({ start: 5, keeper: true });
+  w.deps.onEvent = ((inner) => (e: GuestEvent) => {
+    inner(e);
+    if (e.type === "done" && e.step === "commit") w.crashOnNextSleep();
+  })(w.deps.onEvent);
+  await assert.rejects((await w.load()).run(), /crash/);
+  const order = w.state()!.order!;
+  w.market.setTime(OPEN + order.round * 300 + 300 + 30);
+  new ModelWeir(w.market, "keeper.testnet").sync.change("clear", { series: SERIES, round: order.round });
+  const result = await (await w.load()).run();
+  assert.equal(result.order.reveal, "missed");
+  assert.match(result.outcome, /^not revealed in time/);
+  assert.equal(w.state()!.result!.round, order.round);
+  await (await w.load()).nextBid();
+  assert.equal(w.state()!.order, null);
+});
