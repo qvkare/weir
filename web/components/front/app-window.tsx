@@ -19,18 +19,20 @@ export interface AppWindowProps {
   network: string;
   /** The live-read line (components/live.tsx). */
   bar: ReactNode;
+  /** No sidebar: the grid alone (the closing section). */
+  compact?: boolean;
 }
 
 const CLEARINGS = viewById("clearings");
 
-export function AppWindow({ d, selected, onSelect, wall, network, bar }: AppWindowProps) {
+export function AppWindow({ d, selected, onSelect, wall, network, bar, compact }: AppWindowProps) {
   const reading = d.market !== selected;
   const live = reading ? null : d.live;
   const series = live?.series ?? null;
   const spansTwo = d.rows.some((r) => r.series !== series);
   return (
     <Frame
-      sidebar={<Sidebar network={network} chips={d.chips} selected={selected} view={CLEARINGS} onSelect={onSelect} />}
+      sidebar={compact ? null : <Sidebar network={network} chips={d.chips} selected={selected} view={CLEARINGS} onSelect={onSelect} />}
       title={
         <TitleRow
           market={selected}

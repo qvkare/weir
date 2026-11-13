@@ -73,6 +73,9 @@
   --text-7xl: var(--thero);
   --text-7xl--line-height: 1.04;
   --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Every Tailwind transition without its own duration or easing takes these (DESIGN.md 6.4). */
+  --default-transition-duration: 200ms;
+  --default-transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Entrances: the hero text, then the market window, settle in once. Nothing loops.
@@ -88,7 +91,7 @@
 }
 
 :root.anim .front-rise {
-  animation: front-rise 0.7s var(--ease-settle) both;
+  animation: front-rise var(--dur-enter) var(--ease-settle) both;
 }
 
 :root.anim-done .front-rise,
@@ -248,5 +251,222 @@
 
   .doc .spec-body-text {
     max-width: 72ch;
+  }
+}
+
+/* The landscape (components/front/scene.tsx). Light: a pale morning; dark: slate to mauve at
+   dusk, dark olive hills, dusty-rose dunes. Low saturation, no strokes. --hp is the hero's scroll
+   progress, 0 to 1, set by the scene's script; without it everything stands still. */
+:root {
+  /* One easing and one set of durations for the whole site (DESIGN.md 6.4). The legacy names in
+     app/globals.css are pointed at the same curve, so its transitions move the same way. */
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: var(--ease-settle);
+  --ease-in-out: var(--ease-settle);
+  --ease-overshoot: var(--ease-settle);
+  --dur-micro: 120ms;
+  --dur-quick: 200ms;
+  --dur-base: 320ms;
+  --dur-settle: 560ms;
+  --dur-enter: 700ms;
+  --sky-1: #e9eaee;
+  --sky-2: #e3e3e8;
+  --sky-3: #eadcd8;
+  --far-1: #d6d0d0;
+  --far-2: #cfcbc6;
+  --mid-1: #bfc1b2;
+  --mid-2: #b0b39f;
+  --near-1: #a9ae99;
+  --near-2: #979c86;
+  --dune-1: #e2cbc8;
+  --dune-2: #d8bdbb;
+  --dune-3: #cfb0b0;
+  --grain-a: 0.05;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sky-1: #15171a;
+    --sky-2: #262a30;
+    --sky-3: #4f434b;
+    --far-1: #3f383e;
+    --far-2: #2f2c30;
+    --mid-1: #2b2e27;
+    --mid-2: #1f211c;
+    --near-1: #23261f;
+    --near-2: #161814;
+    --dune-1: #5e464b;
+    --dune-2: #43333a;
+    --dune-3: #3a2b30;
+    --grain-a: 0.07;
+  }
+}
+
+:root[data-theme="dark"] {
+  --sky-1: #15171a;
+  --sky-2: #262a30;
+  --sky-3: #4f434b;
+  --far-1: #3f383e;
+  --far-2: #2f2c30;
+  --mid-1: #2b2e27;
+  --mid-2: #1f211c;
+  --near-1: #23261f;
+  --near-2: #161814;
+  --dune-1: #5e464b;
+  --dune-2: #43333a;
+  --dune-3: #3a2b30;
+  --grain-a: 0.07;
+}
+
+.hero-scene,
+.dune-scene {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--background);
+}
+
+.hero-scene {
+  padding-bottom: 40px;
+}
+
+.scene-sky {
+  position: absolute;
+  inset: -240px 0 0;
+  z-index: 0;
+  background: linear-gradient(to bottom, var(--background) 0%, var(--sky-1) 10%, var(--sky-2) 38%, var(--sky-3) 62%, var(--sky-3) 100%);
+  transform: translate3d(0, calc(var(--hp, 0) * 220px), 0);
+}
+
+.scene-layer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 84%;
+  pointer-events: none;
+}
+
+.scene-far {
+  z-index: 1;
+  transform: translate3d(0, calc(var(--hp, 0) * 190px), 0);
+}
+
+.scene-mid {
+  z-index: 2;
+  transform: translate3d(0, calc(var(--hp, 0) * 130px), 0);
+}
+
+.scene-near {
+  z-index: 3;
+  transform: translate3d(0, calc(var(--hp, 0) * 70px), 0);
+}
+
+.scene-copy {
+  position: relative;
+  z-index: 10;
+  transform: translate3d(0, calc(var(--hp, 0) * 80px), 0);
+  opacity: calc(1 - var(--hp, 0) * 1.4);
+}
+
+.scene-window {
+  position: relative;
+  z-index: 10;
+  transform: translate3d(0, calc(var(--hp, 0) * 150px), 0);
+}
+
+.scene-dunes {
+  z-index: 20;
+}
+
+.scene-far-static {
+  z-index: 1;
+  height: 80%;
+}
+
+.scene-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  opacity: var(--grain-a);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>");
+}
+
+.scene-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: var(--background);
+  opacity: clamp(0, calc((var(--hp, 0) - 0.3) * 1.7), 1);
+}
+
+.scene-sky,
+.scene-far,
+.scene-mid,
+.scene-near,
+.scene-window,
+.scene-copy {
+  will-change: transform;
+}
+
+.dune-scene .scene-layer {
+  height: 100%;
+}
+
+/* One easing for the whole site: --ease-settle, cubic-bezier(0.16, 1, 0.3, 1); durations
+   --dur-quick 200 ms (hovers, tabs), --dur-base 320 ms (colour and state changes),
+   --dur-settle 560 ms (the header's change to a pill, cross-fades), 700 ms for entrances. */
+@keyframes tab-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.tab-progress {
+  width: 0%;
+  animation-name: tab-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes front-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+:root.anim .front-fade {
+  animation: front-fade var(--dur-settle) var(--ease-settle) both;
+}
+
+:root.anim-done .front-fade {
+  animation-delay: 0s;
+}
+
+/* Section entrances: a short fade with a small rise as each section comes into view, where the
+   browser drives animations from the scroll; elsewhere, and under reduced motion, nothing moves. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    :root.anim:not([data-motion="reduce"]) .reveal {
+      animation: front-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+}
+
+/* "How it works": from md up the step cards pin under the header in turn, each 20px lower than
+   the last, and slide over one another. position: sticky only, so it needs no script; a plain
+   stack on phones and under reduced motion. */
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"]) .how-card {
+    position: sticky;
+    top: calc(104px + var(--n, 0) * 20px);
+    box-shadow: 0 -24px 60px -30px rgba(0, 0, 0, 0.45);
   }
 }

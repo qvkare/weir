@@ -47,8 +47,8 @@ async function post(url: string, body: unknown): Promise<unknown> {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      // No `cache` option: JSON-RPC is a POST, which nothing caches, and the Workers runtime and
-      // Next's static build both refuse some values of it.
+      // No `cache` option: the Workers runtime and Next's static build both refuse some values of
+      // it. Next's build does cache these POSTs between builds; next.config.ts drops that cache.
       signal: ctrl.signal,
     });
     if (!res.ok) throw new RpcError(`${new URL(url).host} answered HTTP ${res.status}`);

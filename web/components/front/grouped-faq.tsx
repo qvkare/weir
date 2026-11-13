@@ -19,7 +19,7 @@ export function GroupedFaq({ groups }: { groups: FaqGroup[] }) {
               <details key={it.question} className="group rounded-xl px-5 py-1 open:bg-card open:shadow-sm open:ring-1 open:ring-border">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-border py-4 text-base text-foreground group-open:border-transparent [&::-webkit-details-marker]:hidden">
                   {it.question}
-                  <span aria-hidden="true" className="text-muted-foreground transition-transform duration-200 group-open:rotate-45">
+                  <span aria-hidden="true" className="text-muted-foreground transition-transform group-open:rotate-45">
                     +
                   </span>
                 </summary>

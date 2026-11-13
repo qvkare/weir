@@ -7,6 +7,10 @@ import { fmtBps, fmtInt, fmtUtc } from "@/lib/format.ts";
 export const dynamic = "force-static";
 export const metadata: Metadata = { title: "Backtest", description: "Hedged against unhedged H100 cost over real price history, week by week, with band coverage and what the backtest does not show." };
 
+/** The backtest's rule strings, read as a visitor would: no function or field names. */
+const plain = (v: string | null): string | null =>
+  v === null ? null : v.replace(/\s*\(engine [^)]*\)/g, "").replace(/band_bps \/ 10000/g, "the band's share").replace(/hoursPerWeek/g, "the hours used a week").replace(/leadDays/g, "the lead time").replace(/maxAnchorAgeDays/g, "the anchor's age limit").replace(/minDeliveryPrints/g, "the minimum");
+
 function usd(v: number | null | undefined, d = 2): string {
   if (v === null || v === undefined || !Number.isFinite(v)) return "no data";
   const r = Number(v.toFixed(d));
@@ -75,7 +79,7 @@ export default function BacktestPage() {
         <section className="section" aria-labelledby="chart-h">
           <div className="section-head">
             <h2 id="chart-h">Hedged and unhedged, per GPU-hour, week by week</h2>
-            <span className="note">band_bps {bandBps ?? "no data"}, clearing at the anchor (modelled)</span>
+            <span className="note">{bandBps ? `A band of ${fmtBps(bandBps)} either side of the anchor` : "Band not recorded"}, clearing at the anchor (modelled)</span>
           </div>
           <BacktestChart weeks={bt.weeks} summary={summary} />
           <div className="legend" aria-hidden="true">
@@ -131,13 +135,13 @@ export default function BacktestPage() {
             </dd>
             <dt>Band</dt>
             <dd>
-              band_bps {bandBps ?? "no data"}{bandBps ? ` (${fmtBps(bandBps)} of the anchor each way)` : ""}. {str(get(s, "parameters", "band_rule"))}
+              {bandBps ? `${fmtBps(bandBps)} of the anchor either side` : "not recorded"}. {plain(str(get(s, "parameters", "band_rule")))}
             </dd>
             <dt>LONG price p</dt>
-            <dd>{str(get(s, "parameters", "neutral_price")) ?? str(bt.meta.note) ?? "no data"}. This is modelled: nobody traded these weeks.</dd>
+            <dd>{plain(str(get(s, "parameters", "neutral_price"))) ?? str(bt.meta.note) ?? "no data"}. This is modelled: nobody traded these weeks.</dd>
             <dt>Cost</dt>
             <dd>
-              {str(get(s, "parameters", "cost_rule"))}
+              {plain(str(get(s, "parameters", "cost_rule")))}
               {hours ? ` Usage: ${fmtInt(hours)} GPU-hours a week.` : ""}
             </dd>
             <dt>Not modelled</dt>
@@ -158,7 +162,7 @@ export default function BacktestPage() {
                 <caption>Share of weeks whose average stayed inside the band, with a 95% Wilson interval</caption>
                 <thead>
                   <tr>
-                    <th scope="col">band_bps</th>
+                    <th scope="col">Band, either side</th>
                     <th scope="col" className="num">Inside</th>
                     <th scope="col" className="num">Above cap</th>
                     <th scope="col" className="num">Below floor</th>
@@ -172,7 +176,7 @@ export default function BacktestPage() {
                     return (
                       <tr key={String(r.band_bps)} className={r.band_bps === bandBps ? "ink" : undefined}>
                         <td>
-                          {String(r.band_bps)} ({fmtBps(num(r.band_bps))})
+                          {fmtBps(num(r.band_bps))}
                         </td>
                         <td className="num">
                           {fmtInt(num(r.inside))} of {fmtInt(num(r.weeks))}

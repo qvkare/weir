@@ -36,6 +36,8 @@ export interface ShellProps {
   shell: ShellData;
   /** Every market the sidebar lists. */
   markets: MarketId[];
+  /** Shown inside the homepage's tabs: figures as published, no reads, no address forwarding. */
+  embedded?: boolean;
 }
 
 function useShell({ cfg, market, shell, markets }: ShellProps) {
@@ -57,8 +59,9 @@ function useShell({ cfg, market, shell, markets }: ShellProps) {
 }
 
 /** Forwards old anchors of this section's page (/proof#audited, /auction#book-h…) to their view. */
-function useMovedAnchors(view: AppView, market: MarketId) {
+function useMovedAnchors(view: AppView, market: MarketId, off = false) {
   useEffect(() => {
+    if (off) return;
     const id = location.hash.slice(1);
     const to = id ? MOVED_ANCHORS[view.section][id] : null;
     const q = new URLSearchParams(location.search);
@@ -70,17 +73,17 @@ function useMovedAnchors(view: AppView, market: MarketId) {
     if (!to || to.split("#")[0] === view.path) return;
     const [path, hash] = to.split("#") as [string, string | undefined];
     location.replace(withMarket(path, market) + (hash ? `#${hash}` : ""));
-  }, [view, market]);
+  }, [view, market, off]);
 }
 
 function ShellFrame(p: ShellProps & { chips?: ReactNode; children: ReactNode }) {
   const [st] = useShell(p);
-  useMovedAnchors(p.view, p.market);
+  useMovedAnchors(p.view, p.market, p.embedded);
   const s = st.data;
   const auctionView = p.view.section === "auction";
   return (
     <Frame
-      fill
+      fill={p.embedded ? "embed" : true}
       sidebar={<Sidebar network={p.cfg.network} chips={s.chips} selected={p.market} view={p.view} />}
       phoneNav={<PhoneNav selected={p.market} view={p.view} />}
       title={
@@ -89,6 +92,7 @@ function ShellFrame(p: ShellProps & { chips?: ReactNode; children: ReactNode }) 
           live={s.live}
           now={s.now}
           wall={st.from === "build"}
+          frozen={p.embedded}
           action={
             auctionView ? (
               <Link href="/how" className="text-xs text-foreground underline underline-offset-4">
@@ -386,7 +390,7 @@ export function PrintsView(p: ShellProps & { initial: PrintsData; index: HomeDat
           </table>
         </div>
         <p className="m-0 max-w-none px-5 py-3 text-xs text-muted-foreground">
-          {cfg.mode !== "chain" ? "Bundles are checked only against the live chain; model figures have no files behind their hashes." : !cfg.bundlesBase ? "No bundle host is set for this deployment, so report hashes cannot be fetched. Unverified." : "Each report's bundle is fetched from the reporters' bundle host and hashed with SHA-256 in this browser; the method's checks run on it, and the print is recomputed as the median of the reports. A report is matched, did not match, or not published (the host has no file for it, which is not a failed check)."}
+          {p.embedded ? "Open the view to fetch each report's bundle and check it in this browser." : cfg.mode !== "chain" ? "Bundles are checked only against the live chain; model figures have no files behind their hashes." : !cfg.bundlesBase ? "No bundle host is set for this deployment, so report hashes cannot be fetched. Unverified." : "Each report's bundle is fetched from the reporters' bundle host and hashed with SHA-256 in this browser; the method's checks run on it, and the print is recomputed as the median of the reports. A report is matched, did not match, or not published (the host has no file for it, which is not a failed check)."}
         </p>
       </section>
       <div className="px-4 md:px-6">

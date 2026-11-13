@@ -24,10 +24,10 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", on);
   }, []);
   return (
-    <header className={cn("sticky top-0 z-40 h-16 w-full transition-colors duration-300", floating ? "border-b border-transparent" : "border-b border-border bg-background/80 backdrop-blur-md")}>
+    <header className={cn("sticky top-0 z-40 h-16 w-full transition-colors duration-[var(--dur-settle)]", floating ? "border-b border-transparent" : "border-b border-border bg-background/80 backdrop-blur-md")}>
       <div
         className={cn(
-          "mx-auto flex items-center justify-between gap-6 transition-[max-width,margin,height,padding,border-radius,background-color,box-shadow] duration-300 ease-out",
+          "mx-auto flex items-center justify-between gap-6 transition-[max-width,margin,height,padding,border-radius,background-color,box-shadow] duration-[var(--dur-settle)]",
           floating ? "mt-3 h-12 w-[calc(100%-1.5rem)] max-w-[880px] rounded-full bg-background/80 px-4 shadow-lg ring-1 ring-border backdrop-blur-md" : "h-16 max-w-[1278px] px-6",
         )}
       >

@@ -52,7 +52,7 @@ directly). The Worker (`worker/index.ts`, routing in `worker/route.ts`) runs onl
 `run_worker_first` (`wrangler.jsonc`): the six per-market pages, to redirect `?m=<market>` (302 to
 `/m/<market>/...`, other parameters kept), `/api/*`, and `/m/h100-weekly`, `/m/weekly`, `/m/fast`.
 
-Measured on 13 Nov 2026 with a chain build of four markets (`wc -c` and `gzip -9` on `out/`). Homepage JS: 260,054 bytes gzipped; `/auction` 234,139; `/simulate` 204,293.
+Measured on 13 Nov 2026 with a chain build of four markets (`wc -c` and `gzip -9` on `out/`). Homepage JS: 249,056 bytes gzipped (260,054 before the landscape and the four views replaced the price backdrop and the scroll text); `/auction` 235,327; `/simulate` 204,535. Homepage HTML: 328,794 bytes, 41,731 gzipped. The landscape adds no image files (inline SVG).
 
 | Route | Served by | HTML, bytes (gzip) | Live data in the browser | Polls |
 |---|---|---|---|---|

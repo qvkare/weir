@@ -14,7 +14,9 @@ import { buttonClass } from "../ui/button.ts";
 import { GroupedFaq } from "./grouped-faq.tsx";
 import { Hero } from "./hero.tsx";
 import { AppWindow } from "./app-window.tsx";
-import { ScrollTextRise } from "./scroll-text-rise.tsx";
+import { DuneScene } from "./scene.tsx";
+import { ScrollParagraphs } from "./scroll-paragraphs.tsx";
+import { FourViews, type ViewTab } from "./four-views.tsx";
 import { Bento, BuiltBy, HowCells, ReviewWall, SourcesRibbon } from "./lower.tsx";
 
 export interface FrontProps {
@@ -25,11 +27,6 @@ export interface FrontProps {
   initial: FrontData;
   /** Every market the sidebar lists. */
   chipMarkets: MarketId[];
-  /** The backdrop behind the window (server-drawn), and the line saying what it is. */
-  backdrop: ReactNode;
-  backdropNote: string | null;
-  /** The same backdrop again, behind the closing call to action. */
-  closeBackdrop: ReactNode;
   /** The agents the deploy tool recorded (account, market, role). */
   agents: { account: string; market: string; role: string }[];
   /** How many findings the review record lists. */
@@ -41,12 +38,14 @@ export interface FrontProps {
   moves: { weeks: number; min: number; max: number; first: string; last: string } | null;
   /** The reviewer's number of passes (lib/audit.ts). */
   passes: number;
+  /** "One market, four views": the application's views for the window's market, as published. */
+  fourViews: ViewTab[];
 }
 
 /** Anchors the homepage used to have, and where their content lives now. */
 const MOVED: Record<string, string> = { round: "/how#round", room: "/how#room", hedge: "/how#hedge", series: "/auction#series", clearing: "/auction", index: "/auction/prints#index", sources: "/auction/prints#sources", hardware: "#markets" };
 
-export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, passes, backdrop, backdropNote, closeBackdrop, agents, findings }: FrontProps) {
+export function Front({ fourViews, cfg, page, initial, chipMarkets, offered, specs, moves, passes, agents, findings }: FrontProps) {
   const market = page;
   // The window's market: switched in place when this browser reads the chain itself.
   const [sel, setSel] = useState<MarketId>(initial.market);
@@ -94,24 +93,20 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
         primaryAction={{ href: auction, label: "See the live round" }}
         secondaryAction={{ href: withMarket("/how", market), label: "How it works" }}
       >
-        <div className="relative">
-          <div aria-hidden="true" className="pointer-events-none absolute -top-[300px] left-1/2 h-[1150px] w-[max(1600px,100vw)] -translate-x-1/2">
-            {backdrop}
-          </div>
-          <div className="relative">
-            <AppWindow d={d} selected={sel} onSelect={cfg.mode === "chain" ? setSel : null} wall={!live} network={cfg.network} bar={bar} />
-          </div>
-          {backdropNote ? <p className="relative m-0 mx-auto mt-4 max-w-none text-center text-xs text-muted-foreground">{backdropNote}</p> : null}
-        </div>
+        <AppWindow d={d} selected={sel} onSelect={cfg.mode === "chain" ? setSel : null} wall={!live} network={cfg.network} bar={bar} />
       </Hero>
 
       <SourcesRibbon />
 
       {moves ? (
-        <ScrollTextRise
+        <ScrollParagraphs
           id="problem"
-          label="The problem"
-          text={`Over ${moves.weeks} delivery weeks, the weekly average price of an H100 hour ended between ${pct(moves.min)} and ${pct(moves.max)} against the price known 8 to 10 days before.`}
+          label="The problem, and what Weir does about it"
+          items={[
+            `Over ${moves.weeks} delivery weeks, the weekly average price of an H100 hour ended between ${pct(moves.min)} and ${pct(moves.max)} against the price known 8 to 10 days before.`,
+            "Weir lets both sides fix next week's price today. A team that will use GPUs holds LONG, an owner of GPUs holds SHORT, and one sealed auction sets the price for both.",
+            "The hedge stops at a band around the index, no GPU time changes hands, and everything here runs on NEAR testnet with test dollars.",
+          ]}
           note={
             <>
               Weir&rsquo;s backtest of its own index on public provider prices, delivery weeks from {moves.first} to {moves.last}. A reconstruction, not trades.{" "}
@@ -122,6 +117,10 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
           }
         />
       ) : null}
+
+      <Section id="views" lead="One market, four views." rest="The auction, the index, the payoff and the proof, as the application shows them.">
+        <FourViews tabs={fourViews} />
+      </Section>
 
       <HowCells d={d} />
 
@@ -206,26 +205,26 @@ export function Front({ cfg, page, initial, chipMarkets, offered, specs, moves, 
 
       <BuiltBy />
 
-      <section aria-labelledby="close-h" className="relative flex min-h-[720px] items-start overflow-hidden pb-32 pt-[96px] text-center sm:pt-[170px]">
-        {closeBackdrop ? (
-          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 w-[max(1600px,100vw)] -translate-x-1/2">
-            {closeBackdrop}
+      <DuneScene id="close">
+        <div className="mx-auto grid max-w-[1360px] items-center gap-12 px-6 pb-24 pt-28 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.5fr)] md:pb-32 md:pt-36">
+          <div>
+            <h2 id="close-h" className="font-display m-0 text-4xl text-foreground">
+              Watch a round clear. <span className="text-muted-foreground">Or run a market in your browser.</span>
+            </h2>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <Link href={auction} className={buttonClass("primary")}>
+                Open the auction
+              </Link>
+              <Link href={withMarket("/simulate", market)} className={buttonClass("secondary")}>
+                Run a simulation
+              </Link>
+            </div>
           </div>
-        ) : null}
-        <div className="relative mx-auto w-full max-w-[1278px] px-6">
-          <h2 id="close-h" className="font-display m-0 text-4xl text-foreground">
-            Watch a round clear. <span className="text-muted-foreground">Or run a market in your browser.</span>
-          </h2>
-          <div className="mt-10 flex flex-wrap justify-center gap-3">
-            <Link href={auction} className={buttonClass("primary")}>
-              Open the auction
-            </Link>
-            <Link href={withMarket("/simulate", market)} className={buttonClass("secondary")}>
-              Run a simulation
-            </Link>
+          <div className="relative">
+            <AppWindow d={d} selected={sel} onSelect={null} wall={!live} network={cfg.network} bar={null} compact />
           </div>
         </div>
-      </section>
+      </DuneScene>
     </main>
   );
 }
@@ -237,7 +236,7 @@ function Section({ id, lead, rest, children }: { id: string; lead: string; rest:
   return (
     <section id={id} aria-labelledby={`${id}-h`} className="py-20 md:py-28">
       <div className="mx-auto max-w-[1278px] px-6">
-        <h2 id={`${id}-h`} className="font-display m-0 mb-12 max-w-3xl text-4xl text-foreground">
+        <h2 id={`${id}-h`} className="reveal font-display m-0 mb-12 max-w-3xl text-4xl text-foreground">
           {lead} <span className="text-muted-foreground">{rest}</span>
         </h2>
         {children}

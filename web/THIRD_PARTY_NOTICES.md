@@ -11,7 +11,6 @@ item it came from and what was changed.
 |---|---|---|
 | `components/front/navbar.tsx` | navbar-minimal | https://ruixen.com/r/navbar-minimal.json |
 | `components/front/hero.tsx` | structured-hero-section | https://ruixen.com/r/structured-hero-section.json |
-| `components/front/scroll-text-rise.tsx` | scroll-text-rise | https://ruixen.com/r/scroll-text-rise.json |
 | `components/front/grouped-faq.tsx` | grouped-faq-section | https://ruixen.com/r/grouped-faq-section.json |
 | `components/front/footer.tsx` | footer-pro | https://ruixen.com/r/footer-pro.json |
 

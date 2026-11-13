@@ -41,7 +41,7 @@ function Eyebrow({ children }: { children: ReactNode }) {
 /** The references' split heading: a serif heading at the left, a grey sentence at the right. */
 function SplitHead({ eyebrow, title, sentence, id }: { eyebrow: string; title: ReactNode; sentence: ReactNode; id: string }) {
   return (
-    <div className="mb-12 grid gap-6 md:grid-cols-[1.1fr_1fr] md:items-end">
+    <div className="reveal mb-12 grid gap-6 md:grid-cols-[1.1fr_1fr] md:items-end">
       <div>
         <Eyebrow>{eyebrow}</Eyebrow>
         <h2 id={id} className="font-display m-0 max-w-xl text-4xl text-foreground">
@@ -108,8 +108,8 @@ export function HowCells({ d }: { d: FrontData }) {
         }
         sentence="A round takes sealed commits, opens them together and clears them at one price. The index prints of the delivery week then settle every position."
       />
-      <div className="grid overflow-hidden rounded-2xl bg-card ring-1 ring-border md:grid-cols-3 md:divide-x md:divide-border">
-        <Cell title="Bids arrive sealed" text={<>A commit is a hash and a lock. Sides and prices stay hidden until the reveal{live?.round !== null && live ? `; this is round ${live.round} of series ${live.series} as read` : ""}.</>}>
+      <ol className="m-0 flex list-none flex-col gap-6 p-0 md:gap-24">
+        <Cell n={1} title="Bids arrive sealed" text={<>A commit is a hash and a lock. Sides and prices stay hidden until the reveal{live?.round !== null && live ? `; this is round ${live.round} of series ${live.series} as read` : ""}.</>}>
           <div className="w-full max-w-[300px] space-y-2">
             {d.sealed.length === 0 ? (
               <p className="m-0 text-center text-sm text-muted-foreground">No commits yet in the round in progress.</p>
@@ -125,26 +125,31 @@ export function HowCells({ d }: { d: FrontData }) {
             )}
           </div>
         </Cell>
-        <Cell title="One price clears the round" text={cl && cl.result.price !== null ? <>Every filled order pays the price where the two sides meet: {dollarsOfPrice(cl.result.price, tick)} a GPU-hour for LONG in round {cl.round} of series {cl.series}, cleared {fmtUtcTime(cl.result.cleared_at)}.</> : <>Every filled order pays the price where the two sides meet. No round has cleared with a trade yet.</>}>
+        <Cell n={2} title="One price clears the round" text={cl && cl.result.price !== null ? <>Every filled order pays the price where the two sides meet: {dollarsOfPrice(cl.result.price, tick)} a GPU-hour for LONG in round {cl.round} of series {cl.series}, cleared {fmtUtcTime(cl.result.cleared_at)}.</> : <>Every filled order pays the price where the two sides meet. No round has cleared with a trade yet.</>}>
           {cl && cl.result.price !== null ? <Curves d={d} /> : null}
         </Cell>
-        <Cell title="The week's prints settle it" text="The fixing is the average of the delivery week's index prints. A LONG unit is paid the fixing minus the floor, a SHORT unit the rest of the band.">
+        <Cell n={3} title="The week's prints settle it" text="The fixing is the average of the delivery week's index prints. A LONG unit is paid the fixing minus the floor, a SHORT unit the rest of the band.">
           <SettleMini />
         </Cell>
-      </div>
+      </ol>
     </Shell>
   );
 }
 
-function Cell({ title, text, children }: { title: string; text: ReactNode; children: ReactNode }) {
+/** One step, a card. From md up the cards pin under the header in turn and slide over one another
+ * (position: sticky, no script); on phones and under reduced motion they are a plain stack. */
+function Cell({ n, title, text, children }: { n: number; title: string; text: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex flex-col border-b border-border p-6 last:border-b-0 md:border-b-0 md:p-8">
-      <div className="flex h-56 items-center justify-center rounded-xl bg-background/50 p-4 ring-1 ring-border" aria-hidden="true">
+    <li className="how-card grid items-center gap-8 rounded-2xl bg-card p-6 ring-1 ring-border md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] md:p-10" style={{ ["--n" as string]: n - 1 }}>
+      <div>
+        <p className="m-0 font-mono text-xs text-muted-foreground">Step {n} of 3</p>
+        <h3 className="font-display m-0 mt-3 text-3xl text-foreground">{title}</h3>
+        <p className="m-0 mt-4 max-w-md text-base text-muted-foreground">{text}</p>
+      </div>
+      <div className="flex h-64 items-center justify-center rounded-xl bg-background/50 p-4 ring-1 ring-border" aria-hidden="true">
         {children}
       </div>
-      <h3 className="m-0 mt-6 text-center text-base font-medium text-foreground">{title}</h3>
-      <p className="m-0 mx-auto mt-2 max-w-xs text-center text-sm text-muted-foreground">{text}</p>
-    </div>
+    </li>
   );
 }
 

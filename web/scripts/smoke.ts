@@ -131,7 +131,7 @@ async function api(base: string, path: string, status: number): Promise<Record<s
 if (!process.argv.includes("--no-build")) build(true);
 
 const PAGES: [string, string[]][] = [
-  ["/", ["GPU hours,", "priced today.", "See the live round", "How it works", "Markets · last index print, $/GPU-h", "Clearings", "Long price, $/GPU-h", "Cleared, UTC", "drawn as ridgelines", "Over 69 delivery weeks", "Three chips, a market each.", "H200", "A100 80 GB", "Check it yourself.", "All three price reporters are run by one operator today, who can set any price.", "The index is computed from the public price lists of", "Vast.ai", "RunPod", "Akash", "Lium", "Verda", "Shadeform", "no relationship with Weir is implied", "Sealed bids, one price,", "Bids arrive sealed", "One price clears the round", "worked example", "The life of a round", "Agents on this market", "Sources around the median", "A print, checked here", "Last events on chain", "What the review found,", "not customers, and not an audit firm", "Built by Qvkare.", "Blocks & pixel maxi", "Linea MCP", "Mirror Search", "Copil", "1st place, Linea Dev Cook-Off.", "2nd place, Chainlink Chromion Hackathon.", "Using it", "test dollars; no real money moves.", "Every limit", "What you are trusting", "Model figures, computed when this page was published", "Model data, not the chain"]],
+  ["/", ["GPU hours,", "priced today.", "See the live round", "How it works", "Markets · last index print, $/GPU-h", "Clearings", "Long price, $/GPU-h", "Cleared, UTC", "Over 69 delivery weeks", "Weir lets both sides fix next week's price today.", "runs on NEAR testnet with test dollars", "One market, four views.", "Auction", "Index", "Payoff", "Proof", "when this page was published", "Step 1 of 3", "Step 3 of 3", "Three chips, a market each.", "H200", "A100 80 GB", "Check it yourself.", "All three price reporters are run by one operator today, who can set any price.", "The index is computed from the public price lists of", "Vast.ai", "RunPod", "Akash", "Lium", "Verda", "Shadeform", "no relationship with Weir is implied", "Sealed bids, one price,", "Bids arrive sealed", "One price clears the round", "worked example", "The life of a round", "Agents on this market", "Sources around the median", "A print, checked here", "Last events on chain", "What the review found,", "not customers, and not an audit firm", "Built by Qvkare.", "Blocks & pixel maxi", "Linea MCP", "Mirror Search", "Copil", "1st place, Linea Dev Cook-Off.", "2nd place, Chainlink Chromion Hackathon.", "Using it", "test dollars; no real money moves.", "Every limit", "What you are trusting", "Model figures, computed when this page was published", "Model data, not the chain"]],
   ["/?m=fast", ["H100 hourly · series", "Model data, not the chain"]],
   ["/?m=h100-fast", ["H100 hourly · series", "Hourly demo"]],
   ["/?m=h200-weekly", ["H200 weekly · series", "Weekly auction"]],
@@ -179,15 +179,20 @@ try {
   for (const [p, body] of seen) check(!/Levee/.test(text(body)), `${p}: names Levee`);
   // Visitor wording: no repository paths or build jargon in what a visitor reads.
   for (const [p, body] of seen) if (p !== "/audit" && p !== "/spec") for (const bad of ["evidence/", "backtest/results", "deployments.json", "docs/AUDIT.md", "docs/SPEC.md", "integration/RESULTS.md", "at build time", "when this site was built", "when the site was built", "from the build"]) check(!text(body).includes(bad), `${p}: shows "${bad}"`);
+  // The landscape is drawn, not data: no caption calls it price history. Chart notes use words, not parameter names.
+  check(!text(seen.get("/")!).includes("ridgeline"), "/: still captions the backdrop as price ridgelines");
+  // (/how and /proof name the contract's fields on purpose, next to their meaning; the chart notes do not.)
+  for (const [p, body] of seen) for (const raw of ["band_bps", "hoursPerWeek", "leadDays", "maxAnchorAgeDays", "minDeliveryPrints"]) if (p === "/" || p.startsWith("/backtest")) check(!text(body).includes(raw), `${p}: shows the parameter name ${raw}`);
   // How the project was made is said in the README, which the hackathon asks for; not on the site.
   for (const [p, body] of seen) check(!text(body).includes("AI was used as a tool"), `${p}: shows the line on how AI was used`);
   // Fail open: the built HTML shows the hero and the whole statement, with nothing hidden inline.
   const built = readFileSync(join(out, "index.html"), "utf8");
   check(/<h1[^>]*>Next week.s GPU hours,/.test(built), "index.html: no hero headline in the HTML");
-  // (stop-opacity in the backdrop's gradients is a colour stop, not hidden content.)
+  // (stop-opacity in the landscape's gradients is a colour stop, not hidden content.)
   check(!/style="[^"]*(?<![-\w])opacity:\s*0(?![.\d])/.test(built), "index.html: an element starts at opacity 0 inline");
   check(!/style="[^"]*(?<![-\w])opacity:\s*0?\.\d/.test(built), "index.html: an element starts part-transparent inline");
   check(text(built).includes("Over 69 delivery weeks, the weekly average price of an H100 hour"), "index.html: the statement is not whole in the HTML");
+  check(/role="tablist"[^>]*aria-label="Views of the market"/.test(front) && (front.match(/role="tab"/g) ?? []).length === 4, "/: the four views are not a tablist of four tabs");
   for (const h of ["/proof", "/auction/prints#verifier", "/audit", "/how#limits", "/backtest"]) check(front.includes(`href="${h}"`), `/: no link to ${h}`);
   // No internal link points at an anchor that its page does not have.
   const anchors = new Set<string>();

@@ -22,14 +22,14 @@ export interface FrameProps {
   title: ReactNode;
   chips?: ReactNode;
   children: ReactNode;
-  /** As tall as the viewport allows, the main area scrolling inside (the market pages); else as tall as its content (the homepage). */
-  fill?: boolean;
+  /** As tall as the viewport allows, the main area scrolling inside (the market pages); "embed": a fixed 640 px (the homepage's tabs); else as tall as its content. */
+  fill?: boolean | "embed";
 }
 
 export function Frame({ sidebar, phoneNav, title, chips, children, fill }: FrameProps) {
   return (
-    <div className={cn("relative overflow-hidden rounded-xl border border-border bg-card text-left shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)_inset,0_40px_90px_-30px_rgba(0,0,0,0.55),0_12px_30px_-12px_rgba(0,0,0,0.35)]", fill && "md:h-[calc(100dvh-112px)] md:min-h-[560px]")}>
-      <div className={cn("grid md:grid-cols-[236px_minmax(0,1fr)]", fill && "md:h-full")}>
+    <div className={cn("relative overflow-hidden rounded-xl border border-border bg-card text-left shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)_inset,0_40px_90px_-30px_rgba(0,0,0,0.55),0_12px_30px_-12px_rgba(0,0,0,0.35)]", fill === true && "md:h-[calc(100dvh-112px)] md:min-h-[560px]", fill === "embed" && "md:h-[640px]")}>
+      <div className={cn("grid", sidebar && "md:grid-cols-[236px_minmax(0,1fr)]", fill && "md:h-full")}>
         {sidebar}
         <div className={cn("flex min-w-0 flex-col", fill && "md:h-full")}>
           {phoneNav}
@@ -138,7 +138,8 @@ export function PhoneNav({ selected, view }: { selected: MarketId; view: AppView
 
 // ── Title and chip rows ──────────────────────────────────────────
 
-export function TitleRow({ market, live, now, wall, action }: { market: MarketId; live: WireLiveSeries | null; now: number; wall: boolean; action?: ReactNode }) {
+/** `frozen`: a copy shown as of publication (the homepage's four views), so no clock runs. */
+export function TitleRow({ market, live, now, wall, action, frozen }: { market: MarketId; live: WireLiveSeries | null; now: number; wall: boolean; action?: ReactNode; frozen?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 md:px-5">
       <span className="text-sm font-medium text-foreground">
@@ -148,7 +149,13 @@ export function TitleRow({ market, live, now, wall, action }: { market: MarketId
       {live && live.round !== null && live.phase_ends_at ? (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground">
           <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
-          Round {live.round}, {live.phase === "Commit" ? "commit" : "reveal"} ends in <Countdown endsAt={live.phase_ends_at} serverNow={now} wall={wall} className="font-mono" />
+          {frozen ? (
+            <>Round {live.round}, {live.phase === "Commit" ? "commit" : "reveal"} phase to {fmtUtcTime(live.phase_ends_at)}</>
+          ) : (
+            <>
+              Round {live.round}, {live.phase === "Commit" ? "commit" : "reveal"} ends in <Countdown endsAt={live.phase_ends_at} serverNow={now} wall={wall} className="font-mono" />
+            </>
+          )}
         </span>
       ) : live ? (
         <span className="rounded-full px-2 py-0.5 text-xs text-muted-foreground ring-1 ring-border">Between rounds</span>
@@ -191,7 +198,7 @@ export function RoundsTable({ rows, tick, showSeries, empty, fade, selected, hre
   return (
     <div className="relative">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] border-collapse text-sm">
+        <table className="w-full min-w-[780px] border-collapse text-sm">
           <thead>
             <tr>
               <Th>Round</Th>
@@ -263,11 +270,11 @@ function RoundRow({ r, tick, showSeries, on, href }: { r: FrontRow; tick: number
 export const Dash = () => <span className="text-muted-foreground">&ndash;</span>;
 
 export function Th({ children, right }: { children: ReactNode; right?: boolean }) {
-  return <th className={cn("whitespace-nowrap border-b border-border px-3 py-2.5 font-sans text-xs font-normal normal-case tracking-normal text-muted-foreground first:pl-5", right ? "text-right" : "text-left")}>{children}</th>;
+  return <th className={cn("whitespace-nowrap border-b border-border px-2.5 py-2.5 font-sans text-xs font-normal normal-case tracking-normal text-muted-foreground first:pl-5", right ? "text-right" : "text-left")}>{children}</th>;
 }
 
 export function Td({ children, right, className }: { children: ReactNode; right?: boolean; className?: string }) {
-  return <td className={cn("whitespace-nowrap border-b-0 px-3 py-2.5 align-middle font-sans text-sm first:pl-5", right ? "text-right" : "text-left", className)}>{children}</td>;
+  return <td className={cn("whitespace-nowrap border-b-0 px-2.5 py-2.5 align-middle font-sans text-sm first:pl-5", right ? "text-right" : "text-left", className)}>{children}</td>;
 }
 
 export function Group({ title, children }: { title: string; children: ReactNode }) {

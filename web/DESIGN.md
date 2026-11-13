@@ -108,8 +108,8 @@ Header (sticky, translucent cleanroom; between 961 and 1180 px the market switch
 
 ## 6. Page by page
 
-### 6.1 `/` (rebuilt 12–13 Nov 2026)
-Built in `components/front/`: a centred hero (pill, the serif headline "Next week's GPU hours, / priced today.", one sentence, two buttons) over a dusk backdrop drawn from the H100 backtest's weekly series (`lib/backdrop.ts`); under it the **application window**, which is the application itself: the Clearings view of section 6.2, with the same sidebar, title row, chips and grid, live from the chain. Then the sources ribbon (the six public price lists, as plain names), the measured statement, how it works in three cells, a bento of five objects read from the chain (the life of a round, the agents, the sources around the median, a print checked here, the last events), the three markets, the review wall (the record's findings in its own words), check it yourself with the grouped questions, "Built by Qvkare" (portrait, handle, links, three results; nothing else), and the closing call to action.
+### 6.1 `/` (rebuilt 12–13 Nov 2026, landscape and motion 13 Nov)
+Built in `components/front/`: a centred hero (pill, the serif headline "Next week's GPU hours, / priced today.", one sentence, two buttons) standing in a drawn landscape (section 7.7); under it the **application window**, which is the application itself: the Clearings view of section 6.2, with the same sidebar, title row, chips and grid, live from the chain, its lower edge behind the foreground dunes. Then the sources ribbon (the six public price lists, as plain names); the statement, three short paragraphs that light in turn on scroll (the backtest's measured spread, what Weir does, what it does not and the testnet line); **one market, four views**, a tablist (Auction, Index, Payoff, Proof) over the application's own views for the window's market as published (`fourViewTabs` in `components/pages/home-page.tsx`, `components/front/four-views.tsx`): the active tab's underline fills over 9 s and moves to the next tab, pausing while the pointer or focus is in the section, while the tab is hidden and always under reduced motion; arrows and a one-line caption that says when the copy was read and links to the live view; the round's countdown is replaced there by the phase's end time, so no clock runs on a copy. Then how it works as three step cards that pin under the header and slide over one another from 768 px up (`position: sticky`, no script; a plain stack on phones and under reduced motion); a bento of five objects read from the chain; the three markets; the review wall; check it yourself with the grouped questions; "Built by Qvkare"; and the closing section, text on the left and the application window on the right, standing in the dunes.
 
 Moved off the homepage, nothing deleted: the floor, "Who is in the room" and the payoff tool to `/how`; the series clock to `/auction`; the index chart and sources to `/auction/prints`. The wafer and the specimen drawing are gone from the site (`lib/wafer.ts` and its test stay for the record).
 
@@ -151,21 +151,23 @@ Motion explains, confirms or gives the brand its pulse; it never decorates a num
 ### 7.1a Time, pauses and the test override
 Every scripted piece runs on `Clock` (`lib/clock.ts`): its position is wall time since start, less time paused, so a slow or throttled frame rate changes smoothness, never duration or end state, and a piece that leaves the screen or a hidden tab stops and resumes from the same moment. Tests feed each timeline uneven frame times (4 ms to 700 ms) and a pause, and assert it ends on its final state at the stated time (`lib/wafer.test.ts`, `lib/floor.test.ts`, the specimen's `specimenStep` in `lib/motion.ts`). `?motion=reduce` (testing only) sets `<html data-motion="reduce">` before paint; `motionQuery()` in `lib/reduced-motion.ts` treats it exactly like the reader's setting, and CSS turns every animation and transition off; the smoke test checks the override script on every page.
 
-### 7.2 Tokens (`app/globals.css` and `lib/motion.ts`, the same values)
+### 7.2 Tokens: one easing, one set of durations (`app/site.css`, 13 Nov 2026)
+
+Every transition and entrance on the site uses one curve, `--ease-settle`, cubic-bezier(0.16, 1, 0.3, 1): quick to start, long to settle, no overshoot. The older names in `app/globals.css` (`--ease-out`, `--ease-in-out`, `--ease-overshoot`) are pointed at it in `app/site.css`, and Tailwind's default transition takes it too (`--default-transition-timing-function`, 200 ms), so a hover written without a duration moves the same way.
 
 | Token | Value | For |
 |---|---|---|
-| `--dur-micro` | 120 ms | Hover, press, focus |
-| `--dur-quick` | 200 ms | Toggles, tabs, nav underline |
-| `--dur-base` | 320 ms | Arrivals and reveals |
-| `--dur-settle` | 560 ms | A value that changed under you; the mark's hover |
-| `--dur-draw` | 900 ms | A line drawing itself; a specimen step |
-| `--ease-out` | cubic-bezier(0.22, 0.61, 0.36, 1) | Arrivals |
-| `--ease-in-out` | cubic-bezier(0.65, 0, 0.35, 1) | Things that travel |
-| `--ease-overshoot` | cubic-bezier(0.34, 1.56, 0.64, 1) | A thing with weight landing: presses, stamps, a check resolving |
-| `--ease-anticipate` | cubic-bezier(0.36, 0, 0.66, -0.56) | A thing with weight leaving |
+| `--dur-micro` | 120 ms | Press and focus |
+| `--dur-quick` | 200 ms | Hovers, tabs, the FAQ's plus sign (Tailwind's default) |
+| `--dur-base` | 320 ms | Colour and state changes; the statement's paragraphs lighting |
+| `--dur-settle` | 560 ms | The header's change to a pill; an app view's cross-fade |
+| `--dur-enter` | 700 ms | Entrances: the hero's text and window; sections, a short fade with a 14 px rise, driven by the scroll where the browser supports `animation-timeline: view()` and simply shown elsewhere |
+| `--dur-draw` | 900 ms | A chart's line drawing itself (legacy charts) |
 
-`EASE_FN` in `lib/motion.ts` holds the same curves as functions for drawings posed frame by frame, plus `weighted` (draw back 6%, travel, pass the mark by 4%, settle).
+`EASE_FN` in `lib/motion.ts` keeps its own curves for the scripted drawings on `/how` (the floor, the sequences), which are posed frame by frame; they are not transitions.
+
+### 7.2a The landscape (`components/front/scene.tsx`, 13 Nov 2026)
+Ours, drawn by hand on a 1600 x 900 canvas as inline SVG: a sky gradient, hills at three depths with haze between them, and two soft dunes in front. No strokes, no glow, low saturation; colours are variables in `app/site.css` (dark: slate to mauve at dusk, dark olive hills, dusty-rose dunes; light: a pale morning). It is not data and says nothing; the earlier backdrop drawn from the backtest's weekly series, and its caption, are gone. No image files: the five shapes are 750 bytes of path data and the grain is a small inline SVG filter. On scroll (the hero's progress, `--hp`, 0 to 1, set from one passive scroll listener per frame) the sky moves 220 px, the far hills 190 px, the middle 130 px, the near 70 px, the text rises 80 px and fades, the window sinks 150 px behind the dunes, and the scene fades into the page; transforms and opacity only, so no layout shifts. Fail open: without script, animation frames, under reduced motion or `?motion=reduce`, the scene stands still at its first frame. The closing section reuses the sky, the far hills and the dunes, still.
 
 ### 7.3 The wafer (`lib/wafer.ts`, `components/wafer.tsx`)
 One canvas. Dies are laid on the wafer's grid inside the edge exclusion (about 1,000 to 1,400 at desktop, capped at 1,400). Each round a seeded generator draws one order per die around the live index (or an example price when none, said in the caption), `clearRound` clears it, and the keenest orders of each side are placed nearest the centre. The resting state is the sealed wafer, every die present and grey: a CSS wafer sits under the canvas before any script runs, the first canvas frame is drawn in a layout effect before the browser paints and before any animation frame is requested, and every round both begins and ends sealed, so the hand-over between books never shows an empty area. A 12 s round: every die sealed; a probe line sweeps down, revealing each die faintly in its side's colour (3.4 s, in-out); the clearing ring grows from the centre and the filled dies light at full colour, sellers hatched, part fills cut, the rest grey (1.4 s, ease-out); hold; the dies seal again from the edge in (1.2 s); a new book. Frames in the hold are skipped; dies are drawn in one fill per colour; the pixel ratio is capped at 2. Pauses off screen, in a hidden tab and on its pause button. Reduced motion: one cleared frame, caption "still frame, motion reduced". Tests: `lib/wafer.test.ts`.
