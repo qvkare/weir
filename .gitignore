@@ -24,3 +24,6 @@ keeper/.store/
 .turbo
 .claude/
 CLAUDE.md
+
+# The demo video is produced here; its sources and renders are not part of the product.
+video/
