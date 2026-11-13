@@ -13,11 +13,13 @@ Workers. A test checks that no file but the CLI imports a Node built-in.
 | File | What it is |
 |---|---|
 | `src/tx.ts` | Base58, base64, `KeyPair` from a NEAR secret key `ed25519:<base58>` (64-byte or 32-byte form), the borsh encoding of a transaction of function-call actions, and `signTransaction` (ed25519 over `sha256(borsh(tx))`). `AnyTransaction` may also carry the account-setup actions (create account, deploy contract, transfer, add a full-access or function-call key), which the integration test uses to set up the sandbox; nothing in `src/` sends them. |
-| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL`. Failover, cooldowns and rate-limit waits are described under "RPC endpoints" below. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one call at a time per instance, so nonces never collide, and on `InvalidNonce` retries up to three times (`NONCE_RETRIES`) with a fresh nonce, starting above the `ak_nonce` the refusal names. |
+| `src/near.ts` | `NearRpc`: `query` views (`call_function`, args base64, result decoded from bytes), `view_account`, `view_access_key`, latest block hash, `send_tx` waited on until `FINAL`. Failover, cooldowns and rate-limit waits are described under "RPC endpoints" below. `decodeOutcome` gives `{ ok, result, logs, error, tx_hash, gas_burnt }`. `NearAccount` signs and sends one transaction at a time per instance (`functionCall`, or `functionCalls` for several calls to one receiver in one transaction), so nonces never collide, and on `InvalidNonce` retries up to three times (`NONCE_RETRIES`) with a fresh nonce, starting above the `ak_nonce` the refusal names. |
 | `src/weir.ts` | `WeirPort`, typed by `@weir/engine`'s wire types (`ViewMethods`, `ChangeMethods`), never redefined here. `ChainWeir` (over `near.ts`) and `ModelWeir` (over an engine `Market` through `callView`/`callChange`, settable clock, plus a synchronous `sync` face). A failed chain call throws `CallFailed`, whose message is the contract's bare panic text, the same text `ModelWeir` throws. `paramsFromWire` turns `get_params` JSON into engine `Params`. Function-call key method lists: `AGENT_KEY_METHODS` (SPEC section 15: `commit, reveal, clear, mint, merge, settle, redeem`), `KEEPER_KEY_METHODS` (those plus `finalize_print`, `prune_print`, `prune_result`) and `REPORTER_KEY_METHODS` (`report`, `finalize_print`). The port covers spec 0.4: `set_guard(guard?, max_round_lock?)`, `finalize_print`, `prune_print`, `get_pending_prints`, and the 0.4 shapes (totals with `burned`, print `state`, commit `fee`, result `fees`). |
 | `src/token.ts` | `Token`: `storage_deposit`, `ft_balance_of`, `storage_balance_of`, `ft_transfer_call` into Weir (the optional beneficiary goes in `msg`, SPEC section 5) and the test token's open `mint(account_id, amount)`. |
 | `src/intents.ts` | NEAR Intents 1Click client, quotes only: `POST /v0/quote` with `dry: true` (it refuses anything else) and `GET /v0/tokens`. USDC asset ids for Base, Arbitrum, Ethereum, Solana and NEAR. |
-| `src/cli.ts` | Node only. `quote --from arbitrum\|ethereum\|solana\|base --amount 20 --to <near account>`. |
+| `src/faucet.ts` | The testnet faucet client (`createWithFaucet`): the same request and retry rule as `deploy/src/chain.ts`'s `faucetCreator`, with the transport, clock and sleep passed in so it runs in a browser. The deploy tool keeps its own copy, unchanged, so its tested path did not move the day before the deadline. |
+| `src/guest.ts` | The guest path: a throwaway account places one sealed bid. See "One sealed bid by a guest" below. |
+| `src/cli.ts` | Node only. `quote --from arbitrum\|ethereum\|solana\|base --amount 20 --to <near account>`, and `try` (the guest path). |
 | `src/mod.ts` | Re-exports. |
 
 ### WeirPort
@@ -182,6 +184,90 @@ nonce. An answer saying the transaction is "already known" or a "duplicate" is r
 pending and looked up. A send refused everywhere for rate (429) was not delivered and is
 thrown without a lookup. The duplicate wording is matched by pattern; no provider was seen
 sending it.
+
+## One sealed bid by a guest
+
+`make try` (or `node chain/src/cli.ts try`) has a new throwaway testnet account place one sealed
+bid in the hourly demo market `weir-h100-fast-w1.testnet`, by itself, with no wallet and no keys
+from the person running it. `make try TRY_ARGS=--plan` reads the chain, prints the series, round,
+phase and the order it would place, and sends nothing.
+
+What `src/guest.ts` does, in two phases:
+
+- **Setup** (`Guest.setup()`, throwaway accounts only): a random 32-byte key (`secretKeyFromSeed`),
+  the account `weir-try-<12 hex>.testnet` from the faucet, then the transactions of
+  `setupTransactions`: `register {}` to Weir with 0.02 NEAR, then one transaction to the test dollar
+  with `storage_deposit`, `mint` and `ft_transfer_call` (enough for size x band + the commit fee,
+  in whole dollars). A wallet can sign the same two transactions. If Weir sends the deposit back
+  because the registration had not landed (SPEC section 5), `depositRefunded` sees it and the
+  next run deposits again.
+- **Trading** (`Guest.trade()`, or `Guest.forAccount(config, deps, { accountId, secretKey })` for
+  an account a wallet set up): LONG 5 GPU-hours at the last clearing price of the series (else the
+  reference price from the last print) plus 15% of the band, at most band - tick, on the tick. A
+  commit phase with less than 30 s left is skipped for the next round. The order and its salt are
+  stored before `commit` is sent; the local hash is compared with the contract's `commit_hash`
+  first. Then it reveals when the reveal phase opens, waits 20 s after the round for the keeper and
+  clears the round itself if nobody has, and reads `get_result` and `get_position`. `settle()`
+  later settles the series and redeems. Trading attaches no deposit and calls no token, so a
+  function-call key for `AGENT_KEY_METHODS` is enough; when such a key's allowance is below the
+  0.155 NEAR a `clear` needs, it waits two more minutes for the keeper and then stops in plain words.
+
+Every step reads the chain before it acts, so a run that stopped (a crash, a page reload) resumes
+from storage: it does not create, register or deposit twice, finds its own commit by hash instead
+of committing again, and reveals the stored order. It stops before creating anything when no
+series is in auction or the index is stale. No commit is started after the time limit (15 min);
+a commit already made is always revealed and cleared. Views are polled every 5 s at most, and
+requests are at least 1 s apart. Events (`step`, `done`, `tx` with its nearblocks link,
+`refused` with the contract's text verbatim, `wait`) are what a page or the terminal prints.
+
+The CLI keeps its state, which holds the throwaway key, in a new `mktemp`-style directory under
+the system's temporary directory (outside the repository), mode 600, and never prints the key.
+It prints the account name, each step and transaction link, the clearing price, the fill and
+the total time, and exits 1 with the reason on failure.
+
+`try --plan` against testnet on 2026-11-13 at 19:17 UTC (5 views, 5 s apart, 20 s):
+
+```
+  last index print  2.8625 USD per GPU-hour, bucket 2026-11-13T19:15:00.000Z (126 s old)
+  series, round     43, 4  phase Commit, ends in 54 s
+  status            ready: series 43, round 4: 54 s of the commit phase left
+  band              floor 2.386 USD, width 0.842 USD, tick 0.001 USD (series open)
+  last clearing     round 3: 2.774 USD
+  suggested order   LONG 5 GPU-hours at most 2.90 USD per GPU-hour (514000 above the floor); lock 2.57 USD + fee 0.10 USD
+  would fund        up to 4.31 USD (size x band + fee), minted on the test dollar weir-usdc-w1.testnet
+```
+
+Tests: `test/guest.test.ts`, 12 tests on the fake RPC (the engine executes the signed
+transactions) and a fake faucet: the whole path to a filled order; a restart between commit and
+reveal; a restart after the commit landed but before its seq was stored (no second commit); the
+faucet's 429 then success, and its refusal; less than 30 s left; a round nobody clears; refusals
+with the contract's text (a full round, a clear that lost the race to the keeper, a stale index);
+a deposit refunded because the registration had not landed, deposited again; an account set up
+elsewhere trading with commit and reveal only; a key without allowance for clear.
+
+**Run on testnet, once.** `make try` on 2026-11-13 from 19:20 UTC, on an Apple-silicon laptop:
+the faucet created `weir-try-070943795d17.testnet` in 10 s; it registered, then minted and
+deposited 5.00 USD in the one three-action transaction; it committed LONG 5 GPU-hours at most
+2.90 USD in round 5 of series 43, revealed when the reveal phase opened, waited 24 s after the
+round for the keeper, cleared the round itself, and was filled 5 of 5 at 2.838 USD per GPU-hour.
+341 s in all, 6 transactions:
+[create_account](https://testnet.nearblocks.io/txns/EQGmc2tPWjS9rcmqbWCmUoQ28cJX26FZC9sHBTjpryoD),
+[register](https://testnet.nearblocks.io/txns/H3uvbGL2tL9goxoFiFRq4uivmsauTLimLNzqKfeP5DgC),
+[storage_deposit, mint and ft_transfer_call](https://testnet.nearblocks.io/txns/Hp8s2sQ5gvuwsHsvroqqjU6eZDvEJJ7eAyXdJ8Kv5De5),
+[commit](https://testnet.nearblocks.io/txns/79uUqx9Tbm14sb3bjpGYQSdCH14CW14nkTkkDnAXzxjB),
+[reveal](https://testnet.nearblocks.io/txns/DJfDxkbpJjMSgH8ib14rZn3Wuy2zZon1d9H2iMS3wKEM),
+[clear](https://testnet.nearblocks.io/txns/MMfP6B53Znc51GUHeWAGGBEMTx8g6aeQSm7jZEhxxdn).
+Read back afterwards with one `get_result` call through fastnear: series 43, round 5, price
+452000 above the floor of 2.386 USD, volume 35, and in `fills` the guest's order with `filled: 5`.
+
+**Not proven.** One run is one run: how often the faucet rate-limits, and how the run behaves at
+the top of the hour, are not known. `--settle` (settle and redeem for that account) has not been
+run. A browser has not run
+the module either, and whether the faucet allows cross-origin requests is not known. The
+allowance refusal text (`NotEnoughAllowance`) is matched by pattern and was not seen live. If a
+commit's outcome is unknown and the commit lands more than about 10 s later, a restart in the same
+commit phase plans a new order with a new salt; the late commit is then not revealed and loses
+1% of its lock at clearing (about 0.03 USD for the suggested order).
 
 ## Dependencies
 

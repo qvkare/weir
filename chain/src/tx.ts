@@ -86,6 +86,13 @@ export class KeyPair {
   }
 }
 
+/** A NEAR secret key `ed25519:<base58>` in the 32-byte (seed) form `KeyPair.fromString`
+ * accepts. The caller supplies the 32 random bytes, so the source of randomness is its choice. */
+export function secretKeyFromSeed(seed: Uint8Array): string {
+  if (seed.length !== 32) throw new Error("an ed25519 seed is 32 bytes");
+  return `ed25519:${base58Encode(seed)}`;
+}
+
 /** A function-call action (borsh enum index 2 of `Action`). */
 export interface FunctionCall {
   methodName: string;

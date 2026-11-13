@@ -23,7 +23,7 @@ JUDGE_NOTES ?=
 NOTE = note() { if [ -n "$(JUDGE_NOTES)" ]; then echo "$$*" >> "$(JUDGE_NOTES)"; fi; }; note
 
 .PHONY: help judge verify verify-index verify-vectors verify-deploy sim backtest quote-dry \
-        test test-contracts test-ts test-sandbox audit index build build-contracts web lint
+        test test-contracts test-ts test-sandbox audit index build build-contracts web lint try
 
 help:
 	@grep -E '^# [a-z-]+:' Makefile | sed 's/^# /  make /'
@@ -122,6 +122,13 @@ quote-dry:
 	fi; \
 	if [ "$$r" = quoted ]; then $(NOTE) "ok  quote-dry: live dry quote received; nothing was sent"; \
 	else $(NOTE) "--  quote-dry: $$r; not counted as a failure"; fi
+
+# try: a throwaway testnet account places one sealed bid in the hourly demo market (network, about 5 to 15 min).
+# Creates an account with the testnet faucet and sends real testnet transactions. TRY_ARGS=--plan reads the
+# chain and sends nothing; TRY_ARGS='--state <dir>' resumes a run; add --settle after the delivery hour.
+TRY_ARGS ?=
+try:
+	@$(NODE) chain/src/cli.ts try $(TRY_ARGS)
 
 # test: every suite that does not need a running node: the contract's and every TypeScript package's.
 test: test-contracts test-ts

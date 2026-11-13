@@ -512,13 +512,20 @@ export class NearAccount {
   /** Signs, sends and waits for one function call. Resolves with the outcome, even when the
    * call failed on chain; rejects only when the transaction could not be sent. */
   functionCall(receiverId: string, methodName: string, args: object, gas: bigint, deposit: bigint): Promise<TxOutcome> {
-    const run = () => this.#send(receiverId, methodName, args, gas, deposit);
+    return this.functionCalls(receiverId, [{ methodName, args, gas, deposit }]);
+  }
+
+  /** Several function calls to one receiver in one transaction: they run in order and land
+   * together or not at all. The outcome's `result` is the last call's return value. */
+  functionCalls(receiverId: string, calls: readonly { methodName: string; args: object; gas: bigint; deposit: bigint }[]): Promise<TxOutcome> {
+    if (calls.length === 0) throw new Error("a transaction needs at least one call");
+    const run = () => this.#send(receiverId, calls);
     const next = this.#queue.then(run, run);
     this.#queue = next.catch(() => undefined);
     return next;
   }
 
-  async #send(receiverId: string, methodName: string, args: object, gas: bigint, deposit: bigint): Promise<TxOutcome> {
+  async #send(receiverId: string, calls: readonly { methodName: string; args: object; gas: bigint; deposit: bigint }[]): Promise<TxOutcome> {
     for (let attempt = 0; ; attempt++) {
       const ak = await this.rpc.viewAccessKey(this.accountId, this.key.publicKeyString);
       const nonce = (BigInt(ak.nonce) > this.#nonce ? BigInt(ak.nonce) : this.#nonce) + 1n;
@@ -528,7 +535,7 @@ export class NearAccount {
         nonce,
         receiverId,
         blockHash: base58Decode(ak.block_hash),
-        actions: [{ methodName, args: utf8Encode(JSON.stringify(args)), gas, deposit }],
+        actions: calls.map((c) => ({ methodName: c.methodName, args: utf8Encode(JSON.stringify(c.args)), gas: c.gas, deposit: c.deposit })),
       };
       const { hash, signed } = await signTransaction(tx, this.key);
       this.#nonce = nonce;
