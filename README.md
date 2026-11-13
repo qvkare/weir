@@ -1,4 +1,11 @@
-# Weir
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/brand/mark-light.svg">
+    <img src="web/brand/mark.svg" width="88" height="88" alt="Weir">
+  </picture>
+</p>
+
+<h1 align="center">Weir</h1>
 
 Weir runs sealed-bid, single-price, week-ahead auctions on the price of one GPU-hour, on NEAR testnet. It is for people who rent GPU time and want to fix next week's price today, and for people who own GPUs and want to fix what they will earn. There is one market per chip: H100 (weekly, plus an hourly demo market that runs 168 times faster), H200 weekly and A100 80 GB weekly. Buyers of compute buy LONG, owners of GPUs buy SHORT. Every position is paid in full when it opens, so nothing is ever liquidated. A series settles on the average of a public GPU price index over its delivery week. AI agents can bid with NEAR function-call keys that cannot withdraw.
 
@@ -229,5 +236,3 @@ The same author also entered Levee (https://github.com/qvkare/levee), an indepen
 ## License
 
 MIT
-
-Parts of the site's homepage, header and footer are adapted from Ruixen UI's MIT-licensed components; see `web/THIRD_PARTY_NOTICES.md`.
