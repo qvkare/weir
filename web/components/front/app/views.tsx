@@ -24,7 +24,7 @@ import type { LoadedBundle } from "@/lib/load.ts";
 import type { SiteConfig } from "@/lib/site-config.ts";
 import { cn } from "@/lib/utils.ts";
 import { bookRows, bookTotals, lastResult } from "@/lib/views.ts";
-import { checkBundle, checkMedian, type Row as CheckRow } from "@/lib/verify.ts";
+import { BUNDLES_SINCE, checkBundle, checkMedian, summarizeChecks, type PrintCheckSummary, type Row as CheckRow } from "@/lib/verify.ts";
 import { Chip, ChipRow, Dash, FilterChip, Frame, Panel, PhoneNav, RoundsTable, Sidebar, smallButton, Td, Th, TitleRow } from "./parts.tsx";
 
 // ── The frame around every view ──────────────────────────────────
@@ -366,19 +366,18 @@ export function PrintsView(p: ShellProps & { initial: PrintsData; index: HomeDat
                   const c = checks.find((x) => x.bucket === pr.bucket);
                   const kinds = (k: CheckRow["kind"]) => c?.rows.filter((r) => r.kind === k) ?? [];
                   const med = pr.price !== null && pr.reports.length ? checkMedian({ bucket: pr.bucket, price: pr.price, reports: pr.reports.map((r) => ({ reporter: r.reporter, price: r.price, bundle: r.bundle })) }) : null;
-                  const hashes = kinds("hash");
-                  const fetchFails = kinds("fetch");
-                  const rules = kinds("rules");
+                  const sum = c && c.done ? summarizeChecks(c.rows, pr.reports.map((r) => r.reporter)) : null;
+                  const before = pr.bucket < BUNDLES_SINCE;
                   return (
-                    <PrintRow key={pr.bucket} open={open === pr.bucket} onToggle={() => setOpen(open === pr.bucket ? null : pr.bucket)} c={c}>
+                    <PrintRow key={pr.bucket} open={open === pr.bucket} onToggle={() => setOpen(open === pr.bucket ? null : pr.bucket)} c={c} reason={sum && sum.unavailable ? (before ? `The bundle host has no file for ${sum.unavailable === pr.reports.length ? "these reports" : `${sum.unavailable} of these reports`}: they were made before ${fmtUtc(BUNDLES_SINCE)}, when the host started publishing bundles. Not a failed check.` : `The bundle host had no file for ${sum.unavailable} of these reports when asked. Not a failed check.`) : null}>
                       <Td>{fmtUtc(pr.bucket)}</Td>
                       <Td right>{pr.price !== null ? <span className="font-mono text-foreground">{dollarsOfPrice(pr.price, d.tick ?? undefined)}</span> : <span className="text-muted-foreground">{pr.state === "Open" ? "open" : "no print"}</span>}</Td>
                       <Td>
                         {pr.reports.length} <span className="text-muted-foreground">({pr.reports.map((r) => shortAccount(r.reporter).split(".")[0]).join(", ")})</span>
                       </Td>
                       <Td>{med ? <Status ok={med.ok}>{med.ok ? "matches" : "differs"}</Status> : <Dash />}</Td>
-                      <Td>{!c ? <Status>not checked</Status> : !c.done ? <Status>checking</Status> : fetchFails.length === pr.reports.length ? <Status ok={false}>not on the bundle host</Status> : <Status ok={fetchFails.length === 0 && hashes.every((h) => h.ok)}>{`${hashes.filter((h) => h.ok).length} of ${pr.reports.length} match`}</Status>}</Td>
-                      <Td>{!c || !c.done ? <Dash /> : rules.length === 0 ? <span className="text-xs text-muted-foreground">unverified</span> : <Status ok={rules.every((r) => r.ok)}>{`${rules.filter((r) => r.ok).length} of ${rules.length} bundles pass`}</Status>}</Td>
+                      <Td>{!c ? <Status>not checked</Status> : !sum ? <Status>checking</Status> : sum.matched + sum.differs === 0 ? <Status>not published</Status> : <HashPills s={sum} />}</Td>
+                      <Td>{!sum ? <Dash /> : sum.rulesPassed + sum.rulesFailed === 0 ? <Status>not run</Status> : <Status ok={sum.rulesFailed === 0}>{sum.rulesFailed ? `${sum.rulesFailed} of ${sum.rulesPassed + sum.rulesFailed} bundles fail` : `${sum.rulesPassed} of ${sum.rulesPassed} bundles pass`}</Status>}</Td>
                     </PrintRow>
                   );
                 })
@@ -387,7 +386,7 @@ export function PrintsView(p: ShellProps & { initial: PrintsData; index: HomeDat
           </table>
         </div>
         <p className="m-0 max-w-none px-5 py-3 text-xs text-muted-foreground">
-          {cfg.mode !== "chain" ? "Bundles are checked only against the live chain; model figures have no files behind their hashes." : !cfg.bundlesBase ? "No bundle host is set for this deployment, so report hashes cannot be fetched. Unverified." : "Each report's bundle is fetched from the reporters' bundle host and hashed with SHA-256 in this browser; the method's checks run on it, and the print is recomputed as the median of the reports."}
+          {cfg.mode !== "chain" ? "Bundles are checked only against the live chain; model figures have no files behind their hashes." : !cfg.bundlesBase ? "No bundle host is set for this deployment, so report hashes cannot be fetched. Unverified." : "Each report's bundle is fetched from the reporters' bundle host and hashed with SHA-256 in this browser; the method's checks run on it, and the print is recomputed as the median of the reports. A report is matched, did not match, or not published (the host has no file for it, which is not a failed check)."}
         </p>
       </section>
       <div className="px-4 md:px-6">
@@ -397,7 +396,18 @@ export function PrintsView(p: ShellProps & { initial: PrintsData; index: HomeDat
   );
 }
 
-function PrintRow({ open, onToggle, c, children }: { open: boolean; onToggle: () => void; c: PrintCheck | undefined; children: ReactNode }) {
+/** Matched, did not match and not available, each its own pill; red only for a real mismatch. */
+function HashPills({ s }: { s: PrintCheckSummary }) {
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {s.matched ? <Status ok>{`${s.matched} matched`}</Status> : null}
+      {s.differs ? <Status ok={false}>{`${s.differs} did not match`}</Status> : null}
+      {s.unavailable ? <Status>{`${s.unavailable} not published`}</Status> : null}
+    </span>
+  );
+}
+
+function PrintRow({ open, onToggle, c, reason, children }: { open: boolean; onToggle: () => void; c: PrintCheck | undefined; reason: string | null; children: ReactNode }) {
   return (
     <>
       <tr className="border-t border-border hover:bg-muted/40">
@@ -411,10 +421,11 @@ function PrintRow({ open, onToggle, c, children }: { open: boolean; onToggle: ()
       {open && c ? (
         <tr>
           <td colSpan={7} className="bg-background/50 px-5 py-3">
+            {reason ? <p className="m-0 mb-2 max-w-none text-xs text-muted-foreground">{reason}</p> : null}
             <ul className="m-0 list-none space-y-1 p-0 text-xs">
               {c.rows.map((r, i) => (
                 <li key={i} className="flex gap-2">
-                  <Status ok={r.ok}>{r.ok ? "ok" : "no"}</Status>
+                  {r.kind === "fetch" ? <Status>not published</Status> : <Status ok={r.ok}>{r.ok ? "ok" : "no"}</Status>}
                   <span className="text-muted-foreground">{describe(r)}</span>
                 </li>
               ))}

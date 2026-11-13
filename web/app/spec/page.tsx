@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Specification", description: "The We
 export default function SpecPage() {
   const { spec, specVersion } = buildData();
   return (
-    <main id="main">
+    <main id="main" className="doc">
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">Specification{specVersion ? ` · version ${specVersion}` : ""}</span>

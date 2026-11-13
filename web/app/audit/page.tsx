@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Review record", description: "The wr
 export default function AuditPage() {
   const { audit } = buildData();
   return (
-    <main id="main">
+    <main id="main" className="doc">
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">Review record</span>

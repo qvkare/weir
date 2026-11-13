@@ -58,3 +58,36 @@ export function hashFromFileName(file: string): string | null {
   const m = /-([0-9a-f]{12,64})\.json$/.exec(file);
   return m ? m[1]! : null;
 }
+
+/** What became of each report's bundle: its hash matched the chain's, did not, or the file was not to be had. */
+export type ReportState = "matched" | "differs" | "unavailable";
+
+export interface PrintCheckSummary {
+  /** Reports whose bundle hashed to the chain's hash. */
+  matched: number;
+  /** Reports whose bundle was fetched and hashed to something else. */
+  differs: number;
+  /** Reports whose bundle the host did not have, or that could not be fetched: not a failed check. */
+  unavailable: number;
+  /** Method checks run on the bundles that were fetched: bundles that passed every check, and that did not. */
+  rulesPassed: number;
+  rulesFailed: number;
+}
+
+/** Counts a print's check rows by report (lib/verify.ts rows, labelled by reporter). */
+export function summarizeChecks(rows: Row[], reporters: string[]): PrintCheckSummary {
+  const out: PrintCheckSummary = { matched: 0, differs: 0, unavailable: 0, rulesPassed: 0, rulesFailed: 0 };
+  for (const r of reporters) {
+    const mine = rows.filter((x) => x.label === r);
+    const hash = mine.find((x) => x.kind === "hash");
+    if (mine.some((x) => x.kind === "fetch") || !hash) out.unavailable++;
+    else if (hash.ok) out.matched++;
+    else out.differs++;
+    const rules = mine.find((x) => x.kind === "rules");
+    if (rules) rules.ok ? out.rulesPassed++ : out.rulesFailed++;
+  }
+  return out;
+}
+
+/** The bundle host has published reports' bundles since this time (12 Nov 2026, 19:15 UTC, when the keeper moved to it). */
+export const BUNDLES_SINCE = Date.UTC(2026, 10, 12, 19, 15) / 1000;

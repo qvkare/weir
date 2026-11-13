@@ -1,22 +1,27 @@
-import { MarketSwitch } from "@/components/site-nav.tsx";
-import { liveMarkets } from "@/lib/build.ts";
-import { SimRunner } from "@/components/sim-runner.tsx";
-import { MARKET_INFO, type MarketId } from "@/lib/config.ts";
+// /simulate for one market (server): the simulation's state right after setup, computed at build
+// by the same engine, seed and agents the browser's worker uses, so the first paint is the market
+// ready to run rather than an empty page. The browser then runs it in a Web Worker.
+import { createSimulation } from "@weir/agents/sim";
+import { SimApp } from "@/components/front/sim-app.tsx";
+import type { MarketId } from "@/lib/config.ts";
+import { snapshot, toLines } from "@/lib/sim-snapshot.ts";
+
+const SEED = 7;
 
 export function SimulatePage({ market }: { market: MarketId }) {
+  // The same configuration as lib/sim-worker.ts's "init".
+  const sim = createSimulation({ seed: SEED, buyers: 3, sellers: 3, makers: 2, noise: 2, market, silentSeries: undefined });
+  const initial = { snapshot: snapshot(sim), log: toLines([...sim.log]).slice(-300), seed: SEED };
   return (
     <main id="main">
-      <div className="ribbon sim" role="note">
-        Simulation. Nothing here touches the chain.
-      </div>
-      <div className="wrap">
-        <header className="page-head">
-          <span className="eyebrow">Simulate · {MARKET_INFO[market].name} market, {MARKET_INFO[market].delivery}, {MARKET_INFO[market].rounds}</span>
-          <MarketSwitch markets={liveMarkets()} />
-          <h1>A market of agents, cleared by the real engine</h1>
-          <p className="sub">Buyers, sellers, makers and noise traders seal orders, reveal them and are cleared and settled by the same TypeScript engine the contract is tested against, running in a Web Worker in this tab. The index is a seeded random walk starting from the chip&rsquo;s index level. Every commit pays a fee that is burned, as on chain.</p>
+      <div className="mx-auto max-w-[1278px] px-3 pb-10 pt-8 sm:px-6">
+        <header className="mb-6">
+          <h1 className="font-display m-0 text-4xl text-foreground">
+            A market of agents, <span className="text-muted-foreground">cleared by the real engine.</span>
+          </h1>
+          <p className="m-0 mt-3 max-w-3xl text-base text-muted-foreground">Buyers, sellers, makers and noise traders seal orders, reveal them and are cleared and settled by the same TypeScript engine the contract is tested against, running in this tab. Every commit pays a fee that is burned, as on chain. Simulation: nothing here touches the chain.</p>
         </header>
-        <SimRunner market={market} />
+        <SimApp market={market} initial={initial} />
       </div>
     </main>
   );

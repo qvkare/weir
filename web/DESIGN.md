@@ -108,21 +108,20 @@ Header (sticky, translucent cleanroom; between 961 and 1180 px the market switch
 
 ## 6. Page by page
 
-### 6.1 `/` (rebuilt 12 Nov 2026)
-Six sections, one job each, about 500 words, centred like the reference pages the owner chose; built in `components/front/`.
-1. **Hero.** A pill that is true at every moment (the market and "NEAR testnet, test dollars" until this browser has read the chain, then the round in progress and when its phase ends, linking to it); the headline "Next week's GPU hours, / priced today." with the second line in the muted grey; one sentence; "See the live round" and "How it works". Below it, rising from the lower edge, the **market window** (`market-window.tsx`): the last index print large in the dot-matrix face with its unit and time, the round in progress (phase, countdown, one tile per sealed commit, dollars locked), the last clearing (long price, forward, volume, round, time) and the live-read line. It is the only place on the page that uses the two side colours.
-2. **The problem.** One sentence from the backtest (`backtest/results/summary.json`, "move": the spread of weekly moves over 69 delivery weeks), revealed word by word as it scrolls (20% to 100% opacity, a sticky box over a 170vh runway; shown whole under reduced motion), with a line saying what it is and a link to `/backtest`.
-3. **How it works.** Four cards with a still drawing each: sealed bids; one price for everyone filled; paid in full when it opens; agents with keys that cannot withdraw.
-4. **Three chips, a market each.** H100, H200, A100 80 GB: the part and its memory, the last print and its time, links to each market's auction.
-5. **Check it yourself.** Contracts, the review, a print re-hashed in the browser; the plain line the record requires ("All three price reporters are run by one operator today... test dollars"); three questions in a grouped FAQ ("What you are trusting").
-6. **Close.** "Watch a round clear." and two buttons.
+### 6.1 `/` (rebuilt 12–13 Nov 2026)
+Built in `components/front/`: a centred hero (pill, the serif headline "Next week's GPU hours, / priced today.", one sentence, two buttons) over a dusk backdrop drawn from the H100 backtest's weekly series (`lib/backdrop.ts`); under it the **application window**, which is the application itself: the Clearings view of section 6.2, with the same sidebar, title row, chips and grid, live from the chain. Then the sources ribbon (the six public price lists, as plain names), the measured statement, how it works in three cells, a bento of five objects read from the chain (the life of a round, the agents, the sources around the median, a print checked here, the last events), the three markets, the review wall (the record's findings in its own words), check it yourself with the grouped questions, "Built by Qvkare" (portrait, handle, links, three results; nothing else), and the closing call to action.
 
-Moved off the homepage, nothing deleted: the floor and "Who is in the room" and the payoff and hedge-size tool to `/how` (`#round`, `#room`, `#hedge`); the series and phase clock to `/auction` (`#series`; the last clearing was already there as "Round N, cleared"); the index chart and its sources to `/proof` (`#index`, `#sources`); the three facts and the limits list were already on `/how`. The wafer and the H100 specimen are no longer shown (their components and tests stay); the chips' specs live on in the markets section. Old homepage anchors (`/#series` and the rest) are sent to the new places by the page.
+Moved off the homepage, nothing deleted: the floor, "Who is in the room" and the payoff tool to `/how`; the series clock to `/auction`; the index chart and sources to `/auction/prints`. The wafer and the specimen drawing are gone from the site (`lib/wafer.ts` and its test stay for the record).
 
-### 6.2 `/auction`, `/simulate`, `/backtest`, `/proof`, `/agents`
-Same data and behaviour as before, in the cleanroom treatment: page heads on an ink rule with the two-die eyebrow, mono uppercase table heads and mono figures, side cells with a solid blue or hatched gold die, panels on the sheet, supply dashed and its paid area hatched in every step chart, the "now" rule in ink. `/auction`'s countdown is drawn in dots. Code blocks on `/agents` have a panel title bar and a mono COPY button.
+### 6.2 The application: `/auction`, `/agents`, `/proof` (13 Nov 2026)
+One frame for every market page (`components/front/app/parts.tsx`): a sidebar with the four markets and their last print (switching keeps the view), the views, the Proof group and the network; a title row with the market, series, phase and countdown; a chip row; a main area that scrolls inside a frame as tall as the screen allows. Below 768 px the sidebar becomes two selectors, Market and View. Nine views, each a page (`lib/app-views.ts`): Round in progress, Sealed book, Clearings, Index prints, Agents, and Proof's Contracts, Solvency, Review and Record. Each shows the figures as published, labelled, then reads the chain in the browser. Old anchors (`/proof#audited`, `/auction#book-h`, …) and `/auction?series=&round=` are forwarded to their view. The verifier's three states: matched, did not match (red, the only red), not published (grey: the host has no file; not a failed check).
 
-### 6.3 `/how`
+`/simulate` uses the same parts: one toolbar (Play in the primary style, the others secondary, speed as a segmented control, a compact seed field, a quiet Reset, the void option as a labelled switch with a one-line hint), a status line, and four panels of fixed height that scroll inside (agents with a short line each and the full rule on "More", the sealed book, the last clearing, the event log). The page opens on the state after setup, computed at build by the same engine and seed as the worker.
+
+### 6.3 `/how`, `/backtest`, `/spec`, `/audit` (the reading pages)
+On the homepage's system through `<main class="doc">` (`app/site.css`): the serif for h1 and h2, the type scale, sentence-case labels in Geist instead of uppercase mono, the same column, cards and buttons. `/backtest` opens on its three figures and the chart; the rule and the tables follow. `/spec` and `/audit` are a document column with a table of contents at the side on desktop.
+
+### 6.3b `/how`
 Opens with the round as work (the same floor as the home page), then the five sequences as before (their clearing chart now dashes and hatches supply), then limits and trust.
 
 ### 6.3a The rules of specifications 0.4 to 0.6, in the site's words

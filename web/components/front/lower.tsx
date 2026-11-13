@@ -373,8 +373,21 @@ function HashCheck({ d }: { d: FrontData }) {
   return (
     <div className="w-full space-y-3 font-mono text-xs">
       <Row label="On chain" value={onChain ? shortHash(onChain, 10, 6) : "no print"} />
-      <Row label="Recomputed here" value={!d.bundle ? (d.bundleError ? "bundle not fetched" : "no bundle") : mine === null ? "hashing…" : mine === "failed" ? "could not hash" : shortHash(mine, 10, 6)} />
-      <div className="pt-1 font-sans">{mine === null || !d.bundle ? <Pill tone="muted">Not checked yet</Pill> : match ? <Pill tone="ok">The hashes match</Pill> : <Pill tone="flag">The hashes differ</Pill>}</div>
+      <Row label="Recomputed here" value={!d.bundle ? (d.bundleError ? "not published" : "no bundle") : mine === null ? "hashing…" : mine === "failed" ? "could not hash" : shortHash(mine, 10, 6)} />
+      <div className="pt-1 font-sans">
+        {!onChain ? (
+          <Pill tone="muted">No print yet</Pill>
+        ) : !d.bundle ? (
+          d.bundleError ? <Pill tone="muted">Not published</Pill> : <Pill tone="muted">Not checked yet</Pill>
+        ) : mine === null || mine === "failed" ? (
+          <Pill tone="muted">Not checked yet</Pill>
+        ) : match ? (
+          <Pill tone="ok">The hashes match</Pill>
+        ) : (
+          <Pill tone="flag">The hashes do not match</Pill>
+        )}
+      </div>
+      {onChain && !d.bundle && d.bundleError ? <p className="m-0 max-w-none font-sans text-xs text-muted-foreground">The bundle host has no file for this report, so it could not be checked. Not a failed check.</p> : null}
     </div>
   );
 }
@@ -502,7 +515,6 @@ export function BuiltBy() {
           ))}
         </ul>
       </div>
-      <p className="m-0 mt-10 max-w-none text-sm text-muted-foreground">AI was used as a tool in developing this project.</p>
     </Shell>
   );
 }

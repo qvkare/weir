@@ -1,104 +1,12 @@
 "use client";
-import type { ReactNode } from "react";
-import { BundleVerifier } from "@/components/bundle-verifier.tsx";
 import { ExtLink } from "@/components/ext-link.tsx";
 import { CheckIcon, CrossIcon } from "@/components/icons.tsx";
-import { LiveBar, useLive } from "@/components/live.tsx";
 import { Empty, NotDeployed, RpcError } from "@/components/state.tsx";
 import { valueOf } from "@/lib/cache.ts";
-import { clientReader } from "@/lib/client-source.ts";
 import { accountUrl, MARKET_INFO, withMarket, type MarketId } from "@/lib/config.ts";
-import { loadProof, type ContractRow, type ProofData } from "@/lib/data/proof.ts";
+import { type ProofData } from "@/lib/data/proof.ts";
 import { fmtUsd, fmtUsdOrNone, shortHash } from "@/lib/format.ts";
-import type { SiteConfig } from "@/lib/site-config.ts";
 import { totalsSum } from "@/lib/views.ts";
-
-interface Props {
-  cfg: SiteConfig;
-  market: MarketId;
-  rows: ContractRow[];
-  initial: ProofData;
-  recorded: { file: string; text: string; bucket: number | null } | null;
-  recordedNote: ReactNode;
-  audited: ReactNode;
-  sandbox: ReactNode;
-}
-
-/** The sections of /proof that read the chain, read once when the page opens, with the static ones between them. */
-export function ProofLive({ cfg, market, rows, initial, recorded, recordedNote, audited, sandbox }: Props) {
-  const [st, retry] = useLive<ProofData>({
-    initial,
-    initialAt: cfg.builtAt * 1000,
-    mode: cfg.mode,
-    load: async () => {
-      const readers = new Map<MarketId, ReturnType<typeof clientReader>>();
-      const readerOf = (m: MarketId) => readers.get(m) ?? (readers.set(m, clientReader(cfg, m)), readers.get(m)!);
-      const d = await loadProof(rows, readerOf, market);
-      const failed = [d.params, d.totals].find((r) => r && !r.ok);
-      if (failed && !failed.ok) throw new Error(failed.error);
-      return d;
-    },
-    pollSecs: 0,
-  });
-  const d = st.data;
-  const params = d.params ? valueOf(d.params) : null;
-  const bar = <LiveBar st={st} mode={cfg.mode} builtAt={cfg.builtAt} polls="Read once when the page opens; it does not poll." retry={retry} />;
-  // The verifier fetches every bundle; it starts once, on the figures this browser read (or on the
-  // build's when the read failed or there is no chain).
-  const verifyNow = cfg.mode !== "chain" || st.from === "live" || !!st.error;
-  return (
-    <>
-      <div style={{ marginTop: 24 }}>{bar}</div>
-      <section className="section" id="contracts" aria-labelledby="contracts-h">
-        <div className="section-head">
-          <h2 id="contracts-h">Contracts</h2>
-          <span className="note">Keys and code hash. A contract account with no keys cannot change its code.</span>
-        </div>
-        <Contracts d={d} explorer={cfg.explorer} />
-      </section>
-
-      <section className="section" id="audited" aria-labelledby="audited-h">
-        <div className="section-head">
-          <h2 id="audited-h">Audited</h2>
-          <span className="note">Four passes by an AI reviewer, not an audit firm · <a href="/audit">the full record</a></span>
-        </div>
-        {audited}
-      </section>
-
-      <section className="section" id="sandbox" aria-labelledby="sandbox-h">
-        <div className="section-head">
-          <h2 id="sandbox-h">Contract against the engine</h2>
-          <span className="note">Run by the authors on a local test node</span>
-        </div>
-        {sandbox}
-      </section>
-
-      <section className="section" id="solvency" aria-labelledby="solvency-h">
-        <div className="section-head">
-          <h2 id="solvency-h">Solvency, {MARKET_INFO[market].name} market</h2>
-          <span className="note">What the contract owes, against the dollars it holds</span>
-        </div>
-        <Solvency market={market} d={d} />
-      </section>
-
-      <section className="section" id="verifier" aria-labelledby="verifier-h">
-        <div className="section-head">
-          <h2 id="verifier-h">Bundle verifier</h2>
-          <span className="note">SHA-256 by SubtleCrypto in this browser</span>
-        </div>
-        {d.kind === "none" ? <NotDeployed market={market} what="print to check" /> : !params ? <RpcError read={d.params ?? { ok: false, error: "not read", lastGood: null }} href="/auction/prints#verifier" model={d.kind === "model"} /> : null}
-        {recordedNote}
-        {verifyNow ? (
-          <div style={{ marginTop: 12 }}>
-            <BundleVerifier key={d.prints.map((p) => p.bucket).join(",")} prints={params ? d.prints : []} bundlesBase={params ? cfg.bundlesBase : null} recorded={recorded} tick={params?.tick ?? 0} model={d.kind === "model"} />
-          </div>
-        ) : (
-          <p className="small muted">Reading the last prints before checking them&hellip;</p>
-        )}
-      </section>
-    </>
-  );
-}
 
 export function Contracts({ d, explorer }: { d: ProofData; explorer: string | null }) {
   if (d.contracts.length === 0) return <Empty>No market is deployed yet, so there are no contracts to list.</Empty>;

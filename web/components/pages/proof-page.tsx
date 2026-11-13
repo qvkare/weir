@@ -1,27 +1,17 @@
 import type { WireParams } from "@weir/engine";
 import { ExtLink } from "@/components/ext-link.tsx";
-import { Empty, NotDeployed, RpcError, Stale } from "@/components/state.tsx";
+import { Empty, Stale } from "@/components/state.tsx";
 import { In } from "@/components/markdown-doc.tsx";
-import { ProofLive } from "./proof-live.tsx";
-import { ProofIndex } from "./proof-index.tsx";
-import { MarketSwitch } from "@/components/site-nav.tsx";
-import { loadHome } from "@/lib/data/home.ts";
-import { source } from "@/lib/source.ts";
-import { liveMarkets } from "@/lib/build.ts";
 import { integrationFigures, residualRisks, type RiskItem } from "@/lib/audit.ts";
 import { auditHref, CLOSED, HISTORY, OPEN, PASSES, SOUND_TESTS, specHref, STATED, VERDICT, type Finding } from "@/lib/audit.ts";
 import { buildData, deployments, sourceKind } from "@/lib/build.ts";
-import { valueOf } from "@/lib/cache.ts";
-import { MARKET_IDS, MARKET_INFO, txUrl, type MarketId } from "@/lib/config.ts";
-import { loadProof, type ContractRow } from "@/lib/data/proof.ts";
+import { MARKET_IDS, txUrl, type MarketId } from "@/lib/config.ts";
+import { type ContractRow } from "@/lib/data/proof.ts";
 import { stepGroups } from "@/lib/evidence.ts";
 import { fmtBps, fmtGpuH, fmtInt, fmtPrice, fmtSpan, fmtUsd, fmtUtc, shortHash } from "@/lib/format.ts";
-import { recordedBundle } from "@/lib/load-server.ts";
 import { roundsOf } from "@/lib/load.ts";
 import { inline } from "@/lib/markdown.ts";
 import { MODEL_WIRE, modelContract } from "@/lib/model.ts";
-import { siteCfg } from "@/lib/site.ts";
-import { serverReader } from "@/lib/source.ts";
 import type { SourceKind } from "@/lib/source-types.ts";
 
 export function contractRows(): ContractRow[] {
@@ -37,57 +27,6 @@ export function contractRows(): ContractRow[] {
     }
   }
   return rows;
-}
-
-export async function ProofPage({ market }: { market: MarketId }) {
-  const d = deployments();
-  const cfg = siteCfg();
-  const rows = contractRows();
-  const initial = await loadProof(rows, serverReader, market);
-  const params = initial.params ? valueOf(initial.params) : null;
-  const rec = recordedBundle(MARKET_INFO[market].chip);
-  const recorded = rec && rec.origin.kind === "recorded" ? { file: rec.origin.file, text: rec.text, bucket: rec.bundle.bucket } : null;
-  return (
-    <main id="main">
-      <div className="wrap">
-        <header className="page-head">
-          <span className="eyebrow">Proof · NEAR {d.network}</span>
-          <MarketSwitch markets={liveMarkets()} />
-          <h1>Check every print yourself</h1>
-          <p className="sub">Each report carries the hash of the data behind it. Nothing on chain checks a report against that data, and all three reporters are run by one operator today; this page fetches the data and hashes it in your browser, so you can.</p>
-        </header>
-
-        <ProofLive
-          cfg={cfg}
-          market={market}
-          rows={rows}
-          initial={initial}
-          recorded={recorded}
-          recordedNote={<RecordedNote recorded={recorded} />}
-          audited={<Audited market={market} params={params} kind={initial.kind} />}
-          sandbox={<SandboxLine />}
-        />
-
-        <ProofIndex cfg={cfg} market={market} initial={await loadHome(source(market), { bundlesBase: cfg.bundlesBase, chipSources: [], only: "index" })} sample={rec} />
-
-        <section className="section" id="params" aria-labelledby="params-h">
-          <div className="section-head">
-            <h2 id="params-h">Parameters, {MARKET_INFO[market].name} market</h2>
-            <span className="note">Read from the contract when this page was published ({fmtUtc(cfg.builtAt)}). Set once at deployment; no method changes them.</span>
-          </div>
-          {initial.kind === "none" ? <NotDeployed market={market} what="parameter" /> : params ? <ParamsTable p={params} /> : <RpcError read={initial.params!} href="/proof#params" model={initial.kind === "model"} />}
-        </section>
-
-        <section className="section" id="transactions" aria-labelledby="tx-h">
-          <div className="section-head">
-            <h2 id="tx-h">Transactions on record</h2>
-            <span className="note">As recorded by the deploy tool</span>
-          </div>
-          <Transactions />
-        </section>
-      </div>
-    </main>
-  );
 }
 
 export function Audited({ market, params, kind }: { market: MarketId; params: WireParams | null; kind: SourceKind }) {
@@ -308,7 +247,6 @@ export function Transactions() {
   const all = buildData().txs;
   const groups = stepGroups(all);
   if (groups.length === 0) return <Empty>No transactions are recorded yet. When a run is recorded, each one is listed here by what it did, with failures kept.</Empty>;
-  const files = [...new Set(all.map((t) => t.file))];
   const total = groups.reduce((n, g) => n + g.txs.length, 0);
   const checked = all.some((t) => t.ok !== null);
   return (

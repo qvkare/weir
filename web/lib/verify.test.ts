@@ -56,3 +56,18 @@ test("the print is recomputed as the median of its reports", () => {
   assert.equal(hashFromFileName("evidence/bundles/1794423600-1c0e2cb8b9c8.json"), "1c0e2cb8b9c8");
   assert.equal(hashFromFileName("x.json"), null);
 });
+
+test("a print's checks count three states: matched, did not match, not available", async () => {
+  const { summarizeChecks } = await import("./verify.ts");
+  const rows = [
+    { kind: "hash", label: "a", ok: true, file: "x", chain: "x" },
+    { kind: "rules", label: "a", ok: true, passed: 5, failed: [] },
+    { kind: "hash", label: "b", ok: false, file: "y", chain: "z" },
+    { kind: "rules", label: "b", ok: false, passed: 4, failed: [{ name: "n", ok: false, expected: 1, actual: 2 }] },
+    { kind: "fetch", label: "c", ok: false, detail: "the bundle host answered HTTP 404" },
+  ] as Parameters<typeof summarizeChecks>[0];
+  assert.deepEqual(summarizeChecks(rows, ["a", "b", "c"]), { matched: 1, differs: 1, unavailable: 1, rulesPassed: 1, rulesFailed: 1 });
+  // A host that has none of the files is three unavailable reports, not three failures.
+  const none = ["a", "b", "c"].map((label) => ({ kind: "fetch" as const, label, ok: false as const, detail: "HTTP 404" }));
+  assert.deepEqual(summarizeChecks(none, ["a", "b", "c"]), { matched: 0, differs: 0, unavailable: 3, rulesPassed: 0, rulesFailed: 0 });
+});

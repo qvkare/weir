@@ -3,7 +3,7 @@ import { clearRound, commitHash, commitPreimage, type Order } from "@weir/engine
 import type { WireParams } from "@weir/engine";
 import { LimitsList, PayoffBlock } from "@/components/home-blocks.tsx";
 import { Room } from "@/components/room.tsx";
-import { MarketSwitch } from "@/components/site-nav.tsx";
+import { MarketLinks } from "@/components/front/market-links.tsx";
 import { loadHome } from "@/lib/data/home.ts";
 import { liveMarkets } from "@/lib/build.ts";
 import { FloorScene } from "@/components/floor-scene.tsx";
@@ -75,11 +75,11 @@ export async function HowPage({ market }: { market: MarketId }) {
   const units = 1344;
 
   return (
-    <main id="main">
+    <main id="main" className="doc">
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">How it works</span>
-          <MarketSwitch markets={liveMarkets()} />
+          <MarketLinks page="/how" current={market} markets={liveMarkets()} />
           <h1>A week-ahead price, set in sealed rounds</h1>
           <p className="sub">One round as work first, then five steps from a sealed order to a payout, then every limit. Figures in the drawings use {live ? "the live parameters" : "example parameters"}; worked examples are computed by the Weir engine on this page.</p>
         </header>

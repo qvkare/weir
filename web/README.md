@@ -52,21 +52,26 @@ directly). The Worker (`worker/index.ts`, routing in `worker/route.ts`) runs onl
 `run_worker_first` (`wrangler.jsonc`): the six per-market pages, to redirect `?m=<market>` (302 to
 `/m/<market>/...`, other parameters kept), `/api/*`, and `/m/h100-weekly`, `/m/weekly`, `/m/fast`.
 
-Measured on 12 Nov 2026 with a chain build of four markets (`wc -c` and `gzip -9` on `out/`):
+Measured on 13 Nov 2026 with a chain build of four markets (`wc -c` and `gzip -9` on `out/`). Homepage JS: 260,054 bytes gzipped; `/auction` 234,139; `/simulate` 204,293.
 
 | Route | Served by | HTML, bytes (gzip) | Live data in the browser | Polls |
 |---|---|---|---|---|
-| `/`, `/m/<market>` | Worker, then asset; `/m/...` asset | 98,190 (15,811), rebuilt homepage | yes, 12 views on open | the round, the last print and the book's size every 30 s (hourly market 15 s) while visible; reads the window again when one changes |
-| `/auction` | Worker, then asset | 97,268 (16,112) | yes, 6 views on open | the round in progress and its book every 30 s (hourly 15 s) while visible; a past round (`?series=&round=`) is read once |
-| `/agents` | Worker, then asset | 104,817 (18,673) | yes, about 11 views | none: read once, retry button on failure |
-| `/proof` | Worker, then asset | 659,041 (67,600) | contracts, solvency, last five prints: about 13 views, and the bundles from the keeper | none: read once |
-| `/how` | Worker, then asset | 150,699 (29,170) | no: parameters and series as of the build, labelled | none |
-| `/simulate` | Worker, then asset | 74,121 (12,236) | no: runs in the browser | none |
-| `/spec`, `/audit`, `/backtest` | asset | 181,254, 136,133, 264,363 | no | none |
+| `/`, `/m/<market>` | Worker, then asset; `/m/...` asset | 256,308 (38,143) | yes, about 15 views and 1 bundle on open | the round, the last print and the book's size every 30 s (hourly market 15 s) while visible |
+| `/auction` (Round in progress) | Worker, then asset | 164,396 (25,946) | yes | the round and its book every 30 s (hourly 15 s) while visible |
+| `/auction/book` | Worker, then asset | 101,074 (16,274) | yes | the book every 30 s (hourly 15 s) while visible |
+| `/auction/clearings` | Worker, then asset | 119,555 (18,460) | yes, all rounds of the series | none: read once, and again when a round is picked |
+| `/auction/prints` | Worker, then asset | 161,167 (22,650) | yes: 8 prints, each report's bundle fetched and hashed here | none: read once |
+| `/agents` | Worker, then asset | 131,889 (22,563) | yes: each recorded account's balance, position, latest action | none: read once |
+| `/proof`, `/proof/solvency` | Worker, then asset | 106,683 (16,662); 94,397 (15,481) | yes: keys, code hash, totals, the token balance | none: read once |
+| `/proof/review`, `/proof/record` | Worker, then asset | 158,554 (26,477); 570,721 (51,340) | no: the review record and the deployment record as published | none |
+| `/how` | Worker, then asset | 178,887 (35,204) | no: parameters and series as published, labelled | none |
+| `/simulate` | Worker, then asset | 106,386 (15,868) | no: the state after setup is in the page; then it runs in a Web Worker | none |
+| `/spec`, `/audit`, `/backtest` | asset | 184,268; 139,105; 269,681 | no | none |
 | `/api/status`, `/api/round`, `/api/quote` | Worker | JSON, about 2 KB | reads the chain per request | none |
 
-`/proof` is the largest: the 258 recorded transactions are in the HTML and again in Next's inline
-page data. Polling stops while the tab is hidden (`components/live.tsx`).
+`/proof/record` is the largest: the 258 recorded transactions are in the HTML and again in Next's
+inline page data. Every market page is one of nine views of one application frame (`lib/app-views.ts`,
+`components/front/app/`); the other markets' are under `/m/<market>/...`. Polling stops while the tab is hidden (`components/live.tsx`).
 
 Worker CPU, measured in Node 22.23 on an Apple M1 with the RPC answers replayed from memory
 (network waiting is not CPU time): `route()` 0.39 ms on the first call, 3.7 µs after;
@@ -111,14 +116,13 @@ CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node tools
 ```
 
 Writes `public/icon.svg`, `icon-32.png`, `apple-icon.png`, `icon-512.png` and
-`opengraph-image.png` from the mark's geometry (`lib/logo.ts`) and a still of the wafer cleared by
-the engine (`lib/wafer.ts`). Mark construction and usage: `DESIGN.md` section 3, exports in
+`opengraph-image.png` from the mark's geometry (`lib/logo.ts`) and the homepage's headline and sentence. Mark construction and usage: `DESIGN.md` section 3, exports in
 `brand/`. The three art-direction boards the identity came from are in `brand/proposals/`.
 
 ## Not built
 
 - Wallet connection and the order form (scope: read-only first). `/auction` links to `/agents` instead.
 - The fills table's refund column (not readable from views; see DESIGN.md section 10).
-- The smoke test sees the static HTML only. What the browser reads after load is covered by the loader tests (`lib/pages.test.ts`, on the model) and by one local Workers run against testnet on 12 Nov 2026 (`wrangler dev`): every page of the four markets, `?m=` redirects, a past round, at 375 px in both colour schemes. In that run the contracts each still held one full-access key, and 9 of 24 bundle checks on `/proof` were unverified because the keeper answered 404 for the bundles of the three older prints.
+- The smoke test (`node scripts/smoke.ts`) sees the static HTML only: every page, every view of every market, the `?m=` redirects, every internal anchor, and that each item of the homepage window's sidebar opens a page showing that view. What the browser reads after load is covered by the loader tests (`lib/pages.test.ts`, on the model) and by one local Workers run against testnet on 12 Nov 2026 (`wrangler dev`): every page of the four markets, `?m=` redirects, a past round, at 375 px in both colour schemes. In that run the contracts each still held one full-access key, and the bundle host answered 404 for reports made before 12 Nov 2026, 19:15 UTC; Index prints counts those as "not published", apart from matched and did not match (`lib/verify.ts`, `summarizeChecks`, tested in `lib/verify.test.ts`).
 - The error state with both RPC endpoints down was tested in Node (`lib/near.test.ts`), not in a browser.
 - Accessibility was checked by script (one `h1`, landmarks, labels, names, duplicate ids, heading order) and by hand at 375 px, not with axe or a screen reader.

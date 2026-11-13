@@ -23,7 +23,7 @@ export default function BacktestPage() {
   const bt = readBacktest(raw.site, raw.summary);
   if (!bt || bt.weeks.length === 0) {
     return (
-      <main id="main">
+      <main id="main" className="doc">
         <div className="wrap">
           <header className="page-head">
             <span className="eyebrow">Backtest</span>
@@ -55,45 +55,21 @@ export default function BacktestPage() {
   const summary = `${cov.weeks} delivery weeks from ${first.label} to ${last.label}. The week's average stayed inside the band in ${cov.inside} of ${cov.weeks}. Across all weeks, hedged minus unhedged sums to ${usd(cov.totalDiff, 3)} per GPU-hour.`;
 
   return (
-    <main id="main">
+    <main id="main" className="doc">
       <div className="wrap">
         <header className="page-head">
           <span className="eyebrow">Backtest · modelled clearing prices</span>
           <h1>What a hedge would have done</h1>
-          <p className="sub">{cov.weeks} weeks of H100 prices, hedged and unhedged. Clearing prices are modelled; the rule is above the chart.</p>
+          <p className="sub">{cov.weeks} weeks of H100 prices, hedged and unhedged. Clearing prices are modelled; the rule is set out below the chart.</p>
         </header>
 
-        <section className="section" aria-labelledby="rule-h">
-          <h2 id="rule-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
-            The rule
-          </h2>
-          <dl className="kv">
-            <dt>Index</dt>
-            <dd>{str(bt.meta.underlying) ?? "no data"}</dd>
-            <dt>Data</dt>
-            <dd>
-              {str(get(s, "data", "first_index_day")) ?? "no data"} to {str(get(s, "data", "last_index_day")) ?? "no data"}; {fmtInt(num(get(s, "data", "days_with_index")))} days with an index value, {fmtInt(num(get(s, "data", "days_without_index")))} without (never filled)
-            </dd>
-            <dt>Weeks</dt>
-            <dd>
-              {fmtInt(num(get(s, "weeks", "kept")) ?? cov.weeks)} kept of {fmtInt(num(get(s, "weeks", "candidate_mondays")))} candidate Mondays; {excluded.length} dropped ({countBy(excluded.map((e) => e.reason.replace("_", " ")))})
-            </dd>
-            <dt>Band</dt>
-            <dd>
-              band_bps {bandBps ?? "no data"}{bandBps ? ` (${fmtBps(bandBps)} of the anchor each way)` : ""}. {str(get(s, "parameters", "band_rule"))}
-            </dd>
-            <dt>LONG price p</dt>
-            <dd>{str(get(s, "parameters", "neutral_price")) ?? str(bt.meta.note) ?? "no data"}. This is modelled: nobody traded these weeks.</dd>
-            <dt>Cost</dt>
-            <dd>
-              {str(get(s, "parameters", "cost_rule"))}
-              {hours ? ` Usage: ${fmtInt(hours)} GPU-hours a week.` : ""}
-            </dd>
-            <dt>Not modelled</dt>
-            <dd>
-              {caveats.length ? caveats.map((c) => c.title.toLowerCase()).join("; ") : "see the caveats below"}. <a href="#caveats">Caveats in full</a>
-            </dd>
-          </dl>
+        <section className="section" aria-label="The figures that matter">
+          <div className="figures">
+            <Fig label="Weeks whose average stayed inside the band" value={`${cov.inside} of ${cov.weeks}`} />
+            <Fig label="Surprise per week, unhedged → hedged (std dev)" value={`${usd(num(get(neutral, "sd_of_surprise", "unhedged")))} → ${usd(num(get(neutral, "sd_of_surprise", "hedged")))}`} />
+            <Fig label="Surprise variance removed" value={pct(get(neutral, "surprise_variance_removed"))} />
+          </div>
+          <p className="small muted">A buyer of {hours ? fmtInt(hours) : "no data"} GPU-hours a week, {first.label} to {last.label}, at a clearing price equal to the anchor (modelled; nobody traded these weeks).</p>
         </section>
 
         <section className="section" aria-labelledby="chart-h">
@@ -137,6 +113,40 @@ export default function BacktestPage() {
             </p>
           ) : null}
         </section>
+
+        <section className="section" aria-labelledby="rule-h">
+          <h2 id="rule-h" style={{ fontSize: "var(--t24)", marginBottom: 16 }}>
+            The rule
+          </h2>
+          <dl className="kv">
+            <dt>Index</dt>
+            <dd>{str(bt.meta.underlying) ?? "no data"}</dd>
+            <dt>Data</dt>
+            <dd>
+              {str(get(s, "data", "first_index_day")) ?? "no data"} to {str(get(s, "data", "last_index_day")) ?? "no data"}; {fmtInt(num(get(s, "data", "days_with_index")))} days with an index value, {fmtInt(num(get(s, "data", "days_without_index")))} without (never filled)
+            </dd>
+            <dt>Weeks</dt>
+            <dd>
+              {fmtInt(num(get(s, "weeks", "kept")) ?? cov.weeks)} kept of {fmtInt(num(get(s, "weeks", "candidate_mondays")))} candidate Mondays; {excluded.length} dropped ({countBy(excluded.map((e) => e.reason.replace("_", " ")))})
+            </dd>
+            <dt>Band</dt>
+            <dd>
+              band_bps {bandBps ?? "no data"}{bandBps ? ` (${fmtBps(bandBps)} of the anchor each way)` : ""}. {str(get(s, "parameters", "band_rule"))}
+            </dd>
+            <dt>LONG price p</dt>
+            <dd>{str(get(s, "parameters", "neutral_price")) ?? str(bt.meta.note) ?? "no data"}. This is modelled: nobody traded these weeks.</dd>
+            <dt>Cost</dt>
+            <dd>
+              {str(get(s, "parameters", "cost_rule"))}
+              {hours ? ` Usage: ${fmtInt(hours)} GPU-hours a week.` : ""}
+            </dd>
+            <dt>Not modelled</dt>
+            <dd>
+              {caveats.length ? caveats.map((c) => c.title.toLowerCase()).join("; ") : "see the caveats below"}. <a href="#caveats">Caveats in full</a>
+            </dd>
+          </dl>
+        </section>
+
 
         {covRows.length ? (
           <section className="section" aria-labelledby="cov-h">
@@ -239,7 +249,7 @@ export default function BacktestPage() {
             <p className="muted">The backtest's own list of caveats was not available when this page was published. The clearing prices above are modelled.</p>
           )}
           <p className="tiny muted" style={{ marginTop: 16 }}>
-            Figures from Weir&rsquo;s backtest of its own index on public provider prices, as of {fmtUtc(buildData().builtAt)}, when this page was published; the rule is above. {bt.dropped ? `${bt.dropped} rows without every figure were left out.` : ""}
+            Figures from Weir&rsquo;s backtest of its own index on public provider prices, as of {fmtUtc(buildData().builtAt)}, when this page was published; the rule is set out above. {bt.dropped ? `${bt.dropped} rows without every figure were left out.` : ""}
           </p>
         </section>
       </div>

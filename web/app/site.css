@@ -15,6 +15,7 @@
 @source "../components/ui";
 @source "../components/pages/agents-page.tsx";
 @source "../components/pages/app-page.tsx";
+@source "../components/pages/simulate-page.tsx";
 
 /* Fonts: Tailwind's font-sans and font-mono read --font-sans and --font-mono, which next/font sets
    on <html> (Geist, Geist Mono), so they are not redefined here. Dark mode needs no variant: the
@@ -159,4 +160,93 @@
 [data-filter="stated"] [data-findings]:not([data-findings="stated"]),
 [data-filter="closed"] [data-findings]:not([data-findings="closed"]) {
   display: none;
+}
+
+/* The reading pages (/how, /backtest, /spec, /audit; <main class="doc">) on the homepage's
+   system: the serif for h1 and h2, the type scale, no uppercase mono labels, the same column. */
+@layer utilities {
+  .doc .wrap {
+    max-width: 1278px;
+    padding-inline: 24px;
+  }
+
+  .doc h1,
+  .doc h2 {
+    font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-transform: none;
+  }
+
+  :root[data-headline="sans"] .doc h1,
+  :root[data-headline="sans"] .doc h2 {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-weight: 500;
+  }
+
+  .doc h1 {
+    font-size: var(--tdisplay);
+    line-height: 1.05;
+  }
+
+  .doc .section > h2,
+  .doc .section-head h2,
+  .doc .how-section h2 {
+    font-size: var(--t36);
+    line-height: 1.15;
+  }
+
+  .doc .page-head .sub {
+    font-size: var(--t18);
+    color: var(--ink-2);
+  }
+
+  .doc .eyebrow,
+  .doc .section-head .note,
+  .doc .note,
+  .doc thead th,
+  .doc .figure .label,
+  .doc .label,
+  .doc details.data summary,
+  .doc .spec-toc ol,
+  .doc .tabs button {
+    text-transform: none;
+    letter-spacing: normal;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .doc .eyebrow {
+    font-size: var(--t14);
+    color: var(--ink-2);
+  }
+
+  .doc .eyebrow::before {
+    display: none;
+  }
+
+  .doc thead th,
+  .doc .section-head .note,
+  .doc .figure .label {
+    font-size: var(--t12);
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+
+  .doc .board,
+  .doc .fact,
+  .doc .strip,
+  .doc .copy-block,
+  .doc .risks {
+    border-radius: 16px;
+  }
+
+  .doc .button {
+    border-radius: 6px;
+    min-height: 36px;
+    font: 500 var(--t14) / 1 var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .doc .spec-body-text {
+    max-width: 72ch;
+  }
 }

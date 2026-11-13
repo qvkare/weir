@@ -143,7 +143,7 @@ const PAGES: [string, string[]][] = [
   ["/auction/book", ["Sealed book", "Sides, sizes and prices appear as each commit is revealed"]],
   ["/auction/clearings", ["Clearings", "Long price, $/GPU-h", "Forward, $/GPU-h", "Cleared, UTC"]],
   ["/auction?m=fast", ["H100 hourly", "Round in progress"]],
-  ["/simulate", ["Simulation. Nothing here touches the chain.", "Skip to clearing", "Run 10 rounds"]],
+  ["/simulate", ["nothing here touches the chain", "Skip to clearing", "Run 10 rounds", "Settle and redeem", "Press Play", "Agents", "Sealed book", "Last clearing", "Event log", "What it does"]],
   ["/simulate?m=fast", ["H100 hourly (demo) market"]],
   ["/simulate?m=a100-80-weekly", ["A100 80 GB weekly market"]],
   ["/auction?m=h200-weekly", ["H200 weekly", "Commit fees held"]],
@@ -174,12 +174,13 @@ try {
   check(existsSync(join(out, "maker", "qvkare.png")), "out/maker/qvkare.png: missing");
   check(front.includes('src="/maker/qvkare.png"'), "/: the portrait is not served from this site");
   for (const m of front.matchAll(/<a [^>]*href="(https:\/\/[^"]+)"[^>]*>/g)) check(/target="_blank"/.test(m[0]) && /rel="noopener"/.test(m[0]), `/: outside link ${m[1]} does not open in a new tab with rel=noopener`);
-  check(!/written by AI|built by AI/i.test(text(front)), "/: the page calls the project written or built by AI");
+  for (const [p, body] of seen) check(!/written by AI|built by AI/i.test(text(body)), `${p}: calls the project written or built by AI`);
   // Levee is named in the README, which the hackathon's rule asks for; not on the site.
   for (const [p, body] of seen) check(!/Levee/.test(text(body)), `${p}: names Levee`);
   // Visitor wording: no repository paths or build jargon in what a visitor reads.
   for (const [p, body] of seen) if (p !== "/audit" && p !== "/spec") for (const bad of ["evidence/", "backtest/results", "deployments.json", "docs/AUDIT.md", "docs/SPEC.md", "integration/RESULTS.md", "at build time", "when this site was built", "when the site was built", "from the build"]) check(!text(body).includes(bad), `${p}: shows "${bad}"`);
-  check(text(front).split("AI was used as a tool in developing this project.").length === 2, "/: the line on how AI was used is not there exactly once");
+  // How the project was made is said in the README, which the hackathon asks for; not on the site.
+  for (const [p, body] of seen) check(!text(body).includes("AI was used as a tool"), `${p}: shows the line on how AI was used`);
   // Fail open: the built HTML shows the hero and the whole statement, with nothing hidden inline.
   const built = readFileSync(join(out, "index.html"), "utf8");
   check(/<h1[^>]*>Next week.s GPU hours,/.test(built), "index.html: no hero headline in the HTML");

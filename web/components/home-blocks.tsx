@@ -4,24 +4,20 @@
 import Link from "next/link";
 import type { WireParams } from "@weir/engine";
 import { valueOf } from "@/lib/cache.ts";
-import { CHIP_LABEL, MARKET_INFO, marketsOfChip, withMarket, type ChipKey, type MarketId } from "@/lib/config.ts";
-import { CHIPS } from "@/lib/hardware.ts";
-import type { ChipCardData } from "./chip-cards.tsx";
-import { dollarsOfPrice, fmtBps, fmtDuration, fmtGpuH, fmtPrice, fmtSpan, fmtUtc, fmtUtcTime, shortAccount, shortHash } from "@/lib/format.ts";
+import { withMarket, type MarketId } from "@/lib/config.ts";
+import { dollarsOfPrice, fmtBps, fmtGpuH, fmtPrice, fmtSpan, fmtUtc, shortAccount, shortHash } from "@/lib/format.ts";
 import type { CoreData, HomeData } from "@/lib/data/home.ts";
 import { RANGES, rangeOf } from "@/lib/data/home.ts";
-import { isStale, type LoadedBundle } from "@/lib/load.ts";
+import { type LoadedBundle } from "@/lib/load.ts";
 import { isNotDeployed } from "@/lib/source-types.ts";
-import { average, printView, seriesTimes, settlementLine, stepOrdersFromResult, summarize, timesOf, tradedAverage } from "@/lib/views.ts";
+import { average, printView, seriesTimes, settlementLine, timesOf, tradedAverage } from "@/lib/views.ts";
 import { seriesStage } from "@/lib/timeline.ts";
 import { Countdown } from "./countdown.tsx";
-import { Figure, priceParts } from "./figure.tsx";
 import { IndexChart } from "./index-chart.tsx";
 import { indexSummary } from "@/lib/index-chart.ts";
 import { PayoffSizer } from "./payoff-sizer.tsx";
 import { SeriesStrip } from "./series-strip.tsx";
-import { Empty, NotDeployed, RpcError, Stale } from "./state.tsx";
-import { StepChart } from "./step-chart.tsx";
+import { Empty, NotDeployed, RpcError } from "./state.tsx";
 import { SheetHead } from "./sheet-head.tsx";
 
 
@@ -41,78 +37,6 @@ function coreProblem(core: CoreData, market: MarketId, href: string, what: strin
 // 1. Index head
 
 /** The live index figure in the hero: last final print, its age, and what it is the median of. */
-export function HeroIndex({ d }: HomeView) {
-  const { core, pv, market } = d;
-  const last = valueOf(core.last);
-  const href = withMarket("/", market);
-  const params = valueOf(core.params);
-  const problem = coreProblem(core, market, href, "index print");
-  const stale = isStale(params, last, core.now);
-  const shown = last ? priceParts(fmtPrice(last.price, params?.tick)) : null;
-  if (problem) return problem;
-  return (
-    <>
-      <Figure
-        display
-        live
-        dots
-        label={`${CHIP_LABEL[MARKET_INFO[market].chip]}, USD per GPU-hour`}
-        value={shown?.value ?? null}
-        unit={shown?.unit}
-        source={
-          last ? (
-            <>
-              Final print for the bucket from {fmtUtcTime(last.bucket)}, {fmtDuration(core.now - last.bucket)} old
-              {pv ? `, median of ${pv.reporters.length} report${pv.reporters.length === 1 ? "" : "s"}` : ""}. <a href={`${withMarket("/auction/prints", d.market)}#sources`}>Sources</a>
-            </>
-          ) : (
-            "No print has become final yet."
-          )
-        }
-      />
-      {stale && last && params ? (
-        <div style={{ marginTop: 16 }}>
-          <Stale>
-            Last print is {fmtDuration(core.now - last.bucket)} old. A series cannot open on it (max_anchor_age_secs is {fmtSpan(params.max_anchor_age_secs)}).
-          </Stale>
-        </div>
-      ) : null}
-      {!core.last.ok ? (
-        <div style={{ marginTop: 16 }}>
-          <RpcError read={core.last} href={href} model={core.kind === "model"} />
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-/** One card per chip: the market shown for it (the selected one, else its first market), its last print and a link. */
-export function chipCards(d: HomeData, offered: readonly MarketId[]): ChipCardData[] {
-  return CHIPS.map((chip) => {
-    const key = chip.id as ChipKey;
-    const ids = marketsOfChip(key, offered);
-    const m = MARKET_INFO[d.market].chip === key ? d.market : ids[0] ?? null;
-    if (!m) return { chip, href: null, status: "No market", live: false, last: "No market listed", current: false };
-    const c =
-      m === d.market
-        ? { kind: d.core.kind, last: valueOf(d.core.last), tick: valueOf(d.core.params)?.tick ?? null, now: d.core.now }
-        : d.chips.find((x) => x.market === m) ?? { kind: "none" as const, last: null, tick: null, now: d.core.now };
-    const text = c.kind === "none" ? "Not deployed yet" : c.last ? `${fmtPrice(c.last.price, c.tick ?? undefined)}, ${fmtDuration(c.now - c.last.bucket)} old${c.kind === "model" ? " (model)" : ""}` : "No print yet";
-    return { chip, href: withMarket("/", m) + "#markets", status: c.kind === "chain" ? "Trading" : c.kind === "model" ? "Model" : "Not deployed", live: c.kind !== "none", last: text, current: m === d.market };
-  });
-}
-
-/** One line for the H100 card and the specimen: the last clearing, or why there is none. */
-export function lastClearingLine(d: HomeData): string {
-  const params = valueOf(d.core.params);
-  if (isNotDeployed(d.core.params)) return "Market not deployed yet";
-  if (!params) return "No reading";
-  const { info, traded } = d.clearing;
-  if (!traded || !info) return "No round has cleared yet";
-  return `${fmtPrice(info.floor + (traded.result.price ?? 0), params.tick)} forward, round ${traded.round}${d.core.kind === "model" ? " (model)" : ""}`;
-}
-
-/** The sources in the latest bundle and the reports behind the print. */
 export function IndexSources({ d, sample }: HomeView & { sample: LoadedBundle | null }) {
   const { core, pv, hosted, market } = d;
   const problem = coreProblem(core, market, withMarket("/", market), "index print");
@@ -415,37 +339,6 @@ export function SeriesStrips({ d, wall }: HomeView) {
 
 // 3. Last clearing and 4. payoff
 
-export function LastClearing({ d }: HomeView) {
-  const { core, market } = d;
-  const params = valueOf(core.params);
-  const problem = coreProblem(core, market, withMarket("/", market), "clearing");
-  if (problem || !params) return problem;
-  const { series, info, traded } = d.clearing;
-  if (!traded || !info) return <Empty>No round of {series === null ? "a live series" : `series ${series}`} has cleared with a trade yet.</Empty>;
-  const { round, result } = traded;
-  const s = summarize(result, info.floor);
-  const pp = priceParts(fmtPrice(s.price, params.tick));
-  const fp = priceParts(fmtPrice(s.forward, params.tick));
-  return (
-    <div className="grid-2 wide-left">
-      <StepChart compact orders={stepOrdersFromResult(result)} band={info.band} floor={info.floor} tick={params.tick} price={result.price} volume={result.volume} cleared />
-      <div>
-        <p className="small muted">
-          Series {series}, round {round}, cleared {fmtUtc(result.cleared_at)}.
-        </p>
-        <div className="figures">
-          <Figure live label="LONG price p*" value={pp.value} unit={pp.unit} source="Paid by every filled LONG" />
-          <Figure live label="Implied forward, floor + p*" value={fp.value} unit={fp.unit} source="The GPU-hour price this round locks" />
-          <Figure live label="Volume" value={s.volume.toLocaleString("en-US")} unit="GPU-h" source={`${s.orders} orders of ${s.commits} commits took part`} />
-        </div>
-        <a className="button ghost" href={withMarket("/auction", market, `series=${series}&round=${round}`)}>
-          Open round {round}
-        </a>
-      </div>
-    </div>
-  );
-}
-
 export function PayoffBlock({ d }: HomeView) {
   const { core, market } = d;
   const params = valueOf(core.params);
@@ -460,41 +353,6 @@ export function PayoffBlock({ d }: HomeView) {
 }
 
 // 5. Facts and 6. limits
-
-export function Facts({ d, fundingTag }: HomeView & { fundingTag: "recorded" | "quotes" }) {
-  const params = valueOf(d.core.params);
-  const opened = d.set.map((s) => valueOf(s.info)).find(Boolean) ?? null;
-  return (
-    <div className="facts">
-      <div className="fact">
-        <h3>Sealed, one price</h3>
-        <p className="small">Each order is a hash until the reveal phase. The clearing price is the one that trades the most, and every filled order pays it.</p>
-        <Link className="small" href="/how#clearing">
-          How a round clears
-        </Link>
-      </div>
-      <div className="fact">
-        <h3>Paid in full at the open</h3>
-        <p className="small">
-          A LONG and a SHORT together are backed by exactly the band
-          {opened && params ? `, ${fmtPrice(opened.band, params.tick)} in series ${opened.series}` : ""}, locked when the position opens. Nothing is liquidated.
-        </p>
-        <Link className="small" href="/proof/solvency">
-          Solvency, read live
-        </Link>
-      </div>
-      <div className="fact">
-        <h3>
-          Funding from another chain <span className="tag flag">{fundingTag === "recorded" ? "recorded" : "quotes only"}</span>
-        </h3>
-        <p className="small">USDC on Base, Arbitrum, Ethereum or Solana can reach NEAR through NEAR Intents and then be deposited into Weir. {fundingTag === "recorded" ? "One transfer is on record." : "No transfer is on record yet; only quotes."}</p>
-        <Link className="small" href="/how#funding">
-          The funding path
-        </Link>
-      </div>
-    </div>
-  );
-}
 
 export function LimitsList({ params, network }: { params: WireParams | null; network: string }) {
   const p = params;
@@ -524,4 +382,3 @@ export function LimitsList({ params, network }: { params: WireParams | null; net
   );
 }
 
-export const marketLine = (market: MarketId) => `${MARKET_INFO[market].name}: ${MARKET_INFO[market].delivery}, ${MARKET_INFO[market].rounds}`;
