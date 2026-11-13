@@ -39,7 +39,7 @@ build data). Rebuild after `deployments.json`, `evidence/` or `backtest/results/
 
 Environment, at build: `WEIR_MODEL=1` (model mode), `WEIR_MODEL_NOW` (Unix seconds: pins the model's clock; the tests and the smoke script set it so they do not depend on the time of day), `WEIR_SITE_URL` (the site's address for
 `metadataBase`, canonical links, the link preview, `robots.txt`, `sitemap.xml` and the code on
-`/agents`; default `https://weir.qvkare.workers.dev`, `lib/site.ts`). On the Worker, optional:
+`/agents`; default `https://tryweir.com`, `lib/site.ts`). On the Worker, optional:
 `WEIR_QUOTE_RECIPIENT` (NEAR mainnet account named in dry quotes; default a 64-hex placeholder;
 nothing is ever sent to it). The site holds no secret.
 
@@ -93,13 +93,17 @@ Errors are `{ "error": { "code", "message" } }` with 400, 404 (`not_deployed`, `
 ```sh
 cd web
 npx wrangler login
-WEIR_SITE_URL=https://weir.qvkare.workers.dev pnpm run deploy   # next build && wrangler deploy
-WEIR_SITE_URL=https://weir.qvkare.workers.dev pnpm run preview  # next build && wrangler dev on :8787
+pnpm run deploy   # next build && wrangler deploy
+pnpm run preview  # next build && wrangler dev on :8787
 ```
 
 The build reads the four markets from the chain once (dRPC first). The Worker is named `weir`,
-`workers_dev` is on, preview URLs are off and there is no custom domain. Deployed with the first
-line above on 12 Nov 2026 at 20:14 UTC: https://weir.qvkare.workers.dev. `wrangler deploy
+`workers_dev` is on, preview URLs are off, and `wrangler.jsonc` attaches the custom domains
+`tryweir.com` and `www.tryweir.com` (since 13 Nov 2026, 08:14 UTC). First deployed on 12 Nov 2026 at
+20:14 UTC at https://weir.qvkare.workers.dev, which still answers. The first attempt to attach
+the domain was refused because the registrar's parking records were still in the zone; they were
+deleted and the second attempt went through. The bundle address stays on the keeper's
+workers.dev host, because some network filters block newly registered domains for a while. `wrangler deploy
 --dry-run` on 12 Nov 2026: Worker 22.67 KiB, 8.23 KiB gzipped; 245 asset files, 17 MB. Before
 (OpenNext, every page rendered per request): 7079.72 KiB, 1577.73 KiB gzipped. A model build
 (`WEIR_MODEL=1`) deploys the same way and shows model figures as of the build.

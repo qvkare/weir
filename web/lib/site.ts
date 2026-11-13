@@ -4,7 +4,7 @@ import { buildData, deployments, isModel } from "./build.ts";
 import { siteConfig, type SiteConfig } from "./site-config.ts";
 
 /** The deployed address. Link previews, canonical links, robots, sitemap and the code on /agents use it. */
-export const SITE_URL = (process.env.WEIR_SITE_URL ?? "https://weir.qvkare.workers.dev").replace(/\/+$/, "");
+export const SITE_URL = (process.env.WEIR_SITE_URL ?? "https://tryweir.com").replace(/\/+$/, "");
 
 export function siteCfg(): SiteConfig {
   const d = deployments();

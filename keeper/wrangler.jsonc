@@ -9,6 +9,8 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
+  // The public address. The workers.dev address keeps working beside it.
+  "routes": [{ "pattern": "keeper.tryweir.com", "custom_domain": true }],
   // The watchdog: arms the object's alarm when none is armed. The ticks come from the alarm.
   "triggers": { "crons": ["* * * * *"] },
   "durable_objects": {

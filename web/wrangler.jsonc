@@ -18,5 +18,10 @@
     "run_worker_first": ["/", "/auction", "/auction/book", "/auction/clearings", "/auction/prints", "/agents", "/proof", "/proof/solvency", "/proof/review", "/proof/record", "/how", "/simulate", "/api/*", "/m/h100-weekly", "/m/h100-weekly/*", "/m/weekly", "/m/weekly/*", "/m/fast", "/m/fast/*"]
   },
   "workers_dev": true,
+  // The public address, with and without www. The workers.dev address keeps working beside it.
+  "routes": [
+    { "pattern": "tryweir.com", "custom_domain": true },
+    { "pattern": "www.tryweir.com", "custom_domain": true }
+  ],
   "preview_urls": false
 }

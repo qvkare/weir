@@ -39,7 +39,7 @@ const DESCRIPTION =
   "Teams that need compute and people who own GPUs bid once, sealed. One price clears for everyone filled, and every position is paid in full when it opens. H100, H200 and A100 80 GB markets on NEAR testnet, with test dollars; all three price reporters are run by one operator today.";
 
 export const metadata: Metadata = {
-  // WEIR_SITE_URL at build time, default https://weir.qvkare.workers.dev (lib/site.ts).
+  // WEIR_SITE_URL at build time, default https://tryweir.com (lib/site.ts).
   metadataBase: new URL(SITE_URL),
   alternates: { canonical: "./" },
   title: { default: TITLE, template: "%s | Weir" },
