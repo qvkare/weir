@@ -27,15 +27,20 @@ export interface FrameProps {
 }
 
 export function Frame({ sidebar, phoneNav, title, chips, children, fill }: FrameProps) {
+  const mode = fill === true ? "page" : fill === "embed" ? "embed" : undefined;
+  // Bounded frames (app/site.css, "The application frame"): the main area is the scroll
+  // container, reachable with Tab and scrolled with the arrow keys; the sidebar scrolls on its own.
   return (
-    <div className={cn("relative overflow-hidden rounded-xl border border-border bg-card text-left shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)_inset,0_40px_90px_-30px_rgba(0,0,0,0.55),0_12px_30px_-12px_rgba(0,0,0,0.35)]", fill === true && "md:h-[calc(100dvh-112px)] md:min-h-[560px]", fill === "embed" && "md:h-[640px]")}>
-      <div className={cn("grid", sidebar && "md:grid-cols-[236px_minmax(0,1fr)]", fill && "md:h-full")}>
+    <div data-app-frame={mode ?? "content"} className="app-frame relative overflow-hidden rounded-xl border border-border bg-card text-left shadow-[0_1px_0_0_color-mix(in_srgb,var(--foreground)_6%,transparent)_inset,0_40px_90px_-30px_rgba(0,0,0,0.55),0_12px_30px_-12px_rgba(0,0,0,0.35)]">
+      <div className={cn("app-frame-grid grid", sidebar && "md:grid-cols-[236px_minmax(0,1fr)]")}>
         {sidebar}
-        <div className={cn("flex min-w-0 flex-col", fill && "md:h-full")}>
+        <div className="app-frame-col flex min-w-0 flex-col">
           {phoneNav}
           {title}
           {chips}
-          <div className={cn("relative min-h-0 flex-1", fill && "md:overflow-y-auto")}>{children}</div>
+          <div data-frame-main="" className="app-frame-main relative min-h-0 flex-1" {...(mode ? { tabIndex: 0, role: "region", "aria-label": "View content" } : {})}>
+            {children}
+          </div>
         </div>
       </div>
     </div>

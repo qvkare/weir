@@ -274,6 +274,21 @@ export function ClearingsView(p: ShellProps & { initial: ClearingsData }) {
   const d = st.data;
   const params = d.params;
   const picked = d.picked;
+  // A round chosen by its link (?series=&round=) is brought into view once it is read, inside the
+  // frame's scroll area or the page, whichever scrolls.
+  const shown = sel && picked && picked.series === sel.series && picked.round === sel.round ? `${sel.series}-${sel.round}` : null;
+  useEffect(() => {
+    if (!shown) return;
+    const reduce = document.documentElement.getAttribute("data-motion") === "reduce" || matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const behavior = reduce ? "auto" : "smooth";
+    const el = document.getElementById("round");
+    const main = el?.closest<HTMLElement>("[data-frame-main]");
+    if (!el) return;
+    // A frame that scrolls inside moves only its main area, so its title row stays on screen.
+    if (main && /(auto|scroll)/.test(getComputedStyle(main).overflowY) && main.scrollHeight > main.clientHeight) {
+      main.scrollTo({ top: main.scrollTop + el.getBoundingClientRect().top - main.getBoundingClientRect().top - 16, behavior });
+    } else el.scrollIntoView({ block: "start", behavior });
+  }, [shown]);
   const bar = <LiveBar st={st} mode={cfg.mode} builtAt={cfg.builtAt} polls="Read when the page opens and when you pick a round; reload to read again." retry={retry} className={barClass} />;
   return (
     <ShellFrame

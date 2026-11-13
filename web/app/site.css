@@ -470,3 +470,65 @@
     box-shadow: 0 -24px 60px -30px rgba(0, 0, 0, 0.45);
   }
 }
+
+/* The application frame (components/front/app/parts.tsx, Frame). One behaviour: from 768 px wide
+   and 600 px tall, a market page's frame is as tall as the window allows (less the header, at
+   least 480 px) and its main area scrolls inside, the sidebar on its own; below either size the
+   frame grows with its content and the page scrolls. The homepage's tabs use a fixed 640 px frame
+   from 768 px wide. The single grid row is minmax(0, 1fr) and the column has min-height: 0, so
+   content can never stretch the frame past its height and be clipped by it. */
+.app-frame-main:focus-visible {
+  outline: 2px solid var(--ring, currentColor);
+  outline-offset: -2px;
+}
+
+@media (min-width: 768px) and (min-height: 600px) {
+  .app-frame[data-app-frame="page"] {
+    height: calc(100dvh - 112px);
+    min-height: 480px;
+  }
+}
+
+@media (min-width: 768px) {
+  .app-frame[data-app-frame="embed"] {
+    height: 640px;
+  }
+}
+
+@media (min-width: 768px) and (min-height: 600px) {
+  .app-frame[data-app-frame="page"] > .app-frame-grid {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .app-frame[data-app-frame="page"] .app-frame-col {
+    min-height: 0;
+  }
+  .app-frame[data-app-frame="page"] .app-frame-main {
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 768px) {
+  .app-frame[data-app-frame="embed"] > .app-frame-grid {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .app-frame[data-app-frame="embed"] .app-frame-col {
+    min-height: 0;
+  }
+  .app-frame[data-app-frame="embed"] .app-frame-main {
+    overflow-y: auto;
+  }
+}
+
+/* Anchors and a chosen round land below the sticky header when the page scrolls, and near the
+   top of the main area when the frame scrolls inside. */
+.app-frame-main [id] {
+  scroll-margin-top: 88px;
+}
+
+@media (min-width: 768px) and (min-height: 600px) {
+  .app-frame[data-app-frame="page"] .app-frame-main [id] {
+    scroll-margin-top: 16px;
+  }
+}

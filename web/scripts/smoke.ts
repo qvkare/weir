@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { readBuildData } from "../lib/build-data.ts";
 import { route } from "../worker/route.ts";
 import { APP_VIEWS } from "../lib/app-views.ts";
+import { frameLayout } from "./frame-layout.ts";
 
 const web = fileURLToPath(new URL("..", import.meta.url));
 // The model's clock is pinned (lib/model.ts, modelNow), so the checks do not depend on the minute
@@ -262,6 +263,20 @@ try {
   const h200 = await (await fetch(server.base + "/m/h200-weekly/proof")).text();
   check(/<link rel="canonical" href="https:\/\/[^"]+\/m\/h200-weekly\/proof"/.test(h200), "/m/h200-weekly/proof: canonical link is not its own address");
   check(/<meta property="og:image" content="https:\/\/[^"]+\/opengraph-image\.png"/.test(home), "/: no absolute og:image");
+
+  // The application frame, laid out: at short laptop windows, at the 600 px height where the frame
+  // stops scrolling inside, below it, and on a phone, the end of every view of two markets must be
+  // reachable, and a main area that scrolls inside must take the keyboard focus.
+  for (const v of APP_VIEWS) for (const m of ["", "/m/h100-fast"]) check(/data-frame-main=""[^>]*tabindex="0"/.test(await (await fetch(server.base + m + v.path)).text()), `${m}${v.path}: the frame's main area is not focusable`);
+  if (!process.argv.includes("--no-layout")) {
+    const views = APP_VIEWS.flatMap((v) => [v.path, `/m/h100-fast${v.path}`]);
+    const rows = await frameLayout(server.base, views, [[1440, 810], [1366, 768], [1280, 720], [1024, 600], [900, 560], [390, 844]]);
+    if (!rows) console.log("layout pass skipped: no Chrome found (CHROME=<path> names one)");
+    else {
+      for (const r of rows) check(r.ok, `${r.path} at ${r.size}: ${r.detail}`);
+      console.log(`layout pass: ${rows.filter((r) => r.ok).length} of ${rows.length} view and window pairs reachable to the end`);
+    }
+  }
 } finally {
   server.server.close();
 }
