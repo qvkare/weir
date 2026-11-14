@@ -8,6 +8,7 @@ import { buttonClass } from "@/components/ui/button.ts";
 import { ExternalIcon } from "@/components/icons.tsx";
 import { fmtUsdShort } from "@/lib/format.ts";
 import { localKV, readWallet, walletAccount, type PlanView, type WalletRecord } from "@/lib/try-state.ts";
+import { WALLET_EVENT } from "@/lib/wallet-record.ts";
 import { cn } from "@/lib/utils.ts";
 import type { TryTarget } from "@/lib/try-run.ts";
 import type { WalletSession, WalletStatus } from "@/lib/wallet.ts";
@@ -77,6 +78,8 @@ export function useWallet(enabled: boolean, target: TryTarget | null, plan: Plan
         const kv = localKV();
         setRec(kv && target ? readWallet(kv, target.contractId) : null);
         setBusy(null);
+        // The header shows the connected account; tell it the record may have changed.
+        window.dispatchEvent(new Event(WALLET_EVENT));
       }
     },
     [open, target],
@@ -159,11 +162,9 @@ export function WalletPanel({ w, running, openBid }: { w: WalletView; running: b
             <button type="button" className={btn} disabled={disabled} onClick={w.connect}>
               {w.busy === "connect" ? "Waiting for the wallet" : "Connect a NEAR wallet"}
             </button>
-            <p className="m-0 text-sm text-muted-foreground">Meteor, Intear, MyNearWallet or NEAR CLI, with a NEAR testnet account.</p>
+            <p className="m-0 text-sm text-muted-foreground">Meteor, Intear, MyNearWallet or NEAR CLI, on NEAR testnet.</p>
           </div>
-          <p className="m-0 mt-3 max-w-[68ch] text-xs text-muted-foreground">
-            You approve one setup in your wallet. After that the page bids, reveals and reads the result with a trading key it keeps in this browser, so no further wallet prompt appears. No testnet account yet? Meteor Wallet can make one: switch it to testnet, then create an account.
-          </p>
+          <p className="m-0 mt-3 max-w-[68ch] text-xs text-muted-foreground">No testnet account yet? Meteor Wallet makes one: switch it to testnet, then create an account.</p>
         </>
       ) : (
         <>

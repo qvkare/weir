@@ -44,6 +44,7 @@ import {
   type ViewError,
 } from "@/lib/try-state.ts";
 import { cn } from "@/lib/utils.ts";
+import { CONNECT_EVENT, connectedAccount, takeConnectRequest } from "@/lib/wallet-record.ts";
 import { ChipRow, Panel } from "./parts.tsx";
 import { useWallet, WalletPanel } from "./try-wallet.tsx";
 import { ShellFrame, type ShellProps } from "./views.tsx";
@@ -85,6 +86,9 @@ const MODE_KEY = "weir-try-signer";
 function TestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null }) {
   const [signer, setSigner] = useState<Signer | null>(null);
   const [locked, setLocked] = useState(false);
+  // The header's "Connect wallet" links here with ?connect=1: the wallet mode, and its chooser once.
+  // A count, so a second request on the same page (CONNECT_EVENT) opens it again.
+  const [openChooser, setOpenChooser] = useState(0);
   useEffect(() => {
     const kv = localKV();
     let m: Signer = "guest";
@@ -95,10 +99,37 @@ function TestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: str
     } catch {
       // Storage blocked: the guest path, which says so itself.
     }
+    const req = takeConnectRequest(window.location.href, !!connectedAccount(kv, contractId), (url) => window.history.replaceState(window.history.state, "", url));
+    if (req.wallet) {
+      m = "wallet";
+      try {
+        kv?.setItem(MODE_KEY, m);
+      } catch {
+        // Not remembered; nothing else depends on it.
+      }
+    }
+    // Only ever set to true: React's development double run sees the address already cleaned.
+    if (req.open) setOpenChooser((n) => n || 1);
     setSigner(m);
   }, [contractId]);
+  useEffect(() => {
+    const ask = () => {
+      if (locked) return;
+      const kv = localKV();
+      setSigner("wallet");
+      try {
+        kv?.setItem(MODE_KEY, "wallet");
+      } catch {
+        // Not remembered; nothing else depends on it.
+      }
+      if (!connectedAccount(kv, contractId)) setOpenChooser((n) => n + 1);
+    };
+    window.addEventListener(CONNECT_EVENT, ask);
+    return () => window.removeEventListener(CONNECT_EVENT, ask);
+  }, [contractId, locked]);
   const choose = (m: Signer) => {
     setSigner(m);
+    setOpenChooser(0);
     try {
       localKV()?.setItem(MODE_KEY, m);
     } catch {
@@ -124,10 +155,10 @@ function TestBid({ cfg, contractId, usdcId }: { cfg: SiteConfig; contractId: str
           {option("guest", "Bid as a guest")}
         </div>
         <p className="m-0 mt-3 max-w-[68ch] text-sm text-muted-foreground">
-          {locked ? "A call is in flight; the choice opens again when it ends." : signer === "wallet" ? "Your own testnet account. Your wallet approves one setup; the bid itself needs no further approval." : signer === "guest" ? "A throwaway testnet account made in this browser. Nothing to install." : null}
+          {locked ? "A call is in flight; the choice opens again when it ends." : signer === "wallet" ? "Your own testnet account, from your wallet." : signer === "guest" ? "A throwaway testnet account made in this browser. Nothing to install." : null}
         </p>
       </Panel>
-      {signer ? <GuestBid key={signer} signer={signer} cfg={cfg} contractId={contractId} usdcId={usdcId} onBusy={setLocked} /> : null}
+      {signer ? <GuestBid key={signer} signer={signer} cfg={cfg} contractId={contractId} usdcId={usdcId} onBusy={setLocked} openChooser={signer === "wallet" ? openChooser : 0} /> : null}
     </>
   );
 }
@@ -152,7 +183,7 @@ async function withLock(name: string, f: () => Promise<void>, onHeld: () => void
   });
 }
 
-function GuestBid({ cfg, contractId, usdcId, signer, onBusy }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null; signer: Signer; onBusy: (busy: boolean) => void }) {
+function GuestBid({ cfg, contractId, usdcId, signer, onBusy, openChooser = 0 }: { cfg: SiteConfig; contractId: string | null; usdcId: string | null; signer: Signer; onBusy: (busy: boolean) => void; openChooser?: number }) {
   const target = useMemo(() => (contractId ? { contractId, usdcId, rpcUrls: cfg.rpc } : null), [contractId, usdcId, cfg.rpc]);
   const isWallet = signer === "wallet";
   const key = isWallet ? walletGuestKey(contractId ?? "none") : guestKey(contractId ?? "none");
@@ -259,6 +290,15 @@ function GuestBid({ cfg, contractId, usdcId, signer, onBusy }: { cfg: SiteConfig
 
   useEffect(() => onBusy(busy), [busy, onBusy]);
 
+  // Arrived from the header's "Connect wallet": the chooser opens once. The wallet's own window
+  // still opens only from the visitor's click inside it.
+  const chooserOpened = useRef(0);
+  useEffect(() => {
+    if (openChooser <= chooserOpened.current || !isWallet || mode !== "chain" || !target) return;
+    chooserOpened.current = openChooser;
+    if (!walletRef.current.accountId && walletRef.current.busy === null) walletRef.current.connect();
+  }, [openChooser, isWallet, mode, target]);
+
   // On open: is there storage, and a stored guest? A sealed bid is resumed at once: it must be revealed.
   useEffect(() => {
     const store = localKV();
@@ -342,7 +382,7 @@ function GuestBid({ cfg, contractId, usdcId, signer, onBusy }: { cfg: SiteConfig
       <Panel title="Place one sealed bid">
         {isWallet ? (
           <p className="m-0 max-w-[68ch] text-base text-foreground">
-            Your wallet approves one setup: the market registration and test dollars. Then the page commits one sealed order to the round now, LONG 5 GPU-hours at the price below, reveals it when the reveal phase opens, and reads the clearing price and your fill, about five minutes in all, with no further wallet prompt.
+            Your wallet approves one setup: a trading key this page keeps in your browser, the market registration and test dollars. Then the page commits one sealed order to the round now, LONG 5 GPU-hours at the price below, reveals it when the reveal phase opens, and reads the clearing price and your fill, about five minutes in all, with no further wallet prompt.
           </p>
         ) : (
           <>

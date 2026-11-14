@@ -201,6 +201,31 @@ The view starts with a choice: "Connect a NEAR wallet" or "Bid as a guest" (reme
    (limited to the market, 0.25 NEAR of gas at most) until the visitor deletes it in the wallet;
    the page does not send a `DeleteKey`.
 
+The header has a "Connect wallet" entry on every page (`components/front/navbar.tsx`; in the Menu
+below 768 px). It is a link to `/m/h100-fast/try?connect=1` and loads no wallet code: the view then
+selects the wallet mode, opens the chooser once (step 1) and removes `connect=1` from the address
+with `history.replaceState`, so a reload does not reopen it; with a wallet already connected it
+selects the wallet mode and opens nothing. Pressed while the test bid is already on screen, it sends
+`weir-wallet-connect` to the view instead of reloading the page. After mount the header reads
+`weir-wallet:<contract>` (`lib/wallet-record.ts`, no library, no network); when the record holds an
+account past "connecting" it shows the name cut in the middle to 14 characters and links to the
+view. It follows changes from the view in the same tab (`weir-wallet-change`, sent after every
+connect, setup, check and disconnect) and from other tabs (`storage`). Tests:
+`lib/wallet-record.test.ts` (the shortener, the record reader, `?connect=1`).
+
+Checked on 14 Nov 2026, `next dev` on :3211 in the desktop app's browser pane, no wallet signed in
+to: from `/auction` the header entry lands on the view with the chooser open and the address
+without `connect=1`; closing the chooser leaves the wallet mode with "The wallet window was closed
+before it finished. Nothing was signed."; a reload opens nothing; pressing the entry on the view
+opens the chooser again; with a made-up connected record (removed afterwards) the header showed
+the shortened name on `/` and `/auction`, `?connect=1` selected the wallet mode and opened nothing,
+and removing the record returned the entry to "Connect wallet". The header was measured at 1440,
+1280, 1024, 768 and 375 px wide (DESIGN.md, Header). After `pnpm --filter @weir/web build` the
+NEAR Connect chunk is named only by the wallet code's chunk, which is named only by the loader
+chunk of the four test bid pages (`out/try.html` and `out/m/*/try.html`); the header's chunk,
+named by all 57 pages, holds no NEAR Connect code (`grep -l NearConnector out/_next/static/chunks/*.js`,
+then grep the HTML for those names). Not run: a real sign-in from the header entry.
+
 - Code: `chain/src/wallet-setup.ts` (pure builders, `chain/test/wallet-setup.test.ts`),
   `lib/wallet.ts` (connect, key check, setup, refund, disconnect, plain error text; tested against
   a fake wallet and a fake chain in `lib/wallet.test.ts`), `lib/wallet-run.ts` (the browser side:
@@ -267,8 +292,9 @@ so the security headers apply. Chrome with pop-ups allowed for the site.
 1. Get a testnet account: open https://wallet.meteorwallet.app, create or import a wallet, switch
    the network to Testnet (settings), and create a testnet account. Expect an account ending in
    `.testnet` with some test NEAR (the setup needs about 0.03 NEAR plus gas).
-2. On the test bid page, press "Connect a NEAR wallet" under "Who signs", then the same button in
-   the panel. Expect a chooser with Meteor, Intear, MyNearWallet, NEAR CLI.
+2. Press "Connect wallet" in the header (or, on the test bid page, "Connect a NEAR wallet" under
+   "Who signs", then the same button in the panel). Expect a chooser with Meteor, Intear,
+   MyNearWallet, NEAR CLI.
 3. Pick Meteor and approve the sign-in in its pop-up. Expect "Connected: <your account> with Meteor
    Wallet", the sentence about the trading key, and the button "Approve the setup in your wallet"
    with "One approval in your wallet registers you with the market (0.02 NEAR) and mints and

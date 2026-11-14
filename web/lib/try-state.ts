@@ -92,41 +92,11 @@ export interface StoredGuest {
 
 export const EXPLORER_TX = "https://testnet.nearblocks.io/txns/";
 export const guestKey = (contractId: string): string => `weir-guest:${contractId}`;
-/** The connected wallet (lib/wallet.ts): its account and the page's trading key. */
-export const walletKey = (contractId: string): string => `weir-wallet:${contractId}`;
 /** The guest state (`Guest.forAccount`) of the wallet's account, apart from the throwaway guest's. */
 export const walletGuestKey = (contractId: string): string => `weir-wallet-guest:${contractId}`;
 
-/** What this browser keeps about the connected wallet (lib/wallet.ts). The secret key is the
- * trading key: a function-call key on the market only, which cannot withdraw. */
-export interface WalletRecord {
-  version: 1;
-  contractId: string;
-  secretKey: string;
-  publicKey: string;
-  /** NEAR Connect's id of the wallet, once one was chosen. */
-  walletId: string | null;
-  /** The visitor's account, once the wallet has signed in. */
-  accountId: string | null;
-  /** `connecting`: the key is made and the wallet asked. `connected`: signed in. `setup`: the
-   * setup batch was handed to the wallet; the chain says what landed. */
-  phase: "connecting" | "connected" | "setup";
-  since: number;
-}
-
-export function readWallet(kv: Pick<KV, "getItem">, contractId: string): WalletRecord | null {
-  try {
-    const raw = kv.getItem(walletKey(contractId));
-    if (!raw) return null;
-    const r = JSON.parse(raw) as WalletRecord;
-    return r.version === 1 && r.contractId === contractId && typeof r.secretKey === "string" ? r : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The connected wallet's account, without the key; null before the wallet has signed in. */
-export const walletAccount = (r: WalletRecord | null): string | null => (r?.accountId && r.phase !== "connecting" ? r.accountId : null);
+// The wallet's record lives in lib/wallet-record.ts, which the header reads on every page.
+export { readWallet, walletAccount, walletKey, type WalletRecord } from "./wallet-record.ts";
 
 // ── Storage ──────────────────────────────────────────────────────
 

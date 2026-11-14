@@ -105,7 +105,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <b>Model</b> Model data, not the chain. Market figures here come from the Weir engine running a fixed script when this page was published.
           </div>
         ) : null}
-        <Navbar />
+        <Navbar walletContract={deployments().markets.find((m) => m.id === "h100-fast")?.contract ?? null} />
         {children}
         <Footer builtAt={buildData().builtAt} spec={buildData().specVersion} network={deployments().network} />
       </body>
